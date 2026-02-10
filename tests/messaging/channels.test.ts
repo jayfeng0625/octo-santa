@@ -1,0 +1,84 @@
+import { describe, it, expect, afterEach } from "bun:test";
+import { existsSync, unlinkSync } from "fs";
+import { createDb } from "../../src/db";
+import { runMigrations } from "../../src/migrations";
+import {
+  messagingMigrations,
+  registerAgent,
+  createChannel,
+  listChannels,
+} from "../../src/modules/messaging/tools";
+
+const TEST_DB = "/tmp/octo-santa-test-channels.sqlite";
+
+function cleanupDb(path: string) {
+  for (const suffix of ["", "-wal", "-shm"]) {
+    const f = path + suffix;
+    if (existsSync(f)) unlinkSync(f);
+  }
+}
+
+function setupDb() {
+  cleanupDb(TEST_DB);
+  const db = createDb(TEST_DB);
+  runMigrations(db, messagingMigrations);
+  registerAgent(db, "octo-santa");
+  return db;
+}
+
+afterEach(() => {
+  cleanupDb(TEST_DB);
+});
+
+describe("createChannel", () => {
+  it("creates a new channel", () => {
+    const db = setupDb();
+    const channel = createChannel(db, "coordination", "octo-santa");
+
+    expect(channel.name).toBe("coordination");
+    expect(channel.created_by).toBe("octo-santa");
+    expect(channel.id).toBeGreaterThan(0);
+
+    db.close();
+  });
+
+  it("is idempotent — returns existing channel on duplicate name", () => {
+    const db = setupDb();
+    const first = createChannel(db, "coordination", "octo-santa");
+    const second = createChannel(db, "coordination", "octo-santa");
+
+    expect(second.id).toBe(first.id);
+    expect(second.name).toBe(first.name);
+
+    db.close();
+  });
+
+  it("auto-registers the agent if not already registered", () => {
+    const db = setupDb();
+    const channel = createChannel(db, "frontend", "new-agent");
+
+    expect(channel.created_by).toBe("new-agent");
+
+    db.close();
+  });
+});
+
+describe("listChannels", () => {
+  it("returns empty list when no channels exist", () => {
+    const db = setupDb();
+    expect(listChannels(db)).toEqual([]);
+    db.close();
+  });
+
+  it("returns all channels", () => {
+    const db = setupDb();
+    createChannel(db, "frontend", "octo-santa");
+    createChannel(db, "backend", "octo-santa");
+
+    const channels = listChannels(db);
+    expect(channels).toHaveLength(2);
+    expect(channels.map((c) => c.name).sort()).toEqual(["backend", "frontend"]);
+
+    db.close();
+  });
+});

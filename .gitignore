@@ -1,0 +1,18 @@
+*.iml
+
+.claude/
+.idea/
+.ignored/
+.worktrees/
+.superpowers/
+.serena/
+node_modules/
+
+# Plans are ephemeral working documents
+docs/plans/
+
+# Research docs are ephemeral
+docs/research/
+
+# Remediation specs are ephemeral
+docs/specs/remediation/

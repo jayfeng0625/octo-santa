@@ -1,0 +1,167 @@
+// tests/concurrency.test.ts
+import { describe, it, expect, afterEach } from "bun:test";
+import { existsSync, unlinkSync } from "fs";
+import { createDb, withRetrySync } from "../src/db";
+import { runMigrations } from "../src/migrations";
+import { messagingMigrations, sendMessage, readMessages } from "../src/modules/messaging/tools";
+
+const TEST_DB = "/tmp/octo-santa-test-concurrency.sqlite";
+const projectRoot = process.cwd();
+
+function cleanupDb(path: string) {
+  for (const suffix of ["", "-wal", "-shm"]) {
+    const f = path + suffix;
+    if (existsSync(f)) unlinkSync(f);
+  }
+}
+
+function setupDb() {
+  cleanupDb(TEST_DB);
+  const db = createDb(TEST_DB);
+  runMigrations(db, messagingMigrations);
+  return db;
+}
+
+afterEach(() => {
+  cleanupDb(TEST_DB);
+});
+
+describe("concurrency", () => {
+  it("handles concurrent writes without losing messages", async () => {
+    setupDb().close();
+
+    const NUM_AGENTS = 5;
+    const MESSAGES_PER_AGENT = 20;
+
+    // Spawn child processes that each write messages
+    // Use absolute paths since workers run from /tmp
+    const workerScript = `
+      import { createDb } from "${projectRoot}/src/db";
+      import { runMigrations } from "${projectRoot}/src/migrations";
+      import { messagingMigrations, sendMessage } from "${projectRoot}/src/modules/messaging/tools";
+
+      const db = createDb("${TEST_DB}");
+      runMigrations(db, messagingMigrations);
+
+      const agentId = process.argv[2];
+      const count = parseInt(process.argv[3]);
+
+      for (let i = 0; i < count; i++) {
+        sendMessage(db, agentId, "stress-test", \`Message \${i} from \${agentId}\`);
+      }
+      db.close();
+    `;
+
+    const tmpWorker = "/tmp/octo-santa-concurrency-worker.ts";
+    await Bun.write(tmpWorker, workerScript);
+
+    // Launch all workers concurrently
+    const workers = Array.from({ length: NUM_AGENTS }, (_, i) =>
+      Bun.spawn(["bun", "run", tmpWorker, `agent-${i}`, String(MESSAGES_PER_AGENT)], {
+        cwd: process.cwd(),
+        stdout: "pipe",
+        stderr: "pipe",
+      })
+    );
+
+    // Wait for all workers to finish
+    const results = await Promise.all(workers.map((w) => w.exited));
+    expect(results.every((code) => code === 0)).toBe(true);
+
+    // Verify all messages were written
+    const db = createDb(TEST_DB);
+    runMigrations(db, messagingMigrations);
+    const allMessages = readMessages(db, "verifier", "stress-test", { limit: 1000 });
+    expect(allMessages).toHaveLength(NUM_AGENTS * MESSAGES_PER_AGENT);
+
+    db.close();
+  });
+
+  it("migration race — multiple processes starting against empty DB", async () => {
+    cleanupDb(TEST_DB);
+
+    const workerScript = `
+      import { createDb } from "${projectRoot}/src/db";
+      import { runMigrations } from "${projectRoot}/src/migrations";
+      import { messagingMigrations, sendMessage } from "${projectRoot}/src/modules/messaging/tools";
+
+      const db = createDb("${TEST_DB}");
+      runMigrations(db, messagingMigrations);
+      sendMessage(db, process.argv[2], "init", "ready");
+      db.close();
+    `;
+
+    const tmpWorker = "/tmp/octo-santa-migration-race-worker.ts";
+    await Bun.write(tmpWorker, workerScript);
+
+    const NUM_WORKERS = 5;
+    const workers = Array.from({ length: NUM_WORKERS }, (_, i) =>
+      Bun.spawn(["bun", "run", tmpWorker, `agent-${i}`], {
+        cwd: process.cwd(),
+        stdout: "pipe",
+        stderr: "pipe",
+      })
+    );
+
+    const results = await Promise.all(workers.map((w) => w.exited));
+    expect(results.every((code) => code === 0)).toBe(true);
+
+    // Verify DB is consistent
+    const db = createDb(TEST_DB);
+    const migrationRows = db.query("SELECT name FROM schema_migrations").all() as { name: string }[];
+    expect(migrationRows.length).toBe(1);
+    expect(migrationRows[0]!.name).toBe("messaging_001_initial_schema");
+
+    const messages = readMessages(db, "verifier", "init", { limit: 100 });
+    expect(messages).toHaveLength(NUM_WORKERS);
+
+    db.close();
+  });
+});
+
+describe("withRetrySync under contention", () => {
+  it("recovers when a lock holder releases mid-retry", async () => {
+    const db = setupDb();
+
+    // withRetrySync uses Bun.sleepSync (fully synchronous), so setTimeout cannot
+    // fire while it is retrying. Instead, spawn a subprocess that holds an
+    // EXCLUSIVE lock for 300ms then releases it — the main process retries
+    // and succeeds once the lock is freed.
+    const lockHolderScript = `
+      import { createDb } from "${projectRoot}/src/db";
+      const blocker = createDb("${TEST_DB}");
+      blocker.run("BEGIN EXCLUSIVE");
+      Bun.sleepSync(300);
+      blocker.run("COMMIT");
+      blocker.close();
+    `;
+    const lockHolderPath = "/tmp/octo-santa-lock-holder.ts";
+    await Bun.write(lockHolderPath, lockHolderScript);
+
+    const blockerProc = Bun.spawn(["bun", "run", lockHolderPath], {
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+
+    // Give the blocker time to acquire the lock before we attempt our write
+    Bun.sleepSync(100);
+
+    // This should retry and succeed once the lock holder releases
+    const result = withRetrySync(
+      () => {
+        db.run(
+          "INSERT INTO agents (id, created_at, last_seen_at) VALUES (?, ?, ?)",
+          ["retry-agent", Date.now(), Date.now()]
+        );
+        return db.query("SELECT * FROM agents WHERE id = ?").get("retry-agent");
+      },
+      5,   // maxRetries — enough to outlast the 300ms hold
+      200  // baseDelayMs
+    );
+
+    expect(result).not.toBeNull();
+
+    await blockerProc.exited;
+    db.close();
+  });
+});
