@@ -86,19 +86,48 @@ export const messagingMigrations: Migration[] = [
   },
 ];
 
+function isProcessAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    const errno = error as NodeJS.ErrnoException;
+    if (errno.code === "EPERM") return true; // exists, not signalable
+    return false; // ESRCH = no such process
+  }
+}
+
+// Staleness threshold for PID reuse detection (1 hour)
+const PID_STALE_MS = 60 * 60 * 1000;
+
 export function registerAgent(db: Database, agentId: string): Agent {
-  if (!agentId.trim()) throw new Error("agent_id must not be empty");
-  return withRetrySync(() => {
+  validateAgentName(agentId);
+
+  const doRegister = db.transaction(() => {
     const now = Date.now();
+    const existing = getAgent(db, agentId);
+
+    if (existing && existing.pid !== null && existing.pid !== process.pid) {
+      const pidAlive = isProcessAlive(existing.pid);
+      const isStale = now - existing.last_seen_at > PID_STALE_MS;
+
+      if (pidAlive && !isStale) {
+        throw new Error(
+          `Agent "${agentId}" is already active (pid ${existing.pid}). Choose a different name.`
+        );
+      }
+    }
 
     db.run(
-      `INSERT INTO agents (id, created_at, last_seen_at) VALUES (?, ?, ?)
-       ON CONFLICT(id) DO UPDATE SET last_seen_at = excluded.last_seen_at`,
-      [agentId, now, now]
+      `INSERT INTO agents (id, created_at, last_seen_at, pid, registered_at) VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET last_seen_at = excluded.last_seen_at, pid = excluded.pid, registered_at = excluded.registered_at`,
+      [agentId, now, now, process.pid, now]
     );
 
     return getAgent(db, agentId)!;
   });
+
+  return withRetrySync(() => doRegister.exclusive());
 }
 
 export function getAgent(db: Database, agentId: string): Agent | null {
