@@ -19,5 +19,5 @@ export interface Message {
   agent_id: string;
   content: string;
   created_at: number;
-  mentions?: string; // JSON array, e.g. '["agent-a"]' or '["*"]' or '[]'
+  mentions: string; // JSON array, e.g. '["agent-a"]' or '["*"]' or '[]'
 }

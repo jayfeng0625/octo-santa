@@ -7,6 +7,7 @@ import {
   registerAgent,
   createChannel,
   sendMessage,
+  readMessages,
 } from "../../src/modules/messaging/tools";
 
 const TEST_DB = "/tmp/octo-santa-test-send.sqlite";
@@ -70,6 +71,58 @@ describe("sendMessage", () => {
 
     expect(after.last_seen_at).toBeGreaterThanOrEqual(before.last_seen_at);
 
+    db.close();
+  });
+
+  it("stores parsed mentions in message", () => {
+    const db = setupDb();
+    registerAgent(db, "reviewer");
+    const msg = sendMessage(db, "agent-a", "coordination", "@reviewer check this");
+
+    expect(JSON.parse(msg.mentions)).toEqual(["reviewer"]);
+    db.close();
+  });
+
+  it("stores empty array when no mentions", () => {
+    const db = setupDb();
+    const msg = sendMessage(db, "agent-a", "coordination", "just a message");
+
+    expect(JSON.parse(msg.mentions)).toEqual([]);
+    db.close();
+  });
+
+  it("stores broadcast sentinel for @all", () => {
+    const db = setupDb();
+    const msg = sendMessage(db, "agent-a", "coordination", "@all heads up");
+
+    expect(JSON.parse(msg.mentions)).toEqual(["*"]);
+    db.close();
+  });
+
+  it("drops invalid mentions silently", () => {
+    const db = setupDb();
+    const msg = sendMessage(db, "agent-a", "coordination", "@nonexistent hello");
+
+    expect(JSON.parse(msg.mentions)).toEqual([]);
+    db.close();
+  });
+
+  it("stores broadcast sentinel for @here", () => {
+    const db = setupDb();
+    const msg = sendMessage(db, "agent-a", "coordination", "@here attention please");
+
+    expect(JSON.parse(msg.mentions)).toEqual(["*"]);
+    db.close();
+  });
+
+  it("readMessages returns mentions field on messages", () => {
+    const db = setupDb();
+    registerAgent(db, "reviewer");
+    sendMessage(db, "agent-a", "coordination", "@reviewer please look");
+
+    const messages = readMessages(db, "reviewer", "coordination");
+    expect(messages.length).toBe(1);
+    expect(JSON.parse(messages[0]!.mentions)).toEqual(["reviewer"]);
     db.close();
   });
 });

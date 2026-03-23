@@ -227,17 +227,36 @@ export function sendMessage(
 
   const doSend = db.transaction(() => {
     const now = Date.now();
+
+    // Extract valid agent IDs for mention validation
+    const allAgents = db.query("SELECT id FROM agents").all() as { id: string }[];
+    const validIds = allAgents.map((a) => a.id);
+    const mentions = JSON.stringify(extractMentions(content, validIds));
+
     db.run(
-      "INSERT INTO messages (channel_id, agent_id, content, created_at) VALUES (?, ?, ?, ?)",
-      [channel.id, agentId, content, now]
+      "INSERT INTO messages (channel_id, agent_id, content, created_at, mentions) VALUES (?, ?, ?, ?, ?)",
+      [channel.id, agentId, content, now, mentions]
     );
     const lastId = db.query("SELECT last_insert_rowid() as id").get() as { id: number };
+
+    // Upsert cursor for sender — ensures sender counts as a channel member
+    // for DM/group mode detection. Uses 0 as initial value so the sender
+    // doesn't skip unread messages from others. On conflict, keeps the
+    // existing cursor value (a prior readMessages may have advanced it).
+    db.run(
+      `INSERT INTO cursors (agent_id, channel_id, last_read_message_id)
+       VALUES (?, ?, 0)
+       ON CONFLICT(agent_id, channel_id) DO NOTHING`,
+      [agentId, channel.id]
+    );
+
     return {
       id: lastId.id,
       channel_id: channel.id,
       agent_id: agentId,
       content,
       created_at: now,
+      mentions,
     };
   });
 
