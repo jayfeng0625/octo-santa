@@ -155,4 +155,37 @@ describe("name-based migrations", () => {
 
     db.close();
   });
+
+  it("upgrades legacy DB: seeds v1 as applied, runs v2 migration", () => {
+    cleanupDb(TEST_DB);
+    const db = createDb(TEST_DB);
+
+    // Simulate a legacy v1 DB (has the first migration's schema via pragma)
+    db.run("CREATE TABLE agents (id TEXT PRIMARY KEY, created_at INTEGER NOT NULL, last_seen_at INTEGER NOT NULL)");
+    db.run("CREATE TABLE channels (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE NOT NULL, created_by TEXT NOT NULL, created_at INTEGER NOT NULL)");
+    db.run("CREATE TABLE messages (id INTEGER PRIMARY KEY AUTOINCREMENT, channel_id INTEGER NOT NULL, agent_id TEXT NOT NULL, content TEXT NOT NULL, created_at INTEGER NOT NULL)");
+    db.run("CREATE TABLE cursors (agent_id TEXT NOT NULL, channel_id INTEGER NOT NULL, last_read_message_id INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (agent_id, channel_id))");
+    db.run("PRAGMA user_version = 1");
+
+    const migrations: Migration[] = [
+      { name: "messaging_001_initial_schema", up: "CREATE TABLE agents (id TEXT PRIMARY KEY, created_at INTEGER NOT NULL, last_seen_at INTEGER NOT NULL)" },
+      { name: "messaging_002_mentions_and_pid", up: "ALTER TABLE agents ADD COLUMN pid INTEGER; ALTER TABLE agents ADD COLUMN registered_at INTEGER; ALTER TABLE messages ADD COLUMN mentions TEXT NOT NULL DEFAULT '[]';" },
+    ];
+
+    const result = runMigrations(db, migrations);
+
+    // v1 should be seeded as applied, v2 should actually run
+    expect(result.applied).toEqual(["messaging_002_mentions_and_pid"]);
+
+    // Verify v2 columns exist
+    const agentCols = db.query("PRAGMA table_info(agents)").all() as { name: string }[];
+    const colNames = agentCols.map(c => c.name);
+    expect(colNames).toContain("pid");
+    expect(colNames).toContain("registered_at");
+
+    const msgCols = db.query("PRAGMA table_info(messages)").all() as { name: string }[];
+    expect(msgCols.map(c => c.name)).toContain("mentions");
+
+    db.close();
+  });
 });
