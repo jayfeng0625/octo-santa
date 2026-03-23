@@ -109,8 +109,9 @@ describe("concurrency", () => {
     // Verify DB is consistent
     const db = createDb(TEST_DB);
     const migrationRows = db.query("SELECT name FROM schema_migrations").all() as { name: string }[];
-    expect(migrationRows.length).toBe(1);
-    expect(migrationRows[0]!.name).toBe("messaging_001_initial_schema");
+    const names = migrationRows.map(r => r.name);
+    expect(names).toContain("messaging_001_initial_schema");
+    expect(names).toContain("messaging_002_mentions_and_pid");
 
     const messages = readMessages(db, "verifier", "init", { limit: 100 });
     expect(messages).toHaveLength(NUM_WORKERS);
