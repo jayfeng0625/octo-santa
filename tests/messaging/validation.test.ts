@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach } from "bun:test";
 import { existsSync, unlinkSync } from "fs";
 import { createDb } from "../../src/db";
 import { runMigrations } from "../../src/migrations";
-import { messagingMigrations, registerAgent, createChannel, sendMessage } from "../../src/modules/messaging/tools";
+import { messagingMigrations, registerAgent, createChannel, sendMessage, readMessages } from "../../src/modules/messaging/tools";
 
 const TEST_DB = "/tmp/octo-santa-test-validation.sqlite";
 
@@ -52,6 +52,24 @@ describe("input validation", () => {
   it("rejects whitespace-only message content", () => {
     const db = setupDb();
     expect(() => sendMessage(db, "agent-a", "general", "   ")).toThrow();
+    db.close();
+  });
+
+  it("rejects reserved name 'all' on createChannel", () => {
+    const db = setupDb();
+    expect(() => createChannel(db, "ch", "all")).toThrow("reserved");
+    db.close();
+  });
+
+  it("rejects reserved name 'here' on sendMessage", () => {
+    const db = setupDb();
+    expect(() => sendMessage(db, "here", "ch", "test")).toThrow("reserved");
+    db.close();
+  });
+
+  it("rejects reserved name 'all' on readMessages", () => {
+    const db = setupDb();
+    expect(() => readMessages(db, "all", "ch")).toThrow("reserved");
     db.close();
   });
 });
