@@ -17,6 +17,10 @@ describe("validateAgentName", () => {
     expect(() => validateAgentName("agent.name")).toThrow("must match");
     expect(() => validateAgentName("agent@name")).toThrow("must match");
   });
+  it("rejects reserved names 'all' and 'here'", () => {
+    expect(() => validateAgentName("all")).toThrow("reserved");
+    expect(() => validateAgentName("here")).toThrow("reserved");
+  });
 });
 
 describe("extractMentions", () => {
