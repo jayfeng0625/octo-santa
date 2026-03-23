@@ -3,6 +3,37 @@ import type { Migration } from "../../migrations";
 import { withRetrySync } from "../../db";
 import type { Agent, Channel, Message } from "./types";
 
+const AGENT_NAME_RE = /^[\w-]+$/;
+
+export function validateAgentName(agentId: string): void {
+  if (!agentId.trim()) throw new Error("agent_id must not be empty");
+  if (!AGENT_NAME_RE.test(agentId))
+    throw new Error(
+      `agent_id must match [\\w-]+ (letters, digits, underscores, hyphens), got "${agentId}"`
+    );
+}
+
+const MENTION_RE = /@([\w-]+)/g;
+
+export function extractMentions(content: string, validAgentIds: string[]): string[] {
+  const matches = content.matchAll(MENTION_RE);
+  const validSet = new Set(validAgentIds);
+  const result = new Set<string>();
+  let hasBroadcast = false;
+
+  for (const match of matches) {
+    const name = match[1]!;
+    if (name === "all" || name === "here") {
+      hasBroadcast = true;
+    } else if (validSet.has(name)) {
+      result.add(name);
+    }
+  }
+
+  if (hasBroadcast) return ["*"];
+  return [...result];
+}
+
 export function getCursor(
   db: Database,
   agentId: string,
