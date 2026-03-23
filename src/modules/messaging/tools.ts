@@ -134,13 +134,26 @@ export function getAgent(db: Database, agentId: string): Agent | null {
   return (db.query("SELECT * FROM agents WHERE id = ?").get(agentId) as Agent) ?? null;
 }
 
+/** Lightweight agent upsert — no PID check, no exclusive lock.
+ *  Used by createChannel/readMessages where we just need the agent row to exist. */
+function ensureAgent(db: Database, agentId: string): void {
+  withRetrySync(() => {
+    const now = Date.now();
+    db.run(
+      `INSERT INTO agents (id, created_at, last_seen_at) VALUES (?, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET last_seen_at = excluded.last_seen_at`,
+      [agentId, now, now]
+    );
+  });
+}
+
 export function listAgents(db: Database): Agent[] {
   return db.query("SELECT * FROM agents ORDER BY id").all() as Agent[];
 }
 
 export function createChannel(db: Database, name: string, agentId: string): Channel {
   if (!name.trim()) throw new Error("channel name must not be empty");
-  registerAgent(db, agentId);
+  ensureAgent(db, agentId);
 
   return withRetrySync(() => {
     db.run(
@@ -168,7 +181,7 @@ export function readMessages(
   channelName: string,
   options?: ReadOptions
 ): Message[] {
-  registerAgent(db, agentId);
+  ensureAgent(db, agentId);
 
   const channel = db.query("SELECT id FROM channels WHERE name = ?").get(channelName) as { id: number } | null;
   if (!channel) return [];
