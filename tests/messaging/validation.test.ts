@@ -55,6 +55,24 @@ describe("input validation", () => {
     db.close();
   });
 
+  it("rejects invalid agent_id characters on createChannel", () => {
+    const db = setupDb();
+    expect(() => createChannel(db, "ch", "bad name")).toThrow("must match");
+    db.close();
+  });
+
+  it("rejects invalid agent_id characters on sendMessage", () => {
+    const db = setupDb();
+    expect(() => sendMessage(db, "bad.name", "ch", "test")).toThrow("must match");
+    db.close();
+  });
+
+  it("rejects invalid agent_id characters on readMessages", () => {
+    const db = setupDb();
+    expect(() => readMessages(db, "bad@name", "ch")).toThrow("must match");
+    db.close();
+  });
+
   it("rejects reserved name 'all' on createChannel", () => {
     const db = setupDb();
     expect(() => createChannel(db, "ch", "all")).toThrow("reserved");
