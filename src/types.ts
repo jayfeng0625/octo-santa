@@ -8,6 +8,6 @@ export interface OctoModule {
   registerTools: (
     server: McpServer,
     getDb: () => import("bun:sqlite").Database,
-    onAgentId?: (agentId: string) => void
+    onAgentId?: (agentId: string) => { commit: () => void }
   ) => void;
 }

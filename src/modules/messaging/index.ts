@@ -17,19 +17,21 @@ function jsonResult(data: unknown) {
 }
 
 function withAgent<T>(
-  onAgentId: ((agentId: string) => void) | undefined,
+  onAgentId: ((agentId: string) => { commit: () => void }) | undefined,
   agentId: string,
   fn: () => T
 ): T {
-  onAgentId?.(agentId);
-  return fn();
+  const handle = onAgentId?.(agentId); // Phase 1: guard check (throws if mismatched)
+  const result = fn();
+  handle?.commit(); // Phase 2: bind session (only on success)
+  return result;
 }
 
 const messaging: OctoModule = {
   name: "messaging",
   migrations: messagingMigrations,
 
-  registerTools(server: McpServer, getDb: () => Database, onAgentId?: (agentId: string) => void) {
+  registerTools(server: McpServer, getDb: () => Database, onAgentId?: (agentId: string) => { commit: () => void }) {
     server.registerTool("messaging_register", {
       description: "Register this agent with a unique name to start receiving messages",
       inputSchema: { agent_id: z.string().trim().min(1).regex(/^[\w-]+$/, "Must be letters, digits, underscores, or hyphens").describe("Your agent/project name") },

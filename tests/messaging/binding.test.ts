@@ -32,11 +32,13 @@ describe("agent binding enforcement", () => {
     } as any;
 
     let bound: string | null = null;
-    function onAgentId(agentId: string) {
+    function onAgentId(agentId: string): { commit: () => void } {
       if (bound !== null && bound !== agentId) {
         throw new Error(`Session already bound to agent "${bound}", cannot use "${agentId}"`);
       }
-      bound = agentId;
+      return {
+        commit: () => { bound = agentId; },
+      };
     }
 
     messaging.registerTools(mockServer, () => db, onAgentId);
@@ -81,6 +83,48 @@ describe("agent binding enforcement", () => {
     expect(threw).toBe(true);
     const cursors = db.query("SELECT * FROM cursors").all();
     expect(cursors.length).toBe(0);
+    db.close();
+  });
+
+  it("does NOT bind session when registration fails (invalid name)", async () => {
+    const { db, handlers } = setup();
+
+    let threw = false;
+    try {
+      await handlers.messaging_register!({ agent_id: "bad name" });
+    } catch {
+      threw = true;
+    }
+    expect(threw).toBe(true);
+
+    // Should be able to register with a valid name (session not stuck)
+    const result = await handlers.messaging_register!({ agent_id: "good-name" });
+    expect(result.content[0].text).toContain("good-name");
+    db.close();
+  });
+
+  it("does NOT bind session when registration fails (duplicate name from another process)", async () => {
+    const { db, handlers } = setup();
+
+    // Simulate another process already owning "taken" (PID 1 = init, always alive)
+    const now = Date.now();
+    db.run(
+      "INSERT INTO agents (id, created_at, last_seen_at, pid, registered_at) VALUES (?, ?, ?, ?, ?)",
+      ["taken", now, now, 1, now]
+    );
+
+    // First registration attempt should fail (PID 1 is alive)
+    let threw = false;
+    try {
+      await handlers.messaging_register!({ agent_id: "taken" });
+    } catch {
+      threw = true;
+    }
+    expect(threw).toBe(true);
+
+    // Should be able to register with a different name (session not stuck)
+    const result = await handlers.messaging_register!({ agent_id: "other-name" });
+    expect(result.content[0].text).toContain("other-name");
     db.close();
   });
 
