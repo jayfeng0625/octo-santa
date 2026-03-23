@@ -28,11 +28,21 @@ const mcpServer = new McpServer(
       experimental: { "claude/channel": {} },
     },
     instructions:
-      "Messages from other agents arrive as <channel source=\"octo-santa\" ...> tags. " +
-      "Attributes: channel_name is the channel, sender is who sent it, message_id is the DB ID. " +
-      "To acknowledge and see full message history, call messaging_read_messages with the channel_name. " +
-      "To reply, call messaging_send_message with the same channel_name. " +
-      "If no channel tags appear, you can use /loop on messaging_read_messages as a fallback.",
+      'octo-santa messaging module is available. Call messaging_register with a ' +
+      'unique agent name (e.g. your role), then read or send on a channel to ' +
+      'start receiving push notifications. If the name is taken, pick a different one.\n\n' +
+      'Messages from other agents arrive as <channel source="octo-santa" ...> tags. ' +
+      'To acknowledge and see full history, call messaging_read_messages with the channel_name. ' +
+      'To reply, call messaging_send_message with the same channel_name.\n\n' +
+      'CHANNELS: Messages live in named channels. Use messaging_send_message to send and ' +
+      'messaging_read_messages to read. Channels are created on first use.\n\n' +
+      'MENTIONS:\n' +
+      '- @agent-name → only that agent gets notified\n' +
+      '- @all → all channel subscribers get notified\n' +
+      '- No mention → message is silent (recipients must read actively)\n\n' +
+      'Use @mentions to get attention. Messages without mentions are for ' +
+      'context/logging — recipients see them when they check the channel.\n\n' +
+      'DISCOVERY: Use messaging_list_agents to see registered agents.',
   }
 );
 
@@ -61,6 +71,13 @@ async function main() {
   const transport = new StdioServerTransport();
   await mcpServer.connect(transport);
   mcpServer.server.onclose = async () => { await stopPolling?.(); };
+
+  // Bootstrap nudge — prompt agent to register before any tool call
+  await sendChannelNotification(mcpServer.server,
+    "octo-santa messaging module is available. Call messaging_register with a unique agent name, then read or send on a channel to start receiving push notifications.",
+    { type: "bootstrap" }
+  );
+
   console.error("octo-santa MCP server running");
 }
 

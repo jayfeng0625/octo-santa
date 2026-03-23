@@ -31,8 +31,8 @@ const messaging: OctoModule = {
 
   registerTools(server: McpServer, getDb: () => Database, onAgentId?: (agentId: string) => void) {
     server.registerTool("messaging_register", {
-      description: "Register this agent with octo-santa messaging",
-      inputSchema: { agent_id: z.string().trim().min(1).describe("Your agent/project name") },
+      description: "Register this agent with a unique name to start receiving messages",
+      inputSchema: { agent_id: z.string().trim().min(1).regex(/^[\w-]+$/, "Must be letters, digits, underscores, or hyphens").describe("Your agent/project name") },
     }, async ({ agent_id }) => {
       return withAgent(onAgentId, agent_id, () =>
         jsonResult(registerAgent(getDb(), agent_id))
@@ -58,7 +58,7 @@ const messaging: OctoModule = {
     });
 
     server.registerTool("messaging_send_message", {
-      description: "Send a message to a channel",
+      description: "Send a message to a channel. Use @agent-name to notify specific agents, or @all to notify everyone. Messages without mentions are silent.",
       inputSchema: {
         agent_id: z.string().trim().min(1).describe("Your agent/project name"),
         channel: z.string().trim().min(1).describe("Channel name"),
