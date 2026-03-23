@@ -4,6 +4,7 @@ import { withRetrySync } from "../../db";
 import type { Agent, Channel, Message } from "./types";
 
 const AGENT_NAME_RE = /^[\w-]+$/;
+const RESERVED_AGENT_NAMES = new Set(["all", "here"]);
 
 export function validateAgentName(agentId: string): void {
   if (!agentId.trim()) throw new Error("agent_id must not be empty");
@@ -11,6 +12,8 @@ export function validateAgentName(agentId: string): void {
     throw new Error(
       `agent_id must match [\\w-]+ (letters, digits, underscores, hyphens), got "${agentId}"`
     );
+  if (RESERVED_AGENT_NAMES.has(agentId))
+    throw new Error(`agent_id "${agentId}" is reserved for broadcast mentions`);
 }
 
 const MENTION_RE = /@([\w-]+)/g;
