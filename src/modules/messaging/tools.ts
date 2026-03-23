@@ -45,6 +45,14 @@ export const messagingMigrations: Migration[] = [
       );
     `,
   },
+  {
+    name: "messaging_002_mentions_and_pid",
+    up: `
+      ALTER TABLE agents ADD COLUMN pid INTEGER;
+      ALTER TABLE agents ADD COLUMN registered_at INTEGER;
+      ALTER TABLE messages ADD COLUMN mentions TEXT NOT NULL DEFAULT '[]';
+    `,
+  },
 ];
 
 export function registerAgent(db: Database, agentId: string): Agent {
