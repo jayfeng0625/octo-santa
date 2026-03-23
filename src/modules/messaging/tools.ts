@@ -140,6 +140,8 @@ export function getAgent(db: Database, agentId: string): Agent | null {
 /** Lightweight agent upsert — no PID check, no exclusive lock.
  *  Used by createChannel/readMessages where we just need the agent row to exist. */
 function ensureAgent(db: Database, agentId: string): void {
+  if (RESERVED_AGENT_NAMES.has(agentId))
+    throw new Error(`agent_id "${agentId}" is reserved for broadcast mentions`);
   withRetrySync(() => {
     const now = Date.now();
     db.run(
