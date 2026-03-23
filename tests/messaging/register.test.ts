@@ -66,4 +66,13 @@ describe("registerAgent", () => {
     expect(agent).toBeNull();
     db.close();
   });
+
+  it("migration adds pid and registered_at columns to agents", () => {
+    const db = setupDb();
+    const agent = registerAgent(db, "test-agent");
+    // pid and registered_at should exist (null until registration logic is updated)
+    expect(agent).toHaveProperty("pid");
+    expect(agent).toHaveProperty("registered_at");
+    db.close();
+  });
 });
