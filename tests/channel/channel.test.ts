@@ -276,6 +276,168 @@ describe("startPolling", () => {
     expect(notifications[0]!.content).toContain("msg-15");
   });
 
+  it("updates agent last_seen_at on each poll tick (heartbeat)", async () => {
+    sendMessage(db, "agent-b", "coordination", "setup");
+    readMessages(db, "agent-a", "coordination");
+
+    const before = db.query("SELECT last_seen_at FROM agents WHERE id = ?")
+      .get("agent-a") as { last_seen_at: number };
+
+    const stop = startPolling(db, "agent-a", async () => {}, FAST_INTERVAL);
+    await sleep(200);
+    await stop();
+
+    const after = db.query("SELECT last_seen_at FROM agents WHERE id = ?")
+      .get("agent-a") as { last_seen_at: number };
+
+    expect(after.last_seen_at).toBeGreaterThanOrEqual(before.last_seen_at);
+  });
+
+  it("does NOT push messages without mentions in group mode (3+ members)", async () => {
+    // Create a channel with 3 members (cursors)
+    sendMessage(db, "agent-b", "group-ch", "setup");
+    readMessages(db, "agent-a", "group-ch");
+    readMessages(db, "agent-c", "group-ch");  // 3rd member
+
+    // agent-b sends a message without mentions
+    sendMessage(db, "agent-b", "group-ch", "just a message, no mentions");
+
+    const notifications: { content: string; meta: Record<string, string> }[] = [];
+    const stop = startPolling(db, "agent-a", async (content, meta) => {
+      notifications.push({ content, meta });
+    }, FAST_INTERVAL);
+    await sleep(200);
+    await stop();
+
+    expect(notifications.length).toBe(0);
+  });
+
+  it("pushes to mentioned agent in group mode", async () => {
+    registerAgent(db, "agent-a");
+    sendMessage(db, "agent-b", "group-ch", "setup");
+    readMessages(db, "agent-a", "group-ch");
+    readMessages(db, "agent-c", "group-ch");  // 3rd member
+
+    sendMessage(db, "agent-b", "group-ch", "@agent-a check this");
+
+    const notifications: { content: string; meta: Record<string, string> }[] = [];
+    const stop = startPolling(db, "agent-a", async (content, meta) => {
+      notifications.push({ content, meta });
+    }, FAST_INTERVAL);
+    await sleep(200);
+    await stop();
+
+    expect(notifications.length).toBe(1);
+    expect(notifications[0]!.content).toBe("@agent-a check this");
+  });
+
+  it("does NOT push to unmentioned agent in group mode", async () => {
+    registerAgent(db, "agent-c");
+    sendMessage(db, "agent-b", "group-ch", "setup");
+    readMessages(db, "agent-a", "group-ch");
+    readMessages(db, "agent-c", "group-ch");  // 3rd member
+
+    sendMessage(db, "agent-b", "group-ch", "@agent-c only for you");
+
+    const notifications: { content: string; meta: Record<string, string> }[] = [];
+    const stop = startPolling(db, "agent-a", async (content, meta) => {
+      notifications.push({ content, meta });
+    }, FAST_INTERVAL);
+    await sleep(200);
+    await stop();
+
+    expect(notifications.length).toBe(0);
+  });
+
+  it("pushes @all messages to all subscribers in group mode", async () => {
+    sendMessage(db, "agent-b", "group-ch", "setup");
+    readMessages(db, "agent-a", "group-ch");
+    readMessages(db, "agent-c", "group-ch");  // 3rd member
+
+    sendMessage(db, "agent-b", "group-ch", "@all deploying now");
+
+    const notifications: { content: string; meta: Record<string, string> }[] = [];
+    const stop = startPolling(db, "agent-a", async (content, meta) => {
+      notifications.push({ content, meta });
+    }, FAST_INTERVAL);
+    await sleep(200);
+    await stop();
+
+    expect(notifications.length).toBe(1);
+    expect(notifications[0]!.content).toBe("@all deploying now");
+  });
+
+  it("auto-notifies in DM mode (2 members, no mention needed)", async () => {
+    sendMessage(db, "agent-b", "dm-ch", "setup");
+    readMessages(db, "agent-a", "dm-ch");
+    // Only 2 members: agent-a and agent-b
+
+    sendMessage(db, "agent-b", "dm-ch", "hey, no mention here");
+
+    const notifications: { content: string; meta: Record<string, string> }[] = [];
+    const stop = startPolling(db, "agent-a", async (content, meta) => {
+      notifications.push({ content, meta });
+    }, FAST_INTERVAL);
+    await sleep(200);
+    await stop();
+
+    expect(notifications.length).toBe(1);
+    expect(notifications[0]!.content).toBe("hey, no mention here");
+  });
+
+  it("transitions from DM to group mode when 3rd member joins", async () => {
+    sendMessage(db, "agent-b", "evolve-ch", "setup");
+    readMessages(db, "agent-a", "evolve-ch");
+    // 2 members — DM mode
+
+    sendMessage(db, "agent-b", "evolve-ch", "dm message");
+
+    const notifs1: { content: string; meta: Record<string, string> }[] = [];
+    const stop1 = startPolling(db, "agent-a", async (content, meta) => {
+      notifs1.push({ content, meta });
+    }, FAST_INTERVAL);
+    await sleep(200);
+    await stop1();
+    expect(notifs1.length).toBe(1);
+
+    // 3rd member joins
+    readMessages(db, "agent-c", "evolve-ch");
+    sendMessage(db, "agent-b", "evolve-ch", "group message no mention");
+
+    const notifs2: { content: string; meta: Record<string, string> }[] = [];
+    const stop2 = startPolling(db, "agent-a", async (content, meta) => {
+      notifs2.push({ content, meta });
+    }, FAST_INTERVAL);
+    await sleep(200);
+    await stop2();
+
+    // Group mode — no mention means no push
+    expect(notifs2.length).toBe(0);
+  });
+
+  it("pushes when ANY message in batch mentions the agent (not just latest)", async () => {
+    registerAgent(db, "agent-a");
+    sendMessage(db, "agent-b", "group-ch", "setup");
+    readMessages(db, "agent-a", "group-ch");
+    readMessages(db, "agent-c", "group-ch");  // 3rd member, group mode
+
+    // Batch: first mentions agent-a, second and third do not
+    sendMessage(db, "agent-b", "group-ch", "@agent-a review needed");
+    sendMessage(db, "agent-b", "group-ch", "some context here");
+    sendMessage(db, "agent-b", "group-ch", "more context");
+
+    const notifications: { content: string; meta: Record<string, string> }[] = [];
+    const stop = startPolling(db, "agent-a", async (content, meta) => {
+      notifications.push({ content, meta });
+    }, FAST_INTERVAL);
+    await sleep(200);
+    await stop();
+
+    // Should notify because one of the messages in the batch mentions agent-a
+    expect(notifications.length).toBe(1);
+    expect(notifications[0]!.content).toContain("3 new messages");
+  });
+
   it("does not push duplicate when cursor advances during in-flight notify", async () => {
     sendMessage(db, "agent-b", "ch-a", "setup-a");
     readMessages(db, "agent-a", "ch-a");

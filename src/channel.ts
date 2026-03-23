@@ -34,13 +34,26 @@ export function startPolling(
      FROM messages
      WHERE channel_id = ? AND id > ? AND agent_id != ?`
   );
-  const stmtLatest = db.query("SELECT id, agent_id, content FROM messages WHERE id = ?");
+  const stmtLatest = db.query("SELECT id, agent_id, content, mentions FROM messages WHERE id = ?");
+  const stmtMemberCount = db.query(
+    "SELECT COUNT(*) as count FROM cursors WHERE channel_id = ?"
+  );
+  const stmtBatchMentions = db.query(
+    `SELECT mentions FROM messages
+     WHERE channel_id = ? AND id > ? AND id <= ? AND agent_id != ?`
+  );
+  const stmtHeartbeat = db.query(
+    "UPDATE agents SET last_seen_at = ? WHERE id = ?"
+  );
 
   async function tick() {
+    // Heartbeat: keep agent's last_seen_at fresh while polling.
+    // Prevents PID staleness reclaim of actively-listening agents.
+    stmtHeartbeat.run(Date.now(), agentId);
+
     const subscribedChannels = stmtSubscribed
       .all(agentId) as { channel_id: number; channel_name: string }[];
 
-    // Prune watermarks for channels no longer subscribed
     const activeIds = new Set(subscribedChannels.map(s => s.channel_id));
     for (const k of lastPushedId.keys()) {
       if (!activeIds.has(k)) lastPushedId.delete(k);
@@ -50,7 +63,7 @@ export function startPolling(
       const cursor = stmtCursor
         .get(agentId, sub.channel_id) as { last_read_message_id: number } | null;
 
-      if (!cursor) continue; // Cursor removed between queries
+      if (!cursor) continue;
 
       if (!lastPushedId.has(sub.channel_id)) {
         lastPushedId.set(sub.channel_id, cursor.last_read_message_id);
@@ -66,7 +79,29 @@ export function startPolling(
 
       if (stats.count === 0 || stats.max_id === null) continue;
 
-      const latest = stmtLatest.get(stats.max_id) as { id: number; agent_id: string; content: string };
+      // Check channel mode: DM (2 members) vs. group (3+)
+      const memberCount = (stmtMemberCount.get(sub.channel_id) as { count: number }).count;
+
+      if (memberCount > 2) {
+        // Group mode — check if ANY message in the batch targets this agent
+        const batchMentions = stmtBatchMentions
+          .all(sub.channel_id, hwm, stats.max_id, agentId) as { mentions: string }[];
+
+        let shouldNotify = false;
+        for (const row of batchMentions) {
+          const mentions: string[] = JSON.parse(row.mentions);
+          if (mentions.includes("*") || mentions.includes(agentId)) {
+            shouldNotify = true;
+            break;
+          }
+        }
+        if (!shouldNotify) continue;
+      }
+      // DM mode (2 members) or passed group filter — proceed to notify
+
+      const latest = stmtLatest.get(stats.max_id) as {
+        id: number; agent_id: string; content: string; mentions: string;
+      };
 
       const content =
         stats.count === 1
