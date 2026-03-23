@@ -44,8 +44,9 @@ export function runMigrations(db: Database, migrations: Migration[]): MigrationR
       if (pragmaVersion > 0) {
         const existingCount = (db.query("SELECT COUNT(*) as count FROM schema_migrations").get() as { count: number }).count;
         if (existingCount === 0) {
-          // Seed all migrations up to the pragma version as already applied
-          for (const m of sorted) {
+          // Seed only migrations up to the pragma version as already applied
+          const alreadyApplied = sorted.slice(0, pragmaVersion);
+          for (const m of alreadyApplied) {
             db.run(
               "INSERT INTO schema_migrations (name, checksum, applied_at) VALUES (?, ?, ?)",
               [m.name, computeChecksum(m.up), Date.now()]
@@ -53,7 +54,8 @@ export function runMigrations(db: Database, migrations: Migration[]): MigrationR
           }
           db.run("PRAGMA user_version = 0");
           db.run("COMMIT");
-          return { applied: [], driftDetected: [] };
+          // Re-run to apply any migrations beyond the pragma version
+          return runMigrations(db, migrations);
         }
       }
 

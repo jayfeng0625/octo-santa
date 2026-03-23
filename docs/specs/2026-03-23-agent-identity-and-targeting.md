@@ -60,7 +60,7 @@ await mcp.notification({
 
 **Enhanced MCP instructions.** The `instructions` string in the Server constructor is updated to cover registration, mention semantics, and discovery upfront.
 
-**Fallback.** The existing `onAgentId` callback on any tool call with `agent_id` remains unchanged. If an agent skips registration and goes straight to `messaging_send_message`, polling starts via the fallback path. The new three-tier mention filtering applies regardless of how polling was started — there is no legacy "push everything" mode.
+**Fallback.** The existing `onAgentId` callback on any tool call with `agent_id` remains unchanged. If an agent skips registration and goes straight to `messaging_send_message`, polling starts via the fallback path. The new three-tier mention filtering applies regardless of how polling was started — there is no legacy "push everything" mode. Note: implicit paths (send/read/create_channel) validate agent name format but do **not** enforce PID-based ownership — ownership is only checked during explicit registration. This means a second process can use the same agent name via implicit paths without triggering a conflict. This is intentional: the fallback path prioritizes availability over identity exclusivity.
 
 **No config file needed.** Bootstrap doesn't depend on a project config. The nudge fires unconditionally on startup. Channel subscription happens when the agent reads or sends to a channel (current cursor-creation behavior).
 
