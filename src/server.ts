@@ -49,18 +49,24 @@ const mcpServer = new McpServer(
 let stopPolling: (() => Promise<void>) | null = null;
 let boundAgentId: string | null = null;
 
-function onAgentId(agentId: string) {
+function onAgentId(agentId: string): { commit: () => void } {
   if (boundAgentId !== null) {
     if (boundAgentId !== agentId) {
       throw new Error(`Session already bound to agent "${boundAgentId}", cannot use "${agentId}"`);
     }
-    return;
+    return { commit: () => {} };
   }
-  boundAgentId = agentId;
-  const intervalMs = Number(process.env.OCTO_SANTA_POLL_INTERVAL_MS) || 3000;
-  const notify: NotifyFn = (content, meta) =>
-    sendChannelNotification(mcpServer.server, content, meta);
-  stopPolling = startPolling(db, agentId, notify, intervalMs);
+  // Deferred binding — caller must commit() after successful operation
+  return {
+    commit: () => {
+      if (boundAgentId !== null) return; // Already bound (concurrent commit)
+      boundAgentId = agentId;
+      const intervalMs = Number(process.env.OCTO_SANTA_POLL_INTERVAL_MS) || 3000;
+      const notify: NotifyFn = (content, meta) =>
+        sendChannelNotification(mcpServer.server, content, meta);
+      stopPolling = startPolling(db, agentId, notify, intervalMs);
+    },
+  };
 }
 
 for (const mod of modules) {
