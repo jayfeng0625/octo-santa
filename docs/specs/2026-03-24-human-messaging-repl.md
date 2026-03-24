@@ -1,6 +1,6 @@
 # Human Messaging REPL
 
-A standalone entry point — peer to `src/server.ts` — that gives humans a direct
+A standalone entry point — peer to `src/mcp.ts` — that gives humans a direct
 stdin/stdout interface to octo-santa's messaging functions. No MCP, no Claude, no
 tokens. Same DB, same functions.
 
@@ -15,7 +15,7 @@ humans.
 ## Architecture
 
 ```
-src/server.ts  ──> MCP transport ──> messaging functions ──> SQLite
+src/mcp.ts  ──> MCP transport ──> messaging functions ──> SQLite
 src/repl.ts    ──> stdin/stdout  ──> messaging functions ──> SQLite
 ```
 

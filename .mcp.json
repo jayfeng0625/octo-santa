@@ -2,7 +2,7 @@
   "mcpServers": {
     "octo-santa": {
       "command": "bun",
-      "args": ["run", "/Users/jayfeng/Development/personal/octo-santa/src/server.ts"]
+      "args": ["run", "/Users/jayfeng/Development/personal/octo-santa/src/mcp.ts"]
     }
   }
 }

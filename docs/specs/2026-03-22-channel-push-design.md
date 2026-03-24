@@ -335,3 +335,14 @@ startPolling(db, "agent-a", notify, 100); // fast interval for tests
 - **Permission relay:** Channel servers can opt into relaying tool approval prompts to remote devices. Could enable mobile approval of agent actions. Requires trusted sender gating.
 - **Plugin marketplace:** Package octo-santa as a Claude Code plugin for `/plugin install`. Requires passing the approved channel allowlist review.
 - **Subscription filtering:** Push notifications for specific channels only, not all channels with cursors. Add when channel count makes all-channel notification noisy.
+
+## Human REPL Interaction
+
+The human messaging REPL (`src/repl.ts`) allows humans to send and receive messages
+through octo-santa channels without Claude in the loop. The REPL is a **human actor**,
+not an agent — it does not call `registerAgent`, does not create DB cursor rows for
+reading (uses in-memory tracking), and does not affect the DM/group notification mode.
+
+The channel push member count query filters on `agents.pid IS NOT NULL`, so cursor
+rows created by `sendMessage` for human senders are excluded. See
+`docs/specs/2026-03-24-human-messaging-repl.md` for the full REPL design.

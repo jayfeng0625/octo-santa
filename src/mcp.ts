@@ -1,4 +1,4 @@
-// src/server.ts
+// src/mcp.ts
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { startPolling, sendChannelNotification, type NotifyFn } from "./channel";
