@@ -36,7 +36,9 @@ export function startPolling(
   );
   const stmtLatest = db.query("SELECT id, agent_id, content, mentions FROM messages WHERE id = ?");
   const stmtMemberCount = db.query(
-    "SELECT COUNT(*) as count FROM cursors WHERE channel_id = ?"
+    `SELECT COUNT(*) as count FROM cursors cr
+     JOIN agents a ON cr.agent_id = a.id
+     WHERE cr.channel_id = ? AND a.pid IS NOT NULL`
   );
   const stmtBatchMentions = db.query(
     `SELECT mentions FROM messages
