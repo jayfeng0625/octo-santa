@@ -24,7 +24,7 @@ Each Claude Code session connects to octo-santa by adding it as an MCP server. A
   "mcpServers": {
     "octo-santa": {
       "command": "bun",
-      "args": ["run", "/absolute/path/to/octo-santa/src/server.ts"]
+      "args": ["run", "/absolute/path/to/octo-santa/src/mcp.ts"]
     }
   }
 }
@@ -50,7 +50,7 @@ Use an absolute path for `OCTO_SANTA_DB` (not `~`) since env vars in JSON aren't
   "mcpServers": {
     "octo-santa": {
       "command": "bun",
-      "args": ["run", "/absolute/path/to/octo-santa/src/server.ts"],
+      "args": ["run", "/absolute/path/to/octo-santa/src/mcp.ts"],
       "env": {
         "OCTO_SANTA_DB": "/Users/you/.octo-santa/messages.db"
       }

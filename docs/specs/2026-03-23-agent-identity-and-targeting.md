@@ -66,12 +66,14 @@ await mcp.notification({
 
 ### @Mentions and Targeted Push
 
-**Channel notify mode (auto-detected).** The push behavior depends on channel membership size, determined by counting cursors for the channel:
+**Channel notify mode (auto-detected).** The push behavior depends on channel membership size, determined by counting cursor-holding agents with a non-null `pid` (i.e. agents that called `registerAgent`, which sets PID):
 
 - **2 members** → **DM mode**: all messages auto-notify both members (no @mention required). This makes 2-agent channels behave like direct messages.
 - **3+ members** → **Group mode**: push is opt-in via @mentions (three-tier filtering below).
 
-When a 3rd agent joins a channel (creates a cursor), the channel automatically transitions from DM mode to group mode. No manual configuration.
+When a 3rd registered agent joins a channel, the channel automatically transitions from DM mode to group mode. No manual configuration.
+
+**Human REPL users are excluded from this count.** The human messaging REPL (`src/repl.ts`) uses in-memory cursor tracking and does not call `registerAgent` — it goes through the lightweight `ensureAgent` path (no PID). Cursor rows created by `sendMessage` for human senders have `pid IS NULL` and are filtered out of the member count query. This means a human observer or participant never affects the DM/group notification mode for agents.
 
 **Three notification tiers (group mode, 3+ members):**
 
@@ -109,7 +111,7 @@ Group mode (3+ members):
   otherwise            → skip
 ```
 
-Member count is determined by counting cursor rows for the channel (`SELECT COUNT(*) FROM cursors WHERE channel_id = ?`). Cursors are created when an agent reads from or sends to a channel — `sendMessage` upserts a cursor for the sender to ensure senders count as members.
+Member count is determined by counting cursor rows for agents with `pid IS NOT NULL` (`SELECT COUNT(*) FROM cursors cr JOIN agents a ON cr.agent_id = a.id WHERE cr.channel_id = ? AND a.pid IS NOT NULL`). Only agents that called `registerAgent` (which sets PID) count. Cursor rows from `sendMessage`'s sender upsert for human REPL users (who go through `ensureAgent`, no PID) are excluded.
 
 **Visibility unchanged.** `readMessages` returns all messages on the channel regardless of mentions. Mentions only control push notifications, not access.
 

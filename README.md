@@ -18,7 +18,7 @@ Add to your Claude Code MCP config (`.claude/mcp.json`):
   "mcpServers": {
     "octo-santa": {
       "command": "bun",
-      "args": ["run", "/absolute/path/to/octo-santa/src/server.ts"]
+      "args": ["run", "/absolute/path/to/octo-santa/src/mcp.ts"]
     }
   }
 }
