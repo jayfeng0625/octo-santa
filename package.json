@@ -1,13 +1,14 @@
 {
   "name": "octo-santa",
+  "version": "0.3.0",
   "module": "src/mcp.ts",
   "type": "module",
   "scripts": {
     "start": "bun run src/mcp.ts",
     "repl": "bun run src/repl.ts",
-    "build": "bun run build:mcp && bun run build:repl",
-    "build:mcp": "bun build src/mcp.ts --outdir dist --target bun",
-    "build:repl": "bun build src/repl.ts --compile --outfile dist/ocr"
+    "build": "bun run scripts/build.ts",
+    "build:mcp": "bun run scripts/build.ts mcp",
+    "build:repl": "bun run scripts/build.ts repl"
   },
   "devDependencies": {
     "@types/bun": "latest"

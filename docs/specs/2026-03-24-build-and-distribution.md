@@ -23,26 +23,39 @@ Different build strategies per entry point:
   Distributed to humans who may not have the repo or Bun installed.
 
 ```bash
-bun run build           # both
-bun run build:mcp       # agent-facing: dist/mcp.js
-bun run build:repl      # human-facing: dist/ocr
+bun run build           # both → dist/<version>/, symlinks dist/latest
+bun run build:mcp       # MCP only
+bun run build:repl      # REPL only
+```
+
+Output structure:
+
+```
+dist/
+  0.3.0/
+    mcp.js          # MCP bundle (~1MB, needs Bun)
+    ocr             # REPL binary (~59MB, standalone)
+  latest -> 0.3.0   # symlink, always points to current version
 ```
 
 | Artifact | Source | Strategy | Size | Requires Bun |
 |----------|--------|----------|------|-------------|
-| `dist/mcp.js` | `src/mcp.ts` | `bun build --target bun` | ~few hundred KB | Yes |
-| `dist/ocr` | `src/repl.ts` | `bun build --compile` | ~59MB | No |
+| `dist/<ver>/mcp.js` | `src/mcp.ts` | `bun build --target bun` | ~1MB | Yes |
+| `dist/<ver>/ocr` | `src/repl.ts` | `bun build --compile` | ~59MB | No |
+
+Version is read from `package.json`. The `dist/latest` symlink is updated on
+every build so downstream references don't need updating on version bumps.
 
 ## .mcp.json
 
-After building, `.mcp.json` can reference the bundled artifact:
+Point to `dist/latest/mcp.js` — the symlink tracks the current version:
 
 ```json
 {
   "mcpServers": {
     "octo-santa": {
       "command": "bun",
-      "args": ["run", "/path/to/dist/mcp.js"]
+      "args": ["run", "/path/to/dist/latest/mcp.js"]
     }
   }
 }
