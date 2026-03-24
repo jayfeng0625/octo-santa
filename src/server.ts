@@ -1,25 +1,10 @@
 // src/server.ts
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { homedir } from "os";
-import { join } from "path";
-import { createDb } from "./db";
-import { runMigrations } from "./migrations";
 import { startPolling, sendChannelNotification, type NotifyFn } from "./channel";
-import messaging from "./modules/messaging";
-import type { OctoModule } from "./types";
+import { openDb, modules } from "./bootstrap";
 
-const modules: OctoModule[] = [messaging];
-
-function expandHome(p: string): string {
-  return p.startsWith("~/") ? join(homedir(), p.slice(2)) : p;
-}
-
-const dbPath = expandHome(process.env.OCTO_SANTA_DB ?? join(homedir(), ".octo-santa", "messages.db"));
-const db = createDb(dbPath);
-
-const allMigrations = modules.flatMap((m) => m.migrations);
-runMigrations(db, allMigrations);
+const db = openDb();
 
 const mcpServer = new McpServer(
   { name: "octo-santa", version: "0.3.0" },
