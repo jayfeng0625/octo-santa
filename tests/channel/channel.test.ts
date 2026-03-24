@@ -294,7 +294,10 @@ describe("startPolling", () => {
   });
 
   it("does NOT push messages without mentions in group mode (3+ members)", async () => {
-    // Create a channel with 3 members (cursors)
+    // Create a channel with 3 registered (PID-bearing) members
+    registerAgent(db, "agent-a");
+    registerAgent(db, "agent-b");
+    registerAgent(db, "agent-c");
     sendMessage(db, "agent-b", "group-ch", "setup");
     readMessages(db, "agent-a", "group-ch");
     readMessages(db, "agent-c", "group-ch");  // 3rd member
@@ -314,6 +317,8 @@ describe("startPolling", () => {
 
   it("pushes to mentioned agent in group mode", async () => {
     registerAgent(db, "agent-a");
+    registerAgent(db, "agent-b");
+    registerAgent(db, "agent-c");
     sendMessage(db, "agent-b", "group-ch", "setup");
     readMessages(db, "agent-a", "group-ch");
     readMessages(db, "agent-c", "group-ch");  // 3rd member
@@ -332,6 +337,8 @@ describe("startPolling", () => {
   });
 
   it("does NOT push to unmentioned agent in group mode", async () => {
+    registerAgent(db, "agent-a");
+    registerAgent(db, "agent-b");
     registerAgent(db, "agent-c");
     sendMessage(db, "agent-b", "group-ch", "setup");
     readMessages(db, "agent-a", "group-ch");
@@ -350,6 +357,9 @@ describe("startPolling", () => {
   });
 
   it("pushes @all messages to all subscribers in group mode", async () => {
+    registerAgent(db, "agent-a");
+    registerAgent(db, "agent-b");
+    registerAgent(db, "agent-c");
     sendMessage(db, "agent-b", "group-ch", "setup");
     readMessages(db, "agent-a", "group-ch");
     readMessages(db, "agent-c", "group-ch");  // 3rd member
@@ -386,6 +396,8 @@ describe("startPolling", () => {
   });
 
   it("transitions from DM to group mode when 3rd member joins", async () => {
+    registerAgent(db, "agent-a");
+    registerAgent(db, "agent-b");
     sendMessage(db, "agent-b", "evolve-ch", "setup");
     readMessages(db, "agent-a", "evolve-ch");
     // 2 members — DM mode
@@ -400,7 +412,8 @@ describe("startPolling", () => {
     await stop1();
     expect(notifs1.length).toBe(1);
 
-    // 3rd member joins
+    // 3rd registered member joins
+    registerAgent(db, "agent-c");
     readMessages(db, "agent-c", "evolve-ch");
     sendMessage(db, "agent-b", "evolve-ch", "group message no mention");
 
@@ -417,6 +430,8 @@ describe("startPolling", () => {
 
   it("pushes when ANY message in batch mentions the agent (not just latest)", async () => {
     registerAgent(db, "agent-a");
+    registerAgent(db, "agent-b");
+    registerAgent(db, "agent-c");
     sendMessage(db, "agent-b", "group-ch", "setup");
     readMessages(db, "agent-a", "group-ch");
     readMessages(db, "agent-c", "group-ch");  // 3rd member, group mode
