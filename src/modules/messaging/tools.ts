@@ -233,6 +233,35 @@ export function readMessages(
   return withRetrySync(() => doRead());
 }
 
+/**
+ * Subscribe to a channel's poll without consuming unread messages.
+ * Creates cursor at the current max message ID if none exists.
+ * Leaves existing cursor untouched — preserves unread backlog.
+ */
+export function subscribeToChannel(
+  db: Database,
+  agentId: string,
+  channelName: string
+): void {
+  const channel = createChannel(db, channelName, agentId);
+
+  withRetrySync(() => {
+    // Get the current max message ID for this channel
+    const maxRow = db
+      .query("SELECT MAX(id) as max_id FROM messages WHERE channel_id = ?")
+      .get(channel.id) as { max_id: number | null };
+    const maxId = maxRow?.max_id ?? 0;
+
+    // Only create cursor if none exists — ON CONFLICT DO NOTHING preserves existing
+    db.run(
+      `INSERT INTO cursors (agent_id, channel_id, last_read_message_id)
+       VALUES (?, ?, ?)
+       ON CONFLICT(agent_id, channel_id) DO NOTHING`,
+      [agentId, channel.id, maxId]
+    );
+  });
+}
+
 export function sendMessage(
   db: Database,
   agentId: string,
