@@ -10,6 +10,7 @@ import {
   sendMessage,
   readMessages,
   listAgents,
+  listChannelMembers,
 } from "./tools";
 
 function jsonResult(data: unknown) {
@@ -88,9 +89,21 @@ const messaging: OctoModule = {
     });
 
     server.registerTool("messaging_list_agents", {
-      description: "List all registered agents",
-    }, async () => {
-      return jsonResult(listAgents(getDb()));
+      description: "List agents. Use active_only to filter to currently online agents.",
+      inputSchema: {
+        active_only: z.boolean().optional().describe("If true, only return agents that are currently active (PID alive and fresh)"),
+      },
+    }, async ({ active_only }) => {
+      return jsonResult(listAgents(getDb(), active_only));
+    });
+
+    server.registerTool("messaging_list_members", {
+      description: "List channel members with active/inactive status. Uses exact process liveness — may temporarily differ from push notification behavior after crashes.",
+      inputSchema: {
+        channel: z.string().trim().min(1).describe("Channel name"),
+      },
+    }, async ({ channel }) => {
+      return jsonResult(listChannelMembers(getDb(), channel));
     });
   },
 };

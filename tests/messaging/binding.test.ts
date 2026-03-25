@@ -141,4 +141,44 @@ describe("agent binding enforcement", () => {
     expect(result.content[0].text).toContain("hello");
     db.close();
   });
+
+  it("messaging_list_members returns members with active flag and correct data", async () => {
+    const { db, handlers } = setup();
+    await handlers.messaging_register!({ agent_id: "agent-a" });
+    await handlers.messaging_send_message!({ agent_id: "agent-a", channel: "ch", content: "hi" });
+
+    const result = await handlers.messaging_list_members!({ channel: "ch" });
+    const members = JSON.parse(result.content[0].text);
+    expect(members).toHaveLength(1);
+    expect(members[0].agent_id).toBe("agent-a");
+    expect(members[0].active).toBe(true);
+    db.close();
+  });
+
+  it("messaging_list_agents active_only filters correctly", async () => {
+    const { db, handlers } = setup();
+    await handlers.messaging_register!({ agent_id: "agent-a" });
+    // Seed a no-PID agent directly in the DB (simulates ensureAgent path)
+    db.run("INSERT INTO agents (id, created_at, last_seen_at) VALUES (?, ?, ?)", ["no-pid-agent", Date.now(), Date.now()]);
+
+    const allResult = await handlers.messaging_list_agents!({ active_only: false });
+    const allAgents = JSON.parse(allResult.content[0].text);
+    expect(allAgents.length).toBeGreaterThanOrEqual(2); // agent-a + no-pid-agent
+
+    const activeResult = await handlers.messaging_list_agents!({ active_only: true });
+    const activeAgents = JSON.parse(activeResult.content[0].text);
+    expect(activeAgents).toHaveLength(1);
+    expect(activeAgents[0].id).toBe("agent-a");
+    db.close();
+  });
+
+  it("messaging_list_agents with no active_only returns all agents (backward compat)", async () => {
+    const { db, handlers } = setup();
+    await handlers.messaging_register!({ agent_id: "agent-a" });
+
+    const result = await handlers.messaging_list_agents!({});
+    const agents = JSON.parse(result.content[0].text);
+    expect(agents.length).toBeGreaterThanOrEqual(1);
+    db.close();
+  });
 });
