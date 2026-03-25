@@ -15,6 +15,13 @@ import {
   isAgentActive,
 } from "../../src/modules/messaging/tools";
 import type { Agent } from "../../src/modules/messaging/types";
+import { startPolling } from "../../src/channel";
+
+function sleep(ms: number) {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+const FAST_INTERVAL = 50;
 
 const TEST_DB = `/tmp/octo-santa-test-lifecycle-${process.pid}.sqlite`;
 
@@ -316,6 +323,98 @@ describe("listAgents with active_only", () => {
     const active = listAgents(db, true);
     expect(active.length).toBe(1);
     expect(active[0]!.id).toBe("agent-a");
+    db.close();
+  });
+});
+
+describe("reconnect behavior", () => {
+  it("unread backlog is preserved across disconnect/reconnect", () => {
+    const db = setupDb();
+    registerAgent(db, "agent-a");
+    registerAgent(db, "agent-b");
+    sendMessage(db, "agent-a", "work", "setup");
+    readMessages(db, "agent-b", "work"); // agent-b has cursor
+
+    // agent-b disconnects
+    unregisterAgent(db, "agent-b", process.pid);
+
+    // Messages sent while offline
+    sendMessage(db, "agent-a", "work", "while you were away 1");
+    sendMessage(db, "agent-a", "work", "while you were away 2");
+
+    // agent-b reconnects
+    registerAgent(db, "agent-b");
+
+    // Should see the 2 messages sent while offline
+    const msgs = readMessages(db, "agent-b", "work");
+    expect(msgs.length).toBe(2);
+    expect(msgs[0]!.content).toBe("while you were away 1");
+    expect(msgs[1]!.content).toBe("while you were away 2");
+    db.close();
+  });
+});
+
+describe("late onclose race", () => {
+  it("late onclose does not clobber new session's registration", () => {
+    const db = setupDb();
+    // Session A registers
+    registerAgent(db, "planner");
+
+    // Session B reclaims (simulate different PID)
+    db.run("UPDATE agents SET pid = 12345, registered_at = ?, last_seen_at = ? WHERE id = ?", [Date.now(), Date.now(), "planner"]);
+
+    // Session A's late onclose fires
+    unregisterAgent(db, "planner", process.pid);
+
+    // Session B should be unaffected
+    const agent = getAgent(db, "planner")!;
+    expect(agent.pid).toBe(12345);
+    expect(agent.registered_at).not.toBeNull();
+    db.close();
+  });
+});
+
+describe("reconnect polling", () => {
+  it("notifications resume on previously subscribed channels after re-register", async () => {
+    const db = setupDb();
+    registerAgent(db, "agent-a");
+    registerAgent(db, "agent-b");
+    sendMessage(db, "agent-a", "dm-ch", "setup");
+    readMessages(db, "agent-b", "dm-ch"); // agent-b subscribes
+
+    // agent-b disconnects
+    unregisterAgent(db, "agent-b", process.pid);
+
+    // agent-b reconnects
+    registerAgent(db, "agent-b");
+
+    // agent-a sends while agent-b is back
+    sendMessage(db, "agent-a", "dm-ch", "welcome back");
+
+    // agent-b starts polling — should get notification on existing subscription
+    const notifications: { content: string; meta: Record<string, string> }[] = [];
+    const stop = startPolling(db, "agent-b", async (content, meta) => {
+      notifications.push({ content, meta });
+    }, FAST_INTERVAL);
+    await sleep(200);
+    await stop();
+
+    expect(notifications.length).toBeGreaterThan(0);
+    expect(notifications.some((n) => n.content.includes("welcome back"))).toBe(true);
+    db.close();
+  });
+});
+
+describe("crash recovery", () => {
+  it("dead PID allows immediate name reclaim (no staleness wait)", () => {
+    const db = setupDb();
+    registerAgent(db, "planner");
+    // Simulate crash: set PID to a dead process, last_seen_at is fresh
+    db.run("UPDATE agents SET pid = 999999 WHERE id = ?", ["planner"]);
+
+    // Should reclaim immediately — isProcessAlive(999999) returns false
+    const reclaimed = registerAgent(db, "planner");
+    expect(reclaimed.pid).toBe(process.pid);
     db.close();
   });
 });
