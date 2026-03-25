@@ -119,7 +119,7 @@ Seven tools exposed to agents:
 ### Presence
 
 **`list_agents()`**
-- List all registered agents with `last_seen_at` timestamps.
+- List all known agents with `last_seen_at` timestamps.
 - Gives agents awareness of who else is around.
 
 **`list_members(channel_name)`**

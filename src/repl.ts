@@ -379,7 +379,7 @@ export function handleCommand(
         [
           "Commands:",
           "  /channels         List all channels",
-          "  /agents           List all registered agents",
+          "  /agents           List all known agents",
           "  /members          List channel members (agents appear after sending/reading)",
           "  /join <channel>   Switch to a channel",
           "  /create <channel> Create a channel without switching",

@@ -46,13 +46,25 @@ export function startPolling(
      WHERE channel_id = ? AND id > ? AND id <= ? AND agent_id != ?`
   );
   const stmtHeartbeat = db.query(
-    "UPDATE agents SET last_seen_at = ? WHERE id = ?"
+    "UPDATE agents SET last_seen_at = ? WHERE id = ? AND pid = ?"
   );
 
   async function tick() {
     // Heartbeat: keep agent's last_seen_at fresh while polling.
     // Prevents PID staleness reclaim of actively-listening agents.
-    stmtHeartbeat.run(Date.now(), agentId);
+    // If the heartbeat matches 0 rows and the agent has a different PID,
+    // another process has reclaimed our agent name — stop polling to avoid
+    // delivering notifications to a stale session. A null-PID agent (REPL
+    // or test-only path) is expected to have 0-change heartbeats and should
+    // continue polling.
+    const heartbeat = stmtHeartbeat.run(Date.now(), agentId, process.pid);
+    if (heartbeat.changes === 0) {
+      const row = db.query("SELECT pid FROM agents WHERE id = ?").get(agentId) as { pid: number | null } | null;
+      if (row && row.pid !== null && row.pid !== process.pid) {
+        active = false;
+        return;
+      }
+    }
 
     const subscribedChannels = stmtSubscribed
       .all(agentId) as { channel_id: number; channel_name: string }[];

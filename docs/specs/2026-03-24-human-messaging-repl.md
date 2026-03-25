@@ -30,7 +30,7 @@ not aspirational — it is a functional requirement.
 
 | MCP tool                    | REPL surface                                      |
 |-----------------------------|----------------------------------------------------|
-| `messaging_register`        | Automatic on startup via `--as <name>`             |
+| `messaging_register`        | N/A — REPL uses `ensureAgent` (lightweight, no PID). See Identity Model. |
 | `messaging_create_channel`  | Automatic on startup via `-c <channel>`, or `/create <name>` |
 | `messaging_list_channels`   | `/channels`                                        |
 | `messaging_send_message`    | Every line of stdin (REPL), `/send -f` (in-session file send), or `send` subcommand (fire-and-forget CLI) |
@@ -118,7 +118,7 @@ redrawn. Use `node:readline` for prompt handling — no external TUI libraries.
 | Command             | Action                                               |
 |---------------------|------------------------------------------------------|
 | `/channels`         | List all channels                                    |
-| `/agents`           | List all registered agents                           |
+| `/agents`           | List all known agents                                |
 | `/join <channel>`   | Switch active channel — changes where typed messages go. Creates an in-memory cursor for the REPL poll loop (not a DB cursor, so the user does not appear in `/members` until they send a message). Does not leave previous channels — they continue to appear with `#channel` prefix. |
 | `/create <channel>` | Create a new channel without switching                |
 | `/history N`        | Show last N messages on current channel. Passes `before_id = MAX_SAFE_INTEGER` to get the most recent N messages. Does not advance cursor. **Note:** uses `readMessages` which filters `agent_id != ?` — the caller's own messages are excluded. This is intentional parity with the shared messaging layer; full-transcript history is a future shared-layer enhancement. |
@@ -171,6 +171,6 @@ agent row without PID or session ownership. This means:
 ## What This Does Not Include
 
 - Multi-channel monitoring (future: `/monitor` across channels)
-- Agent name autocomplete (future: tab-complete from registered agents)
+- Agent name autocomplete (future: tab-complete from known agents)
 - Colors or rich formatting (keep it plain for now)
 - Any AI involvement

@@ -115,7 +115,7 @@ Member count is determined by counting cursor rows for agents with `pid IS NOT N
 
 **Visibility unchanged.** `readMessages` returns all messages on the channel regardless of mentions. Mentions only control push notifications, not access.
 
-**Discovery.** `messaging_list_agents` already returns all registered agents. Agents use it to discover who they can @mention. For channel-level visibility, `messaging_list_members` returns the members of a specific channel with an `active` flag derived from liveness. For online presence across all channels, `messaging_list_agents({ active_only: true })` filters to agents seen within the liveness window.
+**Discovery.** `messaging_list_agents` returns all known agents. Agents use it to discover who they can @mention. For channel-level visibility, `messaging_list_members` returns the members of a specific channel with an `active` flag derived from liveness. For online presence across all channels, `messaging_list_agents({ active_only: true })` filters to agents seen within the liveness window.
 
 > **Note:** The agent lifecycle spec (`2026-03-24-agent-lifecycle-and-membership.md`) supersedes the PID staleness window and DM/group member counting logic described here. See that spec for the authoritative liveness tiers and `last_seen_at`-based freshness model.
 
@@ -146,7 +146,7 @@ MENTIONS:
 Use @mentions to get attention. Messages without mentions are for
 context/logging — recipients see them when they check the channel.
 
-DISCOVERY: Use messaging_list_agents to see registered agents.
+DISCOVERY: Use messaging_list_agents to see known agents.
 Use messaging_list_members to see who is in a specific channel.
 ```
 
