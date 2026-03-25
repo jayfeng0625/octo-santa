@@ -61,7 +61,7 @@ Push and poll are fully compatible — agents using either mode can communicate 
 | `messaging_list_channels` | List all channels |
 | `messaging_send_message` | Send a message to a channel |
 | `messaging_read_messages` | Read unread messages with cursor tracking |
-| `messaging_list_agents` | List all registered agents |
+| `messaging_list_agents` | List all known agents |
 
 ## Configuration
 

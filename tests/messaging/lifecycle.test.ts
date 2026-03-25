@@ -405,6 +405,39 @@ describe("reconnect polling", () => {
   });
 });
 
+describe("ownership loss stops polling", () => {
+  it("poller stops delivering notifications after another process reclaims the agent name", async () => {
+    const db = setupDb();
+    registerAgent(db, "agent-a");
+    registerAgent(db, "agent-b");
+    sendMessage(db, "agent-b", "ch", "setup");
+    readMessages(db, "agent-a", "ch");
+
+    const notifications: { content: string }[] = [];
+    const stop = startPolling(db, "agent-a", async (content) => {
+      notifications.push({ content });
+    }, FAST_INTERVAL);
+
+    // Let poller run a tick
+    await sleep(100);
+
+    // Simulate another process reclaiming agent-a's name
+    const now = Date.now();
+    db.run("UPDATE agents SET pid = 12345, registered_at = ?, last_seen_at = ? WHERE id = ?", [now, now, "agent-a"]);
+
+    // Send a message after reclaim
+    sendMessage(db, "agent-b", "ch", "post-reclaim message");
+
+    // Wait for poller to detect ownership loss
+    await sleep(200);
+    await stop();
+
+    // The post-reclaim message should NOT have been delivered
+    expect(notifications.every((n) => !n.content.includes("post-reclaim"))).toBe(true);
+    db.close();
+  });
+});
+
 describe("crash recovery", () => {
   it("dead PID allows immediate name reclaim (no staleness wait)", () => {
     const db = setupDb();
@@ -415,6 +448,70 @@ describe("crash recovery", () => {
     // Should reclaim immediately — isProcessAlive(999999) returns false
     const reclaimed = registerAgent(db, "planner");
     expect(reclaimed.pid).toBe(process.pid);
+    db.close();
+  });
+});
+
+describe("ensureAgent ownership scoping", () => {
+  it("implicit sendMessage does not refresh last_seen_at for foreign registered agent", () => {
+    const db = setupDb();
+    registerAgent(db, "planner");
+
+    // Simulate crash: foreign PID, stale last_seen_at
+    const staleTime = Date.now() - 20 * 60 * 1000;
+    db.run("UPDATE agents SET pid = 1, last_seen_at = ? WHERE id = ?", [staleTime, "planner"]);
+
+    // Another process sends as "planner" (REPL impersonation or name collision)
+    sendMessage(db, "planner", "ch", "hello from impersonator");
+
+    // last_seen_at should NOT have been refreshed
+    const agent = getAgent(db, "planner")!;
+    expect(agent.last_seen_at).toBe(staleTime);
+    expect(isAgentActive(agent)).toBe(false);
+    db.close();
+  });
+
+  it("stale-PID reclaim still works after implicit traffic on the name", () => {
+    const db = setupDb();
+    registerAgent(db, "planner");
+
+    // Simulate crash
+    const staleTime = Date.now() - 20 * 60 * 1000;
+    db.run("UPDATE agents SET pid = 1, last_seen_at = ? WHERE id = ?", [staleTime, "planner"]);
+
+    // Traffic on the name from a different process
+    sendMessage(db, "planner", "ch", "this should not block reclaim");
+
+    // Reclaim should succeed
+    const reclaimed = registerAgent(db, "planner");
+    expect(reclaimed.pid).toBe(process.pid);
+    db.close();
+  });
+
+  it("ensureAgent still refreshes last_seen_at for own registered agent", () => {
+    const db = setupDb();
+    registerAgent(db, "mine");
+    const before = getAgent(db, "mine")!.last_seen_at;
+
+    sendMessage(db, "mine", "ch", "my own message");
+
+    const after = getAgent(db, "mine")!;
+    expect(after.last_seen_at).toBeGreaterThanOrEqual(before);
+    db.close();
+  });
+
+  it("ensureAgent still refreshes last_seen_at for unregistered agent (no PID)", () => {
+    const db = setupDb();
+    // First call creates lightweight row
+    sendMessage(db, "human", "ch", "first");
+    const first = getAgent(db, "human")!;
+    expect(first.pid).toBeNull();
+    const firstTime = first.last_seen_at;
+
+    // Second call should refresh
+    sendMessage(db, "human", "ch", "second");
+    const after = getAgent(db, "human")!;
+    expect(after.last_seen_at).toBeGreaterThanOrEqual(firstTime);
     db.close();
   });
 });

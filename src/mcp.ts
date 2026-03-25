@@ -28,7 +28,7 @@ const mcpServer = new McpServer(
       '- No mention → message is silent (recipients must read actively)\n\n' +
       'Use @mentions to get attention. Messages without mentions are for ' +
       'context/logging — recipients see them when they check the channel.\n\n' +
-      'DISCOVERY: Use messaging_list_agents to see registered agents. ' +
+      'DISCOVERY: Use messaging_list_agents to see known agents. ' +
       'Use messaging_list_agents with active_only=true to see who is currently online. ' +
       'Use messaging_list_members to see who is in a specific channel.',
   }

@@ -165,8 +165,9 @@ function ensureAgent(db: Database, agentId: string): void {
     const now = Date.now();
     db.run(
       `INSERT INTO agents (id, created_at, last_seen_at) VALUES (?, ?, ?)
-       ON CONFLICT(id) DO UPDATE SET last_seen_at = excluded.last_seen_at`,
-      [agentId, now, now]
+       ON CONFLICT(id) DO UPDATE SET last_seen_at = excluded.last_seen_at
+       WHERE pid IS NULL OR pid = ?`,
+      [agentId, now, now, process.pid]
     );
   });
 }

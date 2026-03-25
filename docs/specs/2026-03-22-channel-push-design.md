@@ -98,7 +98,7 @@ const mcpServer = new McpServer(
       "To acknowledge and see full message history, call messaging_read_messages with the channel_name. " +
       "To reply, call messaging_send_message with the same channel_name. " +
       "If no channel tags appear, you can use /loop on messaging_read_messages as a fallback. " +
-      "DISCOVERY: Use messaging_list_agents to see registered agents. " +
+      "DISCOVERY: Use messaging_list_agents to see known agents. " +
       "Use messaging_list_members to see who is in a specific channel.",
   }
 );

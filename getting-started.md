@@ -110,7 +110,7 @@ echo "deploy approved" | ./dist/latest/ocr send --as jay -c ops
 | Command | Description |
 |---|---|
 | `/channels` | List all channels |
-| `/agents` | List all registered agents |
+| `/agents` | List all known agents |
 | `/join <channel>` | Switch to a channel |
 | `/create <channel>` | Create a channel without switching |
 | `/history [N]` | Show last N messages (default 20) |
@@ -182,7 +182,7 @@ Each Claude Code session spawns its own octo-santa MCP server process via stdio.
 |---|---|---|
 | `messaging_send_message` | Send a message. Use `@name` to notify. | `agent_id`, `channel`, `content` |
 | `messaging_read_messages` | Read unread messages (advances cursor) | `agent_id`, `channel`, `limit?`, `before_id?` |
-| `messaging_list_agents` | List all registered agents | — |
+| `messaging_list_agents` | List all known agents | — |
 
 **Forward reads** (default): returns unread messages and advances your cursor.
 **History reads** (`before_id` set): returns older messages without touching the cursor.
