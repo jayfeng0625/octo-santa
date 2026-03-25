@@ -5,7 +5,7 @@ import type { OctoModule } from "../../types";
 import {
   messagingMigrations,
   registerAgent,
-  createChannel,
+  subscribeToChannel,
   listChannels,
   sendMessage,
   readMessages,
@@ -42,15 +42,16 @@ const messaging: OctoModule = {
     });
 
     server.registerTool("messaging_create_channel", {
-      description: "Create a named messaging channel",
+      description: "Create a named messaging channel (auto-subscribes you to receive notifications)",
       inputSchema: {
         agent_id: z.string().trim().min(1).describe("Your agent/project name"),
         name: z.string().trim().min(1).describe("Channel name"),
       },
     }, async ({ agent_id, name }) => {
-      return withAgent(onAgentId, agent_id, () =>
-        jsonResult(createChannel(getDb(), name, agent_id))
-      );
+      return withAgent(onAgentId, agent_id, () => {
+        subscribeToChannel(getDb(), agent_id, name);
+        return jsonResult(getDb().query("SELECT * FROM channels WHERE name = ?").get(name));
+      });
     });
 
     server.registerTool("messaging_list_channels", {

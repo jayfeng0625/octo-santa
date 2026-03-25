@@ -7,7 +7,7 @@ import { openDb, modules } from "./bootstrap";
 const db = openDb();
 
 const mcpServer = new McpServer(
-  { name: "octo-santa", version: "0.3.0" },
+  { name: "octo-santa", version: "0.3.1" },
   {
     capabilities: {
       experimental: { "claude/channel": {} },

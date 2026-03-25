@@ -6,6 +6,7 @@ import { runMigrations } from "../../src/migrations";
 import {
   messagingMigrations,
   registerAgent,
+  subscribeToChannel,
   sendMessage,
   readMessages,
 } from "../../src/modules/messaging/tools";
@@ -478,5 +479,26 @@ describe("startPolling", () => {
     // ch-b was already read during ch-a's notify, so it should NOT be pushed
     const chBNotifs = notifications.filter((n) => n.meta.channel_name === "ch-b");
     expect(chBNotifs.length).toBe(0);
+  });
+
+  it("auto-subscribes channel creator — creator receives notifications", async () => {
+    registerAgent(db, "agent-a");
+    registerAgent(db, "agent-b");
+
+    // agent-a creates the channel via subscribeToChannel (same path as messaging_create_channel tool)
+    subscribeToChannel(db, "agent-a", "my-channel");
+
+    // agent-b sends a message mentioning agent-a
+    sendMessage(db, "agent-b", "my-channel", "@agent-a hey!");
+
+    const notifications: { content: string; meta: Record<string, string> }[] = [];
+    const stop = startPolling(db, "agent-a", async (content, meta) => {
+      notifications.push({ content, meta });
+    }, FAST_INTERVAL);
+    await sleep(200);
+    await stop();
+
+    expect(notifications.length).toBe(1);
+    expect(notifications[0]!.content).toBe("@agent-a hey!");
   });
 });
