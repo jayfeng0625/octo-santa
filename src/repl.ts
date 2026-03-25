@@ -10,6 +10,7 @@ import {
   sendMessage,
   readMessages,
   listAgents,
+  listChannelMembers,
 } from "./modules/messaging/tools";
 import type { Message } from "./modules/messaging/types";
 import { openDb } from "./bootstrap";
@@ -361,12 +362,25 @@ export function handleCommand(
       }
       return true;
     }
+    case "members": {
+      const members = listChannelMembers(db, state.activeChannel);
+      if (members.length === 0) {
+        print("No members in this channel");
+      } else {
+        const lines = members.map(
+          (m) => `  ${sanitize(m.agent_id)} ${m.active ? "(active)" : "(inactive)"}`
+        );
+        print(lines.join("\n"));
+      }
+      return true;
+    }
     case "help": {
       print(
         [
           "Commands:",
           "  /channels         List all channels",
           "  /agents           List all registered agents",
+          "  /members          List channel members (agents appear after sending/reading)",
           "  /join <channel>   Switch to a channel",
           "  /create <channel> Create a channel without switching",
           "  /history [N]      Show last N messages (default 20)",

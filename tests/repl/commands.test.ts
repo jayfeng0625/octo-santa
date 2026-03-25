@@ -200,6 +200,23 @@ describe("handleCommand", () => {
     db.close();
   });
 
+  it("/members lists channel members with active/inactive status", () => {
+    const db = setupDb();
+    registerAgent(db, "agent-a");
+    sendMessage(db, "agent-a", "planning", "hello");
+    // Create an inactive member (no PID)
+    sendMessage(db, "human", "planning", "hi from repl");
+
+    const state: ReplState = { activeChannel: "planning", cursors: new Map([["planning", 0]]) };
+    const output: string[] = [];
+    handleCommand({ name: "members", args: "" }, db, "agent-a", state, (t) => output.push(t));
+
+    expect(output.length).toBeGreaterThan(0);
+    expect(output.some((line) => line.includes("agent-a") && line.includes("(active)"))).toBe(true);
+    expect(output.some((line) => line.includes("human") && line.includes("(inactive)"))).toBe(true);
+    db.close();
+  });
+
   it("/quit returns false to signal exit", () => {
     const db = setupDb();
     const state: ReplState = { activeChannel: "planning", cursors: new Map([["planning", 0]]) };
