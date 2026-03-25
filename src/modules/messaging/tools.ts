@@ -1,7 +1,7 @@
 import type { Database } from "bun:sqlite";
 import type { Migration } from "../../migrations";
 import { withRetrySync } from "../../db";
-import type { Agent, Channel, Message } from "./types";
+import type { Agent, Channel, ChannelMember, Message } from "./types";
 
 const AGENT_NAME_RE = /^[\w-]+$/;
 const RESERVED_AGENT_NAMES = new Set(["all", "here"]);
@@ -171,8 +171,29 @@ function ensureAgent(db: Database, agentId: string): void {
   });
 }
 
-export function listAgents(db: Database): Agent[] {
-  return db.query("SELECT * FROM agents ORDER BY id").all() as Agent[];
+export function listAgents(db: Database, activeOnly?: boolean): Agent[] {
+  const agents = db.query("SELECT * FROM agents ORDER BY id").all() as Agent[];
+  if (!activeOnly) return agents;
+  return agents.filter(isAgentActive);
+}
+
+export function listChannelMembers(db: Database, channelName: string): ChannelMember[] {
+  const channel = db.query("SELECT id FROM channels WHERE name = ?").get(channelName) as { id: number } | null;
+  if (!channel) return [];
+
+  const rows = db
+    .query(
+      `SELECT a.* FROM cursors cr
+       JOIN agents a ON cr.agent_id = a.id
+       WHERE cr.channel_id = ?
+       ORDER BY a.id`
+    )
+    .all(channel.id) as Agent[];
+
+  return rows.map((agent) => ({
+    agent_id: agent.id,
+    active: isAgentActive(agent),
+  }));
 }
 
 export function createChannel(db: Database, name: string, agentId: string): Channel {
