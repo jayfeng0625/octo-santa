@@ -126,7 +126,7 @@ describe("registerAgent", () => {
     const staleTime = Date.now() - 2 * 60 * 60 * 1000; // 2 hours ago
     db.run("UPDATE agents SET pid = 1, last_seen_at = ? WHERE id = ?", [staleTime, "code-reviewer"]);
 
-    // Should reclaim because last_seen_at is older than PID_STALE_MS (1 hour)
+    // Should reclaim because last_seen_at is older than PID_STALE_MS (15 minutes)
     const reclaimed = registerAgent(db, "code-reviewer");
     expect(reclaimed.pid).toBe(process.pid);
     db.close();
