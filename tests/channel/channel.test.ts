@@ -9,6 +9,8 @@ import {
   subscribeToChannel,
   sendMessage,
   readMessages,
+  unregisterAgent,
+  PID_STALE_MS,
 } from "../../src/modules/messaging/tools";
 import { startPolling, type NotifyFn } from "../../src/channel";
 import type { Database } from "bun:sqlite";
@@ -500,5 +502,58 @@ describe("startPolling", () => {
 
     expect(notifications.length).toBe(1);
     expect(notifications[0]!.content).toBe("@agent-a hey!");
+  });
+
+  it("reverts from group to DM mode after unregister", async () => {
+    // 3 agents = group mode
+    registerAgent(db, "agent-a");
+    registerAgent(db, "agent-b");
+    registerAgent(db, "agent-c");
+    sendMessage(db, "agent-b", "group-ch", "setup");
+    readMessages(db, "agent-a", "group-ch");
+    readMessages(db, "agent-c", "group-ch");
+
+    // Unregister agent-c — PID nulled, drops to 2 active members (DM mode)
+    unregisterAgent(db, "agent-c", process.pid);
+
+    // Send unmentioned message
+    sendMessage(db, "agent-b", "group-ch", "no mention here");
+
+    const notifications: { content: string; meta: Record<string, string> }[] = [];
+    const stop = startPolling(db, "agent-a", async (content, meta) => {
+      notifications.push({ content, meta });
+    }, FAST_INTERVAL);
+    await sleep(200);
+    await stop();
+
+    // DM mode (2 members) → unmentioned messages notify
+    expect(notifications.length).toBeGreaterThan(0);
+  });
+
+  it("stale-PID agent ages out of group mode member count", async () => {
+    // 3 agents = group mode
+    registerAgent(db, "agent-a");
+    registerAgent(db, "agent-b");
+    registerAgent(db, "agent-c");
+    sendMessage(db, "agent-b", "group-ch2", "setup");
+    readMessages(db, "agent-a", "group-ch2");
+    readMessages(db, "agent-c", "group-ch2");
+
+    // Simulate agent-c crashed: PID still set but last_seen_at is stale.
+    const staleTime = Date.now() - 20 * 60 * 1000; // 20 minutes ago (> 15 min window)
+    db.run("UPDATE agents SET last_seen_at = ? WHERE id = ?", [staleTime, "agent-c"]);
+
+    // Send unmentioned message
+    sendMessage(db, "agent-b", "group-ch2", "no mention here");
+
+    const notifications: { content: string; meta: Record<string, string> }[] = [];
+    const stop = startPolling(db, "agent-a", async (content, meta) => {
+      notifications.push({ content, meta });
+    }, FAST_INTERVAL);
+    await sleep(200);
+    await stop();
+
+    // agent-c aged out → 2 active members → DM mode → unmentioned messages notify
+    expect(notifications.length).toBeGreaterThan(0);
   });
 });

@@ -1,6 +1,7 @@
 import type { Database } from "bun:sqlite";
 import type { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import type { Message } from "./modules/messaging/types";
+import { PID_STALE_MS } from "./modules/messaging/tools";
 
 export type NotifyFn = (content: string, meta: Record<string, string>) => Promise<void>;
 
@@ -38,7 +39,7 @@ export function startPolling(
   const stmtMemberCount = db.query(
     `SELECT COUNT(*) as count FROM cursors cr
      JOIN agents a ON cr.agent_id = a.id
-     WHERE cr.channel_id = ? AND a.pid IS NOT NULL`
+     WHERE cr.channel_id = ? AND a.pid IS NOT NULL AND a.last_seen_at > ?`
   );
   const stmtBatchMentions = db.query(
     `SELECT mentions FROM messages
@@ -82,7 +83,8 @@ export function startPolling(
       if (stats.count === 0 || stats.max_id === null) continue;
 
       // Check channel mode: DM (2 members) vs. group (3+)
-      const memberCount = (stmtMemberCount.get(sub.channel_id) as { count: number }).count;
+      const freshThreshold = Date.now() - PID_STALE_MS;
+      const memberCount = (stmtMemberCount.get(sub.channel_id, freshThreshold) as { count: number }).count;
 
       if (memberCount > 2) {
         // Group mode — check if ANY message in the batch targets this agent
