@@ -259,6 +259,40 @@ describe("listChannelMembers", () => {
   });
 });
 
+describe("onclose cleanup behavior", () => {
+  it("unregisterAgent clears PID and preserves existing cursors", () => {
+    const db = setupDb();
+    registerAgent(db, "session-agent");
+    registerAgent(db, "other");
+    // Create cursor BEFORE unregister by subscribing to a channel
+    sendMessage(db, "other", "ch", "setup");
+    readMessages(db, "session-agent", "ch");
+
+    // Simulate what mcp.ts onclose does:
+    // if (boundAgentId) unregisterAgent(db, boundAgentId, process.pid);
+    unregisterAgent(db, "session-agent", process.pid);
+
+    const after = getAgent(db, "session-agent")!;
+    expect(after.pid).toBeNull();
+    expect(after.registered_at).toBeNull();
+    expect(isAgentActive(after)).toBe(false);
+
+    // Cursor created before unregister should still exist
+    const cursor = db.query("SELECT * FROM cursors WHERE agent_id = ?").get("session-agent");
+    expect(cursor).not.toBeNull();
+    db.close();
+  });
+
+  it("onclose with null boundAgentId is safe (no-op)", () => {
+    const db = setupDb();
+    // Simulate: session closes before registration — boundAgentId is null
+    // The guard `if (boundAgentId)` in mcp.ts prevents the call entirely,
+    // but verify unregisterAgent is safe with a nonexistent agent too
+    expect(() => unregisterAgent(db, "never-registered", process.pid)).not.toThrow();
+    db.close();
+  });
+});
+
 describe("listAgents with active_only", () => {
   it("active_only false returns all agents (backward compatible)", () => {
     const db = setupDb();
