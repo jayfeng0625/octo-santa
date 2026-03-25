@@ -2,6 +2,7 @@
 
 import { readFileSync } from "node:fs";
 import * as readline from "node:readline";
+import { PassThrough } from "node:stream";
 import type { Database } from "bun:sqlite";
 import {
   createChannel,
@@ -92,6 +93,188 @@ export function parseCommand(line: string): Command | null {
 export interface ReplState {
   activeChannel: string;
   cursors: Map<string, number>;
+}
+
+// --- Paste Support ---
+
+const PASTE_START = "\x1b[200~";
+const PASTE_END = "\x1b[201~";
+const BRACKETED_PASTE_ENABLE = "\x1b[?2004h";
+const BRACKETED_PASTE_DISABLE = "\x1b[?2004l";
+
+/**
+ * PassThrough stream that intercepts bracketed paste escape sequences
+ * from process.stdin before readline sees them. Buffers content during
+ * paste and pushes it on paste end — push() is synchronous, so readline's
+ * line events fire while isPasting is still true.
+ */
+export class PasteAwareStream extends PassThrough {
+  readonly isTTY: boolean;
+  isPasting = false;
+  pasteSeen = false;
+  private readonly source: NodeJS.ReadStream;
+  private _pasteBuffer = "";
+  private _onData: (chunk: Buffer | string) => void;
+  private _onEnd: () => void;
+  private _onError: (err: Error) => void;
+  private _discarding = false;
+
+  constructor(source: NodeJS.ReadStream) {
+    super();
+    this.source = source;
+    this.isTTY = (source as any).isTTY ?? false;
+
+    this._onData = (chunk: Buffer | string) => {
+      const str = typeof chunk === "string" ? chunk : chunk.toString("utf-8");
+      let remaining = str;
+
+      while (remaining.length > 0) {
+        // Discard mode: swallow everything until PASTE_END after a mid-paste cancel
+        if (this._discarding) {
+          const endIdx = remaining.indexOf(PASTE_END);
+          if (endIdx !== -1) {
+            remaining = remaining.slice(endIdx + PASTE_END.length);
+            this._discarding = false;
+          } else {
+            remaining = "";
+          }
+          continue;
+        }
+
+        if (this.isPasting) {
+          const endIdx = remaining.indexOf(PASTE_END);
+          if (endIdx !== -1) {
+            this._pasteBuffer += remaining.slice(0, endIdx);
+            remaining = remaining.slice(endIdx + PASTE_END.length);
+            // Push buffered content — isPasting is still true during push,
+            // so readline line events fire with isPasting === true
+            if (this._pasteBuffer) {
+              this.push(Buffer.from(this._pasteBuffer, "utf-8"));
+            }
+            this._pasteBuffer = "";
+            this.isPasting = false;
+          } else {
+            this._pasteBuffer += remaining;
+            remaining = "";
+          }
+        } else {
+          const startIdx = remaining.indexOf(PASTE_START);
+          if (startIdx !== -1) {
+            if (startIdx > 0) {
+              this.push(Buffer.from(remaining.slice(0, startIdx), "utf-8"));
+            }
+            remaining = remaining.slice(startIdx + PASTE_START.length);
+            this.isPasting = true;
+            this.pasteSeen = true;
+            this._pasteBuffer = "";
+          } else {
+            this.push(Buffer.from(remaining, "utf-8"));
+            remaining = "";
+          }
+        }
+      }
+    };
+
+    this._onEnd = () => this.push(null);
+    this._onError = (err: Error) => this.destroy(err);
+
+    source.on("data", this._onData);
+    source.on("end", this._onEnd);
+    source.on("error", this._onError);
+  }
+
+  setRawMode(mode: boolean): this {
+    if (typeof (this.source as any).setRawMode === "function") {
+      (this.source as any).setRawMode(mode);
+    }
+    return this;
+  }
+
+  ref(): this {
+    if (typeof this.source.ref === "function") {
+      this.source.ref();
+    }
+    return this;
+  }
+
+  unref(): this {
+    if (typeof this.source.unref === "function") {
+      this.source.unref();
+    }
+    return this;
+  }
+
+  /**
+   * Reset all paste state. Used by SIGINT handler to cleanly abort a paste.
+   * If called during an active multi-chunk paste, enters _discarding mode
+   * which swallows all data until the closing PASTE_END marker arrives.
+   */
+  reset(): void {
+    if (this.isPasting) {
+      this._discarding = true; // swallow until PASTE_END
+    }
+    this.isPasting = false;
+    this.pasteSeen = false;
+    this._pasteBuffer = "";
+  }
+
+  override _destroy(err: Error | null, callback: (error?: Error | null) => void): void {
+    this.source.removeListener("data", this._onData);
+    this.source.removeListener("end", this._onEnd);
+    this.source.removeListener("error", this._onError);
+    super._destroy(err, callback);
+  }
+}
+
+export type LineAction =
+  | { action: "buffer" }
+  | { action: "send"; content: string }
+  | { action: "passthrough"; line: string };
+
+/**
+ * Decide what to do with a readline line event given paste state.
+ * Mutates stream.pasteSeen and pasteBuffer.
+ */
+export function handleLine(
+  stream: { isPasting: boolean; pasteSeen: boolean },
+  pasteBuffer: string[],
+  line: string
+): LineAction {
+  if (stream.isPasting) {
+    pasteBuffer.push(line);
+    return { action: "buffer" };
+  }
+  if (stream.pasteSeen) {
+    if (line) pasteBuffer.push(line);
+    const content = pasteBuffer.join("\n");
+    pasteBuffer.length = 0;
+    stream.pasteSeen = false;
+    // Empty paste (no content and no confirming line) → treat as no-op
+    if (!content) return { action: "passthrough", line };
+    return { action: "send", content };
+  }
+  return { action: "passthrough", line };
+}
+
+/**
+ * Handle Ctrl+C with paste awareness. Returns true if a paste was
+ * discarded (caller should clear line and redraw prompt), false if
+ * no paste was active (caller should exit).
+ *
+ * When stream is a PasteAwareStream, also calls reset() to clear
+ * internal paste buffer and isPasting flag.
+ */
+export function handleSigint(
+  stream: { isPasting: boolean; pasteSeen: boolean; reset?: () => void },
+  pasteBuffer: string[]
+): boolean {
+  if (stream.pasteSeen || stream.isPasting) {
+    pasteBuffer.length = 0;
+    stream.pasteSeen = false;
+    stream.reset?.(); // clears isPasting and internal buffer on real stream
+    return true;
+  }
+  return false;
 }
 
 /** Returns true for normal commands, false if the REPL should exit (/quit). */
@@ -284,8 +467,19 @@ function startRepl(db: Database, agentId: string, channel: string): void {
     cursors: new Map([[channel, maxRow?.max_id ?? 0]]),
   };
 
+  // --- Bracketed paste mode ---
+  const isTTY = !!(process.stdin.isTTY && process.stdout.isTTY);
+  const pasteStream = isTTY
+    ? new PasteAwareStream(process.stdin as unknown as NodeJS.ReadStream)
+    : undefined;
+  const pasteBuffer: string[] = [];
+
+  if (isTTY) {
+    process.stdout.write(BRACKETED_PASTE_ENABLE);
+  }
+
   const rl = readline.createInterface({
-    input: process.stdin,
+    input: pasteStream ?? process.stdin,
     output: process.stdout,
   });
 
@@ -311,9 +505,51 @@ function startRepl(db: Database, agentId: string, channel: string): void {
   }, intervalMs);
   pollTimer.unref();
 
+  let shuttingDown = false;
+  function shutdown() {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    if (isTTY) process.stdout.write(BRACKETED_PASTE_DISABLE);
+    clearInterval(pollTimer);
+    pasteStream?.destroy();
+    rl.close();
+    process.exit(0);
+  }
+
+  rl.on("close", shutdown);
+  rl.on("SIGINT", () => {
+    const stream = pasteStream ?? { isPasting: false, pasteSeen: false };
+    if (handleSigint(stream, pasteBuffer)) {
+      rl.write(null, { ctrl: true, name: "u" }); // clear current line
+      rl.prompt();
+      return;
+    }
+    shutdown();
+  });
+
   // Line handler
   rl.on("line", (input: string) => {
-    const trimmed = input.trim();
+    const stream = pasteStream ?? { isPasting: false, pasteSeen: false };
+    const action = handleLine(stream, pasteBuffer, input);
+
+    if (action.action === "buffer") {
+      return; // still pasting — don't send, don't prompt
+    }
+
+    if (action.action === "send") {
+      // Paste complete — send as single message, preserving whitespace
+      try {
+        sendMessage(db, agentId, state.activeChannel, action.content);
+        printAbove(`[${agentId}] ${sanitize(action.content)}`);
+      } catch (err: any) {
+        printAbove(`Error: ${err.message}`);
+      }
+      rl.prompt();
+      return;
+    }
+
+    // action.action === "passthrough" — existing behavior
+    const trimmed = action.line.trim();
     if (!trimmed) {
       rl.prompt();
       return;
@@ -324,8 +560,7 @@ function startRepl(db: Database, agentId: string, channel: string): void {
       try {
         const keepRunning = handleCommand(cmd, db, agentId, state, printAbove);
         if (!keepRunning) {
-          clearInterval(pollTimer);
-          rl.close();
+          shutdown();
           return;
         }
       } catch (err: any) {
@@ -345,15 +580,6 @@ function startRepl(db: Database, agentId: string, channel: string): void {
     }
     rl.prompt();
   });
-
-  function shutdown() {
-    clearInterval(pollTimer);
-    rl.close();
-    process.exit(0);
-  }
-
-  rl.on("close", shutdown);
-  process.on("SIGINT", shutdown);
 
   console.log(`Joined #${channel} as ${agentId}. Type /help for commands.`);
   updatePrompt();
