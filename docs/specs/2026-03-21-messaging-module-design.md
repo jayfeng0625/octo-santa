@@ -88,7 +88,7 @@ Migrations are defined as an ordered array of `{ version, up }` objects in `migr
 
 ## MCP Tools
 
-Six tools exposed to agents:
+Seven tools exposed to agents:
 
 ### Identity & Channels
 
@@ -122,9 +122,13 @@ Six tools exposed to agents:
 - List all registered agents with `last_seen_at` timestamps.
 - Gives agents awareness of who else is around.
 
+**`list_members(channel_name)`**
+- List members of a specific channel with an `active` flag (derived from PID liveness and `last_seen_at` freshness).
+- Agent lifecycle and presence details (liveness tiers, PID staleness) are covered in the agent lifecycle spec (`2026-03-24-agent-lifecycle-and-membership.md`).
+
 ### Tool Namespacing
 
-Tools are prefixed with `messaging_` to avoid collisions as future modules are added. The naming pattern is `<module>_<action>`. Final tool names: `messaging_register`, `messaging_send_message`, `messaging_read_messages`, `messaging_create_channel`, `messaging_list_channels`, `messaging_list_agents`.
+Tools are prefixed with `messaging_` to avoid collisions as future modules are added. The naming pattern is `<module>_<action>`. Final tool names: `messaging_register`, `messaging_send_message`, `messaging_read_messages`, `messaging_create_channel`, `messaging_list_channels`, `messaging_list_agents`, `messaging_list_members`.
 
 ### Design Choices
 

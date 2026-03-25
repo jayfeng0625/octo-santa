@@ -36,6 +36,7 @@ not aspirational — it is a functional requirement.
 | `messaging_send_message`    | Every line of stdin (REPL), `/send -f` (in-session file send), or `send` subcommand (fire-and-forget CLI) |
 | `messaging_read_messages`   | Background poll (forward mode), `/history N` (before_id mode) |
 | `messaging_list_agents`     | `/agents`                                          |
+| `messaging_list_members`    | `/members`                                         |
 
 ## Entry Points
 
@@ -118,10 +119,11 @@ redrawn. Use `node:readline` for prompt handling — no external TUI libraries.
 |---------------------|------------------------------------------------------|
 | `/channels`         | List all channels                                    |
 | `/agents`           | List all registered agents                           |
-| `/join <channel>`   | Switch active channel — changes where typed messages go and calls `subscribeToChannel` to init a cursor (subscribing to polls) without consuming unread. Does not leave previous channels — they continue to appear with `#channel` prefix. |
+| `/join <channel>`   | Switch active channel — changes where typed messages go. Creates an in-memory cursor for the REPL poll loop (not a DB cursor, so the user does not appear in `/members` until they send a message). Does not leave previous channels — they continue to appear with `#channel` prefix. |
 | `/create <channel>` | Create a new channel without switching                |
 | `/history N`        | Show last N messages on current channel. Passes `before_id = MAX_SAFE_INTEGER` to get the most recent N messages. Does not advance cursor. **Note:** uses `readMessages` which filters `agent_id != ?` — the caller's own messages are excluded. This is intentional parity with the shared messaging layer; full-transcript history is a future shared-layer enhancement. |
 | `/send -f <path>`   | Send file contents as a message on current channel    |
+| `/members`          | List members of current channel with active/inactive status |
 | `/help`             | Show available commands                               |
 
 ### Exit

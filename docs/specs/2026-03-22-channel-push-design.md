@@ -32,7 +32,7 @@ Each Claude Code session spawns its own octo-santa process via stdio (same as to
 ```
 Claude Code session A                    Claude Code session B
   └─ spawns octo-santa (stdio)            └─ spawns octo-santa (stdio)
-       ├─ 6 messaging tools                    ├─ 6 messaging tools
+       ├─ 7 messaging tools                    ├─ 7 messaging tools
        ├─ channel capability                   ├─ channel capability
        └─ background poll ──┐                  └─ background poll ──┐
                              │                                       │
@@ -46,7 +46,7 @@ Agent B sends a message → writes to SQLite → Agent A's background poll finds
 
 - Stdio MCP transport (each session = own process, auto-spawned by Claude Code)
 - Shared SQLite database (`~/.octo-santa/messages.db`)
-- The 6 core messaging tools (after removing `messaging_subscribe`): `messaging_register`, `messaging_create_channel`, `messaging_list_channels`, `messaging_send_message`, `messaging_read_messages`, `messaging_list_agents`
+- The 7 core messaging tools (after removing `messaging_subscribe`): `messaging_register`, `messaging_create_channel`, `messaging_list_channels`, `messaging_send_message`, `messaging_read_messages`, `messaging_list_agents`, `messaging_list_members`
 - `.mcp.json` uses `command`/`args` format (no server to start)
 - Cursor model (read_messages advances cursor, acknowledges receipt)
 - Module architecture (`OctoModule` interface)
@@ -97,7 +97,9 @@ const mcpServer = new McpServer(
       "Attributes: channel_name is the channel, sender is who sent it, message_id is the DB ID. " +
       "To acknowledge and see full message history, call messaging_read_messages with the channel_name. " +
       "To reply, call messaging_send_message with the same channel_name. " +
-      "If no channel tags appear, you can use /loop on messaging_read_messages as a fallback.",
+      "If no channel tags appear, you can use /loop on messaging_read_messages as a fallback. " +
+      "DISCOVERY: Use messaging_list_agents to see registered agents. " +
+      "Use messaging_list_members to see who is in a specific channel.",
   }
 );
 ```
@@ -121,7 +123,7 @@ Reference: [Channels Reference — Server Options](https://code.claude.com/docs/
 
 ### Agent identity binding
 
-The server discovers which agent it's serving from the first tool call that carries `agent_id`. Tools that carry `agent_id` are: `messaging_register`, `messaging_create_channel`, `messaging_send_message`, `messaging_read_messages`. Tools that do NOT carry `agent_id` (`messaging_list_channels`, `messaging_list_agents`) cannot trigger binding.
+The server discovers which agent it's serving from the first tool call that carries `agent_id`. Tools that carry `agent_id` are: `messaging_register`, `messaging_create_channel`, `messaging_send_message`, `messaging_read_messages`. Tools that do NOT carry `agent_id` (`messaging_list_channels`, `messaging_list_agents`, `messaging_list_members`) cannot trigger binding.
 
 **Mechanism:** `server.ts` passes an `onAgentId` callback to each module's `registerTools`. Tool handlers that receive `agent_id` call `onAgentId(agent_id)` **before** processing any DB mutation. This ensures mismatched agent IDs are rejected before any data is persisted. The callback is idempotent: first call binds the agent and starts polling; subsequent calls with the same ID are no-ops.
 
@@ -258,7 +260,7 @@ This is the existing behavior — no new code required. The `--channels` path is
 | `src/types.ts` | Replace `pubsub: PubSub` with optional `onAgentId` callback, remove `PubSub` import |
 | `src/modules/messaging/index.ts` | Remove `messaging_subscribe` tool, replace `pubsub` with `onAgentId` callback, call `onAgentId` in handlers with `agent_id`, remove `onSend` from send_message handler |
 | `src/modules/messaging/tools.ts` | Remove `subscribe()` function, remove `onSend` param from `sendMessage()` |
-| `tests/messaging/module.test.ts` | Expect 6 tools (was 7), remove pubsub arg from registerTools |
+| `tests/messaging/module.test.ts` | Expect 7 tools (was 6), remove pubsub arg from registerTools |
 
 ### Create
 
@@ -307,7 +309,7 @@ startPolling(db, "agent-a", notify, 100); // fast interval for tests
 - `tests/messaging/send.test.ts` — sendMessage works (onSend param removed, no behavior change)
 - `tests/messaging/read.test.ts` — readMessages works
 - `tests/messaging/channels.test.ts` — channel creation works
-- `tests/messaging/module.test.ts` — updated to expect 6 tools, registerTools called with 2 args
+- `tests/messaging/module.test.ts` — updated to expect 7 tools, registerTools called with 2 args
 - `tests/messaging/binding.test.ts` — agent identity binding enforcement (reject mismatched agent_id before DB mutation)
 
 ### What we're NOT testing
@@ -344,5 +346,7 @@ not an agent — it does not call `registerAgent`, does not create DB cursor row
 reading (uses in-memory tracking), and does not affect the DM/group notification mode.
 
 The channel push member count query filters on `agents.pid IS NOT NULL`, so cursor
-rows created by `sendMessage` for human senders are excluded. See
-`docs/specs/2026-03-24-human-messaging-repl.md` for the full REPL design.
+rows created by `sendMessage` for human senders are excluded. DM/group mode member
+counting now also includes `last_seen_at` freshness per the agent lifecycle spec
+(`2026-03-24-agent-lifecycle-and-membership.md`). See `docs/specs/2026-03-24-human-messaging-repl.md`
+for the full REPL design.
