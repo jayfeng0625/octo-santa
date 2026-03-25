@@ -21,3 +21,8 @@ export interface Message {
   created_at: number;
   mentions: string; // JSON array, e.g. '["agent-a"]' or '["*"]' or '[]'
 }
+
+export interface ChannelMember {
+  agent_id: string;
+  active: boolean;
+}

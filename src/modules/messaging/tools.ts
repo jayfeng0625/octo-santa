@@ -100,8 +100,18 @@ function isProcessAlive(pid: number): boolean {
   }
 }
 
-// Staleness threshold for PID reuse detection (1 hour)
-const PID_STALE_MS = 60 * 60 * 1000;
+// Staleness threshold for PID reuse detection (15 minutes).
+// Primary cleanup is onclose unregister; this is only a crash-recovery backstop.
+export const PID_STALE_MS = 15 * 60 * 1000;
+
+/** Exact liveness check: PID set + process alive + last_seen_at fresh.
+ *  Used by listAgents(active_only), listChannelMembers, registerAgent.
+ *  For the polling hot path (DM/group mode), use SQL-only approximate liveness instead. */
+export function isAgentActive(agent: Agent): boolean {
+  if (agent.pid === null) return false;
+  if (!isProcessAlive(agent.pid)) return false;
+  return Date.now() - agent.last_seen_at <= PID_STALE_MS;
+}
 
 export function registerAgent(db: Database, agentId: string): Agent {
   validateAgentName(agentId);
@@ -111,10 +121,7 @@ export function registerAgent(db: Database, agentId: string): Agent {
     const existing = getAgent(db, agentId);
 
     if (existing && existing.pid !== null && existing.pid !== process.pid) {
-      const pidAlive = isProcessAlive(existing.pid);
-      const isStale = now - existing.last_seen_at > PID_STALE_MS;
-
-      if (pidAlive && !isStale) {
+      if (isAgentActive(existing)) {
         throw new Error(
           `Agent "${agentId}" is already active (pid ${existing.pid}). Choose a different name.`
         );
@@ -131,6 +138,19 @@ export function registerAgent(db: Database, agentId: string): Agent {
   });
 
   return withRetrySync(() => doRegister.exclusive());
+}
+
+/** Internal lifecycle function — called by mcp.ts onclose, NOT exposed as MCP tool.
+ *  Ownership-scoped via WHERE clause: only clears PID if it still matches expectedPid,
+ *  preventing late-onclose from clobbering a new session's registration.
+ *  Single atomic UPDATE — no read-then-write race. */
+export function unregisterAgent(db: Database, agentId: string, expectedPid: number): void {
+  withRetrySync(() => {
+    db.run(
+      "UPDATE agents SET pid = NULL, registered_at = NULL WHERE id = ? AND pid = ?",
+      [agentId, expectedPid]
+    );
+  });
 }
 
 export function getAgent(db: Database, agentId: string): Agent | null {
