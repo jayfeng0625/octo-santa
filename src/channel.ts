@@ -2,6 +2,7 @@ import type { Database } from "bun:sqlite";
 import type { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import type { Message } from "./modules/messaging/types";
 import { PID_STALE_MS } from "./modules/messaging/tools";
+import { log } from "./bootstrap";
 
 export type NotifyFn = (content: string, meta: Record<string, string>) => Promise<void>;
 
@@ -50,6 +51,7 @@ export function startPolling(
   );
 
   async function tick() {
+    log(`tick ${agentId}`);
     // Heartbeat: keep agent's last_seen_at fresh while polling.
     // Prevents PID staleness reclaim of actively-listening agents.
     // If the heartbeat matches 0 rows and the agent has a different PID,
@@ -68,6 +70,7 @@ export function startPolling(
 
     const subscribedChannels = stmtSubscribed
       .all(agentId) as { channel_id: number; channel_name: string }[];
+    log(`${agentId}: ${subscribedChannels.length} subscribed channel(s)`);
 
     const activeIds = new Set(subscribedChannels.map(s => s.channel_id));
     for (const k of lastPushedId.keys()) {
@@ -93,6 +96,7 @@ export function startPolling(
         .get(sub.channel_id, hwm, agentId) as { count: number; max_id: number | null };
 
       if (stats.count === 0 || stats.max_id === null) continue;
+      log(`${agentId} on ${sub.channel_name}: ${stats.count} unread, hwm=${hwm}, max_id=${stats.max_id}, memberCount=${(stmtMemberCount.get(sub.channel_id, Date.now() - PID_STALE_MS) as { count: number }).count}`);
 
       // Check channel mode: DM (2 members) vs. group (3+)
       const freshThreshold = Date.now() - PID_STALE_MS;
@@ -131,10 +135,12 @@ export function startPolling(
       };
 
       try {
+        log(`notifying ${agentId} on ${sub.channel_name}: "${content.slice(0, 80)}"`);
         await notify(content, meta);
+        log(`notify OK for ${agentId}, lastPushedId → ${latest.id}`);
         lastPushedId.set(sub.channel_id, latest.id);
-      } catch {
-        // Notify failed — watermark stays put, retry on next tick
+      } catch (err) {
+        log(`notify FAILED for ${agentId}: ${err}`);
       }
     }
   }
@@ -146,7 +152,7 @@ export function startPolling(
         try {
           await tick();
         } catch (err) {
-          console.error("channel poll error:", err);
+          log(`channel poll error: ${err}`);
         }
         tickPromise = null;
         scheduleNext();

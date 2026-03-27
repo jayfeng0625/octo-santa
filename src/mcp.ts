@@ -2,7 +2,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { startPolling, sendChannelNotification, type NotifyFn } from "./channel";
-import { openDb, modules } from "./bootstrap";
+import { openDb, modules, log } from "./bootstrap";
 import { unregisterAgent } from "./modules/messaging/tools";
 
 const db = openDb();
@@ -78,10 +78,10 @@ async function main() {
     { type: "bootstrap" }
   );
 
-  console.error("octo-santa MCP server running");
+  log("octo-santa MCP server running");
 }
 
 main().catch((error) => {
-  console.error("Failed to start octo-santa:", error);
+  log(`Failed to start octo-santa: ${error}`);
   process.exit(1);
 });
