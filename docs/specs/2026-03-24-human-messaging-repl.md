@@ -1,3 +1,7 @@
+> **Superseded** by [2026-03-28-repl-ink-rewrite](2026-03-28-repl-ink-rewrite.md).
+> The REPL was rewritten from `node:readline` to Ink (React for terminals).
+> This spec is retained for historical context.
+
 # Human Messaging REPL
 
 A standalone entry point — peer to `src/mcp.ts` — that gives humans a direct

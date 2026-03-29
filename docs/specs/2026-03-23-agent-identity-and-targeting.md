@@ -73,7 +73,7 @@ await mcp.notification({
 
 When a 3rd registered agent joins a channel, the channel automatically transitions from DM mode to group mode. No manual configuration.
 
-**Human REPL users are excluded from this count.** The human messaging REPL (`src/repl.ts`) uses in-memory cursor tracking and does not call `registerAgent` — it goes through the lightweight `ensureAgent` path (no PID). Cursor rows created by `sendMessage` for human senders have `pid IS NULL` and are filtered out of the member count query. This means a human observer or participant never affects the DM/group notification mode for agents.
+**Human REPL users are excluded from this count.** The human messaging REPL (`src/repl/`) uses in-memory cursor tracking and does not call `registerAgent` — it goes through the lightweight `ensureAgent` path (no PID). Cursor rows created by `sendMessage` for human senders have `pid IS NULL` and are filtered out of the member count query. This means a human observer or participant never affects the DM/group notification mode for agents.
 
 **Three notification tiers (group mode, 3+ members):**
 
