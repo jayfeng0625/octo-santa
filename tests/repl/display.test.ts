@@ -1,5 +1,5 @@
 import { describe, it, expect } from "bun:test";
-import { formatMessage } from "../../src/repl";
+import { formatMessage } from "../../src/repl/display";
 
 describe("formatMessage", () => {
   it("omits channel prefix for active channel", () => {

@@ -6,7 +6,8 @@ import {
   messagingMigrations,
   sendMessage,
 } from "../../src/modules/messaging/tools";
-import { pollTick, formatMessage, type ReplState } from "../../src/repl";
+import { pollTick, type PollState } from "../../src/repl/poll";
+import { formatMessage } from "../../src/repl/display";
 
 const TEST_DB = "/tmp/octo-santa-test-poll.sqlite";
 
@@ -32,38 +33,60 @@ describe("pollTick", () => {
 
     sendMessage(db, "agent-a", "planning", "hey jay");
 
-    // Initialize in-memory state (cursor at 0 to see all messages)
-    const state: ReplState = {
+    const state: PollState = {
       activeChannel: "planning",
       cursors: new Map([["planning", 0]]),
     };
-    const output: string[] = [];
-    pollTick(db, "jay", state, (text) => output.push(text));
+    const msgs = pollTick(db, "jay", state);
 
-    expect(output).toHaveLength(1);
-    expect(output[0]).toBe("[agent-a] hey jay");
+    expect(msgs).toHaveLength(1);
+    expect(msgs[0]!.agent).toBe("agent-a");
+    expect(msgs[0]!.content).toBe("hey jay");
+    expect(msgs[0]!.channel).toBe("planning");
     db.close();
   });
 
-  it("shows messages from multiple channels with prefix", () => {
+  it("returns messages from multiple channels with correct metadata", () => {
     const db = setupDb();
 
     sendMessage(db, "agent-a", "planning", "plan msg");
     sendMessage(db, "agent-b", "ops", "ops msg");
 
-    // Track both channels in-memory
-    const state: ReplState = {
+    const state: PollState = {
       activeChannel: "planning",
       cursors: new Map([
         ["planning", 0],
         ["ops", 0],
       ]),
     };
-    const output: string[] = [];
-    pollTick(db, "jay", state, (text) => output.push(text));
+    const msgs = pollTick(db, "jay", state);
 
-    expect(output).toContain("[agent-a] plan msg");
-    expect(output).toContain("[#ops][agent-b] ops msg");
+    expect(msgs).toHaveLength(2);
+
+    const planMsg = msgs.find((m) => m.channel === "planning")!;
+    expect(planMsg.agent).toBe("agent-a");
+    expect(planMsg.content).toBe("plan msg");
+
+    const opsMsg = msgs.find((m) => m.channel === "ops")!;
+    expect(opsMsg.agent).toBe("agent-b");
+    expect(opsMsg.content).toBe("ops msg");
+
+    // Verify formatMessage still produces expected output
+    expect(
+      formatMessage(
+        { agent_id: planMsg.agent, content: planMsg.content },
+        planMsg.channel,
+        state.activeChannel
+      )
+    ).toBe("[agent-a] plan msg");
+    expect(
+      formatMessage(
+        { agent_id: opsMsg.agent, content: opsMsg.content },
+        opsMsg.channel,
+        state.activeChannel
+      )
+    ).toBe("[#ops][agent-b] ops msg");
+
     db.close();
   });
 
@@ -71,18 +94,16 @@ describe("pollTick", () => {
     const db = setupDb();
     sendMessage(db, "agent-a", "planning", "first");
 
-    const state: ReplState = {
+    const state: PollState = {
       activeChannel: "planning",
       cursors: new Map([["planning", 0]]),
     };
 
-    const out1: string[] = [];
-    pollTick(db, "jay", state, (text) => out1.push(text));
-    expect(out1).toHaveLength(1);
+    const msgs1 = pollTick(db, "jay", state);
+    expect(msgs1).toHaveLength(1);
 
-    const out2: string[] = [];
-    pollTick(db, "jay", state, (text) => out2.push(text));
-    expect(out2).toHaveLength(0);
+    const msgs2 = pollTick(db, "jay", state);
+    expect(msgs2).toHaveLength(0);
     db.close();
   });
 });

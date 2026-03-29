@@ -1,6 +1,6 @@
 import { describe, it, expect, afterEach } from "bun:test";
 import { existsSync, unlinkSync } from "fs";
-import { parseCommand, handleCommand, type ReplState } from "../../src/repl";
+import { parseCommand, handleCommand } from "../../src/repl/commands";
 import { createDb } from "../../src/db";
 import { runMigrations } from "../../src/migrations";
 import {
@@ -58,13 +58,12 @@ describe("handleCommand", () => {
     const db = setupDb();
     sendMessage(db, "jay", "planning", "hello");
     sendMessage(db, "jay", "ops", "hello");
-    const state: ReplState = { activeChannel: "planning", cursors: new Map([["planning", 0]]) };
-    const output: string[] = [];
+    const cursors = new Map([["planning", 0]]);
 
-    handleCommand({ name: "channels", args: "" }, db, "jay", state, (t) => output.push(t));
+    const result = handleCommand({ name: "channels", args: "" }, db, "jay", "planning", cursors);
 
-    expect(output.join("\n")).toContain("planning (active)");
-    expect(output.join("\n")).toContain("ops");
+    expect(result.output.join("\n")).toContain("planning (active)");
+    expect(result.output.join("\n")).toContain("ops");
     db.close();
   });
 
@@ -72,13 +71,12 @@ describe("handleCommand", () => {
     const db = setupDb();
     registerAgent(db, "jay");
     registerAgent(db, "agent-a");
-    const state: ReplState = { activeChannel: "planning", cursors: new Map([["planning", 0]]) };
-    const output: string[] = [];
+    const cursors = new Map([["planning", 0]]);
 
-    handleCommand({ name: "agents", args: "" }, db, "jay", state, (t) => output.push(t));
+    const result = handleCommand({ name: "agents", args: "" }, db, "jay", "planning", cursors);
 
-    expect(output.join("\n")).toContain("jay");
-    expect(output.join("\n")).toContain("agent-a");
+    expect(result.output.join("\n")).toContain("jay");
+    expect(result.output.join("\n")).toContain("agent-a");
     db.close();
   });
 
@@ -86,13 +84,13 @@ describe("handleCommand", () => {
     const db = setupDb();
     sendMessage(db, "agent-a", "ops", "old msg 1");
     sendMessage(db, "agent-a", "ops", "old msg 2");
-    const state: ReplState = { activeChannel: "planning", cursors: new Map([["planning", 0]]) };
+    const cursors = new Map([["planning", 0]]);
 
-    handleCommand({ name: "join", args: "ops" }, db, "jay", state, () => {});
+    const result = handleCommand({ name: "join", args: "ops" }, db, "jay", "planning", cursors);
 
-    expect(state.activeChannel).toBe("ops");
+    expect(result.channelChange).toBe("ops");
     // In-memory cursor should exist and be set to max message id (skip old messages)
-    expect(state.cursors.has("ops")).toBe(true);
+    expect(cursors.has("ops")).toBe(true);
     // No DB cursor row should be created for the human
     const cursor = db
       .query(
@@ -110,51 +108,47 @@ describe("handleCommand", () => {
     sendMessage(db, "agent-a", "planning", "message one");
     sendMessage(db, "agent-a", "planning", "message two");
     sendMessage(db, "agent-a", "planning", "message three");
-    const state: ReplState = { activeChannel: "planning", cursors: new Map([["planning", 0]]) };
-    const output: string[] = [];
+    const cursors = new Map([["planning", 0]]);
 
-    handleCommand({ name: "history", args: "2" }, db, "jay", state, (t) => output.push(t));
+    const result = handleCommand({ name: "history", args: "2" }, db, "jay", "planning", cursors);
 
-    expect(output).toHaveLength(2);
-    expect(output[0]).toContain("message two");
-    expect(output[1]).toContain("message three");
+    expect(result.output).toHaveLength(2);
+    expect(result.output[0]).toContain("message two");
+    expect(result.output[1]).toContain("message three");
     db.close();
   });
 
   it("/create creates channel without switching", () => {
     const db = setupDb();
     registerAgent(db, "jay");
-    const state: ReplState = { activeChannel: "planning", cursors: new Map([["planning", 0]]) };
-    const output: string[] = [];
+    const cursors = new Map([["planning", 0]]);
 
-    handleCommand({ name: "create", args: "ops" }, db, "jay", state, (t) => output.push(t));
+    const result = handleCommand({ name: "create", args: "ops" }, db, "jay", "planning", cursors);
 
-    expect(state.activeChannel).toBe("planning");
-    expect(output[0]).toContain("Created #ops");
+    expect(result.channelChange).toBeUndefined();
+    expect(result.output[0]).toContain("Created #ops");
     db.close();
   });
 
   it("/help lists available commands", () => {
     const db = setupDb();
-    const state: ReplState = { activeChannel: "planning", cursors: new Map([["planning", 0]]) };
-    const output: string[] = [];
+    const cursors = new Map([["planning", 0]]);
 
-    handleCommand({ name: "help", args: "" }, db, "jay", state, (t) => output.push(t));
+    const result = handleCommand({ name: "help", args: "" }, db, "jay", "planning", cursors);
 
-    expect(output.join("\n")).toContain("/channels");
-    expect(output.join("\n")).toContain("/quit");
+    expect(result.output.join("\n")).toContain("/channels");
+    expect(result.output.join("\n")).toContain("/quit");
     db.close();
   });
 
-  it("unknown command returns true with error message", () => {
+  it("unknown command returns error message without quit", () => {
     const db = setupDb();
-    const state: ReplState = { activeChannel: "planning", cursors: new Map([["planning", 0]]) };
-    const output: string[] = [];
+    const cursors = new Map([["planning", 0]]);
 
-    const result = handleCommand({ name: "nope", args: "" }, db, "jay", state, (t) => output.push(t));
+    const result = handleCommand({ name: "nope", args: "" }, db, "jay", "planning", cursors);
 
-    expect(result).toBe(true);
-    expect(output[0]).toContain("Unknown command");
+    expect(result.quit).toBeUndefined();
+    expect(result.output[0]).toContain("Unknown command");
     db.close();
   });
 
@@ -163,12 +157,11 @@ describe("handleCommand", () => {
     for (let i = 0; i < 25; i++) {
       sendMessage(db, "agent-a", "planning", `msg-${i}`);
     }
-    const state: ReplState = { activeChannel: "planning", cursors: new Map([["planning", 0]]) };
-    const output: string[] = [];
+    const cursors = new Map([["planning", 0]]);
 
-    handleCommand({ name: "history", args: "-1" }, db, "jay", state, (t) => output.push(t));
+    const result = handleCommand({ name: "history", args: "-1" }, db, "jay", "planning", cursors);
 
-    expect(output.length).toBeLessThanOrEqual(20);
+    expect(result.output.length).toBeLessThanOrEqual(20);
     db.close();
   });
 
@@ -177,12 +170,11 @@ describe("handleCommand", () => {
     for (let i = 0; i < 25; i++) {
       sendMessage(db, "agent-a", "planning", `msg-${i}`);
     }
-    const state: ReplState = { activeChannel: "planning", cursors: new Map([["planning", 0]]) };
-    const output: string[] = [];
+    const cursors = new Map([["planning", 0]]);
 
-    handleCommand({ name: "history", args: "0" }, db, "jay", state, (t) => output.push(t));
+    const result = handleCommand({ name: "history", args: "0" }, db, "jay", "planning", cursors);
 
-    expect(output.length).toBeLessThanOrEqual(20);
+    expect(result.output.length).toBeLessThanOrEqual(20);
     db.close();
   });
 
@@ -191,12 +183,11 @@ describe("handleCommand", () => {
     for (let i = 0; i < 25; i++) {
       sendMessage(db, "agent-a", "planning", `msg-${i}`);
     }
-    const state: ReplState = { activeChannel: "planning", cursors: new Map([["planning", 0]]) };
-    const output: string[] = [];
+    const cursors = new Map([["planning", 0]]);
 
-    handleCommand({ name: "history", args: "abc" }, db, "jay", state, (t) => output.push(t));
+    const result = handleCommand({ name: "history", args: "abc" }, db, "jay", "planning", cursors);
 
-    expect(output.length).toBeLessThanOrEqual(20);
+    expect(result.output.length).toBeLessThanOrEqual(20);
     db.close();
   });
 
@@ -207,23 +198,22 @@ describe("handleCommand", () => {
     // Create an inactive member (no PID)
     sendMessage(db, "human", "planning", "hi from repl");
 
-    const state: ReplState = { activeChannel: "planning", cursors: new Map([["planning", 0]]) };
-    const output: string[] = [];
-    handleCommand({ name: "members", args: "" }, db, "agent-a", state, (t) => output.push(t));
+    const cursors = new Map([["planning", 0]]);
+    const result = handleCommand({ name: "members", args: "" }, db, "agent-a", "planning", cursors);
 
-    expect(output.length).toBeGreaterThan(0);
-    expect(output.some((line) => line.includes("agent-a") && line.includes("(active)"))).toBe(true);
-    expect(output.some((line) => line.includes("human") && line.includes("(inactive)"))).toBe(true);
+    expect(result.output.length).toBeGreaterThan(0);
+    expect(result.output.some((line) => line.includes("agent-a") && line.includes("(active)"))).toBe(true);
+    expect(result.output.some((line) => line.includes("human") && line.includes("(inactive)"))).toBe(true);
     db.close();
   });
 
-  it("/quit returns false to signal exit", () => {
+  it("/quit signals exit", () => {
     const db = setupDb();
-    const state: ReplState = { activeChannel: "planning", cursors: new Map([["planning", 0]]) };
+    const cursors = new Map([["planning", 0]]);
 
-    const result = handleCommand({ name: "quit", args: "" }, db, "jay", state, () => {});
+    const result = handleCommand({ name: "quit", args: "" }, db, "jay", "planning", cursors);
 
-    expect(result).toBe(false);
+    expect(result.quit).toBe(true);
     db.close();
   });
 });

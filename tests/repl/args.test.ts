@@ -1,5 +1,5 @@
 import { describe, it, expect } from "bun:test";
-import { parseArgs } from "../../src/repl";
+import { parseArgs } from "../../src/repl/args";
 
 describe("parseArgs", () => {
   it("parses REPL mode args", () => {

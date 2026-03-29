@@ -63,19 +63,8 @@ export function parseArgs(argv: string[]): Args {
 
 // --- Display ---
 
-/** Strip ANSI escape sequences and control characters (except \n and \t) */
-function sanitize(s: string): string {
-  return s.replace(/\x1b\[[0-9;]*[A-Za-z]/g, "").replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f\r]/g, "");
-}
-
-export function formatMessage(
-  msg: { agent_id: string; content: string },
-  channelName: string,
-  activeChannel: string
-): string {
-  const prefix = channelName === activeChannel ? "" : `[#${sanitize(channelName)}]`;
-  return `${prefix}[${sanitize(msg.agent_id)}] ${sanitize(msg.content)}`;
-}
+export { sanitize, formatMessage } from "./repl/display";
+import { sanitize, formatMessage } from "./repl/display";
 
 // --- Slash Commands ---
 
@@ -463,7 +452,7 @@ async function main() {
   startRepl(db, args.agentId, args.channel);
 }
 
-function startRepl(db: Database, agentId: string, channel: string): void {
+export function startRepl(db: Database, agentId: string, channel: string): void {
   const maxRow = db
     .query(
       `SELECT MAX(m.id) as max_id
@@ -600,9 +589,3 @@ function startRepl(db: Database, agentId: string, channel: string): void {
   rl.prompt();
 }
 
-if (import.meta.main) {
-  main().catch((err) => {
-    console.error(err.message);
-    process.exit(1);
-  });
-}
