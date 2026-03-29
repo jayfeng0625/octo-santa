@@ -118,7 +118,7 @@ Updated in `mcp.ts` to mention `messaging_list_members`.
 
 ### REPL
 
-Add `/members` command to `src/repl.ts` — calls `listChannelMembers` for the active channel and displays the member list.
+Add `/members` command to `src/repl/commands.ts` — calls `listChannelMembers` for the active channel and displays the member list.
 
 ## Scope
 
@@ -131,7 +131,7 @@ Add `/members` command to `src/repl.ts` — calls `listChannelMembers` for the a
 | `src/modules/messaging/index.ts` | Add `messaging_list_members` tool; update `messaging_list_agents` with `active_only` input |
 | `src/mcp.ts` | Call `unregisterAgent` in `onclose` (with null guard and `process.pid`); update server instructions |
 | `src/channel.ts` | Update `stmtMemberCount` to include `last_seen_at` freshness check |
-| `src/repl.ts` | Add `/members` command |
+| `src/repl/commands.ts` | Add `/members` command |
 
 ### Not changed
 

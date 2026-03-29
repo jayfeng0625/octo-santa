@@ -1,3 +1,8 @@
+> **Superseded** by [2026-03-28-repl-ink-rewrite](2026-03-28-repl-ink-rewrite.md).
+> Multiline input is now handled natively via Ink's raw mode and Kitty keyboard protocol.
+> The `PasteAwareStream` / bracketed-paste approach described here was removed.
+> This spec is retained for historical context.
+
 # REPL Multi-Line Paste Support
 
 Amends `2026-03-24-human-messaging-repl.md`: adds paste-buffering behavior to the "Enter sends immediately" and "Ctrl+C exits" rules. Normal typed input is unchanged; paste mode is an additional state.

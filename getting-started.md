@@ -95,6 +95,10 @@ The REPL lets humans send and receive messages without Claude in the loop.
 
 This opens an interactive prompt. Type messages, use `/help` for commands.
 
+**Multiline input:** Press Shift+Enter (Kitty-compatible terminals) or Alt/Option+Enter (universal fallback) to insert a newline. Up/Down arrows navigate between lines. Enter submits the message.
+
+**Rich text:** Messages render with token-level coloring — `@mentions` in blue, `#channels` in green, `` `code` `` in yellow, `**bold**` and `*italic*` formatted, and agent prefixes like `[alice]` in cyan.
+
 ### Send mode (fire-and-forget)
 
 ```bash
@@ -115,6 +119,7 @@ echo "deploy approved" | ./dist/latest/ocr send --as jay -c ops
 | `/create <channel>` | Create a channel without switching |
 | `/history [N]` | Show last N messages (default 20) |
 | `/send -f <path>` | Send file contents |
+| `/members` | Show members of the current channel |
 | `/help` | Show available commands |
 | `/quit` | Exit |
 

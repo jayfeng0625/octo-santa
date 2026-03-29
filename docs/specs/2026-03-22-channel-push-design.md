@@ -340,7 +340,7 @@ startPolling(db, "agent-a", notify, 100); // fast interval for tests
 
 ## Human REPL Interaction
 
-The human messaging REPL (`src/repl.ts`) allows humans to send and receive messages
+The human messaging REPL (`src/repl/`) allows humans to send and receive messages
 through octo-santa channels without Claude in the loop. The REPL is a **human actor**,
 not an agent — it does not call `registerAgent`, does not create DB cursor rows for
 reading (uses in-memory tracking), and does not affect the DM/group notification mode.

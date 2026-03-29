@@ -7,7 +7,7 @@ octo-santa has two independent entry points serving different audiences:
 | Entry point | Audience | Transport | Key dependencies |
 |-------------|----------|-----------|-----------------|
 | `src/mcp.ts` | Agents (MCP clients) | MCP stdio | `@modelcontextprotocol/sdk`, `src/channel.ts` |
-| `src/repl.ts` | Humans (terminal) | stdin/stdout | `node:readline` |
+| `src/repl/index.ts` | Humans (terminal) | stdin/stdout | `ink`, `react` |
 
 Both import the shared core via `src/bootstrap.ts` (DB setup with module-derived
 migrations) and `src/modules/messaging/tools.ts`. The shared core also includes
@@ -41,7 +41,7 @@ dist/
 | Artifact | Source | Strategy | Size | Requires Bun |
 |----------|--------|----------|------|-------------|
 | `dist/<ver>/mcp.js` | `src/mcp.ts` | `bun build --target bun` | ~1MB | Yes |
-| `dist/<ver>/ocr` | `src/repl.ts` | `bun build --compile` | ~59MB | No |
+| `dist/<ver>/ocr` | `src/repl/index.ts` | `bun build --compile` | ~59MB | No |
 
 Version is read from `package.json`. The `dist/latest` symlink is updated on
 every build so downstream references don't need updating on version bumps.
@@ -76,6 +76,6 @@ Or run from source during development:
 
 ## Invariant
 
-`src/mcp.ts` and `src/repl.ts` are strict peers. They share the messaging core
+`src/mcp.ts` and `src/repl/index.ts` are strict peers. They share the messaging core
 via imports but have zero cross-dependencies. Any change that introduces an import
 from one entry point to the other breaks the separate-bundle guarantee.

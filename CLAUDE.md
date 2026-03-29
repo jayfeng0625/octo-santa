@@ -8,6 +8,7 @@ Bun auto-loads `.env` — don't use dotenv.
 
 - `bun:sqlite` for SQLite. Don't use `better-sqlite3`.
 - `@modelcontextprotocol/sdk` for MCP server/transport.
+- `ink` and `react` for the REPL terminal UI (`src/repl/`). Uses `ink-testing-library` for component tests.
 
 ## Testing
 
