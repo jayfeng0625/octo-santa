@@ -30,4 +30,16 @@ describe("MessageLog", () => {
     const { lastFrame } = render(<MessageLog messages={messages} />);
     expect(lastFrame()).toContain("Switched to #general");
   });
+
+  it("renders messages with rich text tokens", () => {
+    const messages: LogEntry[] = [
+      { text: "[agent-a] hey @jay check #ops" },
+    ];
+    const { lastFrame } = render(<MessageLog messages={messages} />);
+    const frame = lastFrame()!;
+    expect(frame).toContain("[agent-a]");
+    expect(frame).toContain("@jay");
+    expect(frame).toContain("#ops");
+  });
+
 });
