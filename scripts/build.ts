@@ -24,7 +24,7 @@ if (!target || target === "mcp") {
 if (!target || target === "repl") {
   console.log(`Building REPL binary → dist/${version}/ocr`);
   const repl = Bun.spawnSync(
-    ["bun", "build", "src/repl.ts", "--compile", "--outfile", join(versionDir, "ocr")],
+    ["bun", "build", "src/repl/index.ts", "--compile", "--outfile", join(versionDir, "ocr")],
     { cwd: root, stdio: ["inherit", "inherit", "inherit"] }
   );
   if (repl.exitCode !== 0) process.exit(repl.exitCode);

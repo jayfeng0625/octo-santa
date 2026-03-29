@@ -3,7 +3,7 @@ import { existsSync, unlinkSync, writeFileSync } from "fs";
 import { createDb } from "../../src/db";
 import { runMigrations } from "../../src/migrations";
 import { messagingMigrations, readMessages } from "../../src/modules/messaging/tools";
-import { runSendMode } from "../../src/repl";
+import { runSendMode } from "../../src/repl/send";
 
 const TEST_DB = "/tmp/octo-santa-test-repl-send.sqlite";
 const TEST_FILE = "/tmp/octo-santa-test-brief.md";

@@ -23,7 +23,7 @@ describe("CLI process", () => {
     writeFileSync(TEST_FILE, "hello from cli test");
 
     const proc = Bun.spawn(
-      ["bun", "run", "src/repl.ts", "send", "--as", "jay", "-c", "planning", "-f", TEST_FILE],
+      ["bun", "run", "src/repl/index.ts", "send", "--as", "jay", "-c", "planning", "-f", TEST_FILE],
       { env: { ...process.env, OCTO_SANTA_DB: TEST_DB }, stdout: "pipe", stderr: "pipe" }
     );
     const exitCode = await proc.exited;
@@ -37,7 +37,7 @@ describe("CLI process", () => {
     cleanupDb(TEST_DB);
 
     const proc = Bun.spawn(
-      ["bun", "run", "src/repl.ts", "send", "--as", "jay", "-c", "planning"],
+      ["bun", "run", "src/repl/index.ts", "send", "--as", "jay", "-c", "planning"],
       {
         env: { ...process.env, OCTO_SANTA_DB: TEST_DB },
         stdout: "pipe",
@@ -59,7 +59,7 @@ describe("CLI process", () => {
     cleanupDb(TEST_DB);
 
     const proc = Bun.spawn(
-      ["bun", "run", "src/repl.ts", "send", "-c", "planning"],
+      ["bun", "run", "src/repl/index.ts", "send", "-c", "planning"],
       { env: { ...process.env, OCTO_SANTA_DB: TEST_DB }, stdout: "pipe", stderr: "pipe" }
     );
     const exitCode = await proc.exited;
@@ -73,7 +73,7 @@ describe("CLI process", () => {
     cleanupDb(TEST_DB);
 
     const proc = Bun.spawn(
-      ["bun", "run", "src/repl.ts", "send", "--as", "jay", "-c", "planning"],
+      ["bun", "run", "src/repl/index.ts", "send", "--as", "jay", "-c", "planning"],
       { env: { ...process.env, OCTO_SANTA_DB: TEST_DB }, stdout: "pipe", stderr: "pipe", stdin: "pipe" }
     );
     proc.stdin.write("piped message content");

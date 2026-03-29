@@ -2,7 +2,7 @@
 import { describe, it, expect } from "bun:test";
 import { PassThrough } from "node:stream";
 import * as readline from "node:readline";
-import { PasteAwareStream, handleLine, handleSigint } from "../../src/repl";
+import { PasteAwareStream, handleLine, handleSigint } from "../../src/repl-legacy";
 
 /** Collect all data pushed by the stream into a string array (one entry per push). */
 function collect(stream: PasteAwareStream): string[] {
