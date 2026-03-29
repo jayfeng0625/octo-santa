@@ -1,8 +1,11 @@
 // src/repl/index.ts
 
+import React from "react";
+import { render } from "ink";
 import { openDb } from "../bootstrap";
 import { parseArgs } from "./args";
 import { runSendMode } from "./send";
+import { App } from "./app";
 
 async function main() {
   const args = parseArgs(process.argv);
@@ -14,9 +17,15 @@ async function main() {
     process.exit(0);
   }
 
-  // Interactive mode — temporary: delegate to legacy startRepl until Ink app lands
-  const { startRepl } = await import("../repl-legacy");
-  startRepl(db, args.agentId, args.channel);
+  // Interactive mode
+  const { waitUntilExit } = render(
+    React.createElement(App, {
+      db,
+      agentId: args.agentId,
+      initialChannel: args.channel,
+    })
+  );
+  await waitUntilExit();
 }
 
 if (import.meta.main) {
