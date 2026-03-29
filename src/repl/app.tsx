@@ -24,7 +24,7 @@ export interface AppProps {
 export function App({ db, agentId, initialChannel, pollIntervalMs = 1000 }: AppProps) {
   const { exit } = useApp();
   const [messages, setMessages] = useState<LogEntry[]>([
-    { text: `Joined #${initialChannel} as ${agentId}. Type /help for commands.`, system: true },
+    { text: `Joined #${sanitize(initialChannel)} as ${agentId}. Type /help for commands.`, system: true },
   ]);
   const [activeChannel, setActiveChannel] = useState(initialChannel);
   const [cursors] = useState(() => {
@@ -77,7 +77,9 @@ export function App({ db, agentId, initialChannel, pollIntervalMs = 1000 }: AppP
 
   const handleSubmit = useCallback(
     (input: string) => {
-      const cmd = parseCommand(input);
+      const trimmed = input.trim();
+      // Only parse as command if single-line and starts with /
+      const cmd = !input.includes("\n") ? parseCommand(trimmed) : null;
       if (cmd) {
         const result = handleCommand(cmd, db, agentId, activeChannel, cursors);
         if (result.quit) {
@@ -116,7 +118,7 @@ export function App({ db, agentId, initialChannel, pollIntervalMs = 1000 }: AppP
   return (
     <Box flexDirection="column">
       <MessageLog messages={messages} />
-      <TextInput prompt={activeChannel} onSubmit={handleSubmit} onExit={exit} />
+      <TextInput prompt={sanitize(activeChannel)} onSubmit={handleSubmit} onExit={exit} />
     </Box>
   );
 }

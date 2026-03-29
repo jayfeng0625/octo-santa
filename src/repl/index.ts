@@ -18,11 +18,13 @@ async function main() {
   }
 
   // Interactive mode
+  const pollIntervalMs = Number(process.env.OCTO_SANTA_POLL_INTERVAL_MS) || undefined;
   const { waitUntilExit } = render(
     React.createElement(App, {
       db,
       agentId: args.agentId,
       initialChannel: args.channel,
+      ...(pollIntervalMs ? { pollIntervalMs } : {}),
     })
   );
   await waitUntilExit();
