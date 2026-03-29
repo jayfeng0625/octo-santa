@@ -19,8 +19,10 @@ export function TextInput({ prompt, onSubmit, onExit }: TextInputProps) {
         return;
       }
 
-      // Shift+Enter (Kitty protocol: \x1b[13;2u) -> insert newline
-      if (key.return && key.shift) {
+      // Newline insertion:
+      //   Shift+Enter (Kitty protocol) — key.return && key.shift
+      //   Alt/Option+Enter (universal) — key.return && key.meta
+      if (key.return && (key.shift || key.meta)) {
         setValue((v) => v.slice(0, cursorPos) + "\n" + v.slice(cursorPos));
         setCursorPos((p) => p + 1);
         return;
@@ -93,16 +95,44 @@ export function TextInput({ prompt, onSubmit, onExit }: TextInputProps) {
     { isActive: true },
   );
 
+  // Render lines with a visible cursor (inverse video on cursor character)
   const lines = value.split("\n");
+  const promptPrefix = `${prompt}> `;
+  const contPrefix = "  ";
+
+  // Compute which line and column the cursor is on
+  let charsSoFar = 0;
+  let cursorLine = 0;
+  let cursorCol = 0;
+  for (let i = 0; i < lines.length; i++) {
+    if (cursorPos <= charsSoFar + lines[i]!.length) {
+      cursorLine = i;
+      cursorCol = cursorPos - charsSoFar;
+      break;
+    }
+    charsSoFar += lines[i]!.length + 1; // +1 for \n
+  }
 
   return (
     <Box flexDirection="column">
-      {lines.map((line, i) => (
-        <Text key={i}>
-          {i === 0 ? `${prompt}> ` : "  "}
-          {line}
-        </Text>
-      ))}
+      {lines.map((line, i) => {
+        const prefix = i === 0 ? promptPrefix : contPrefix;
+        if (i === cursorLine) {
+          const before = line.slice(0, cursorCol);
+          const cursorChar = line[cursorCol] ?? " ";
+          const after = line.slice(cursorCol + 1);
+          return (
+            <Text key={i}>
+              {prefix}{before}<Text inverse>{cursorChar}</Text>{after}
+            </Text>
+          );
+        }
+        return (
+          <Text key={i}>
+            {prefix}{line}
+          </Text>
+        );
+      })}
     </Box>
   );
 }

@@ -135,6 +135,25 @@ describe("TextInput", () => {
     expect(submitted).toContain("line2");
   });
 
+  it("inserts newline on Alt+Enter (universal fallback)", async () => {
+    let submitted = "";
+    const { lastFrame, stdin } = render(
+      <TextInput prompt="general" onSubmit={(v) => { submitted = v; }} />
+    );
+    await tick();
+    stdin.write("line1");
+    await tick();
+    stdin.write("\x1b\r"); // Alt+Enter (ESC + CR)
+    await tick();
+    stdin.write("line2");
+    await tick();
+    expect(lastFrame()).toContain("line1");
+    expect(lastFrame()).toContain("line2");
+    stdin.write("\r");
+    await tick();
+    expect(submitted).toBe("line1\nline2");
+  });
+
   it("falls back to submit on Enter when no Kitty support (no regression)", async () => {
     let submitted = "";
     const { stdin } = render(
