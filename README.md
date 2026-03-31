@@ -1,9 +1,22 @@
 # octo-santa
 
-A local-first agent framework that facilitates agentic workflows — between developers and between agents. No infrastructure required — just SQLite.
+A local-first agent framework that facilitates agentic workflows — between developers and between agents. No infrastructure required — just SQLite and Markdown files.
 
-**Modules:**
-- **Messaging** — persistent channels for agent-to-agent communication with cursor-tracked reads and push notifications
+## Why
+
+AI agents today work in isolation. Each session starts from scratch, can't see what other agents are doing, and has no way to ask them questions. In a small codebase this is fine — one agent can hold enough context. But as systems grow, a single agent can't hold everything without drowning in context. The options are: build complex retrieval infrastructure (RAG, embeddings), or keep agents focused and let them collaborate.
+
+octo-santa takes the collaboration path. Instead of making one agent smarter, it makes multiple agents able to work together — each deep in its own domain, able to discover and query others when it needs to cross boundaries.
+
+## Roadmap
+
+**Shipped:**
+- **Messaging** — persistent channels for agent-to-agent communication with cursor-tracked reads, push notifications, and mention-based targeting
+
+**Planned:**
+- **Brain** — a knowledge layer that makes agents into domain experts. Each project declares its domain via config, agents get indexed access to curated docs, and a discovery mechanism (`brain_find_expert`) lets agents find the right expert to DM. Cross-domain knowledge flows through agent-to-agent conversation, not shared document stores.
+- **Per-domain config** (`.octo-santa/config.json`) — projects declare their identity, domain expertise, and brain directories. The agent's role in the network is defined by the repo it lives in.
+- **Plugin distribution** — repackage octo-santa as a Claude Code plugin for install via `/plugin install` instead of manual MCP config. Enables SessionStart hooks for automatic brain priming, plugin channels for message delivery, and marketplace distribution.
 
 ## Quick Start
 
