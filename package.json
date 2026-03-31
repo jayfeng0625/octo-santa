@@ -5,23 +5,17 @@
   "type": "module",
   "scripts": {
     "start": "bun run src/mcp.ts",
-    "repl": "bun run src/repl/index.ts",
     "build": "bun run scripts/build.ts",
-    "build:mcp": "bun run scripts/build.ts mcp",
-    "build:repl": "bun run scripts/build.ts repl"
+    "build:mcp": "bun run scripts/build.ts mcp"
   },
   "devDependencies": {
-    "@types/bun": "latest",
-    "@types/react": "^19.2.14",
-    "ink-testing-library": "^4.0.0"
+    "@types/bun": "latest"
   },
   "peerDependencies": {
     "typescript": "^5"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.27.1",
-    "ink": "^6.8.0",
-    "react": "^19.2.4",
     "zod": "^4.3.6"
   }
 }
