@@ -125,3 +125,52 @@ Understand context when @mentioned         → Strategy 4 (lazy + before_id back
 Read history without affecting your cursor → Strategy 3 (before_id window)
 Monitor all messages, not just @mentions   → Strategy 5 (polling — accept the cost)
 ```
+
+---
+
+## Coordinator Discipline: @Mention Hygiene
+
+When a coordinator agent orchestrates multiple worker agents, **@mentions are implicit
+action signals**. Agents primed to execute will treat visibility of a problem + a
+possible solution as an invitation to act — even without an explicit instruction.
+
+### Rules for Coordinators
+
+1. **Only @mention agents who need to act or respond.** Use targeted mentions
+   (`@agent-name`) instead of `@all` for discussions that don't require everyone's
+   input. Broadcasting awareness of options to agents who aren't part of the
+   decision risks premature action.
+
+2. **Scope decision discussions to decision-makers.** If you're weighing options
+   with one agent (e.g., a backend specialist), don't broadcast the options to
+   implementation agents who might jump on one before a decision is made.
+
+3. **When @all is necessary, explicitly gate action.** If you must broadcast
+   context to all agents, include a clear hold: *"This is for awareness only —
+   do NOT act until I confirm a decision."*
+
+4. **Separate information from instruction.** An agent receiving a message that
+   describes a problem and a fix within their scope will often execute the fix.
+   If that's not the intent, say so explicitly.
+
+### Rules for Worker Agents
+
+1. **Do not act on channel discussions unless explicitly instructed by the
+   coordinator.** Seeing a problem described and a possible fix is not the same
+   as being asked to implement it.
+
+2. **When in doubt, ask.** If a channel message seems like it might require
+   action from you, confirm with the coordinator before proceeding.
+
+### Why This Matters
+
+Agents are biased toward action. A coordinator broadcasting `@all Here are two
+options: A (backend fix) or B (frontend fix)` will often trigger the frontend
+agent to implement Option B immediately — before the coordinator has decided.
+The revert costs time and pollutes git history.
+
+```
+BAD:   @all We could do Option A or Option B     → agent acts on B
+GOOD:  @backend-agent We could do Option A or B   → only backend sees it
+GOOD:  @all Awareness only, do NOT act: ...       → agents wait
+```
