@@ -145,6 +145,15 @@ export class KeyParser {
           i = result.nextIndex;
           continue;
         }
+        const next = bytes[i + 1]!;
+        // ESC+b = Alt+Left (macOS word movement)
+        if (next === 0x62) { actions.push({ type: "move", dir: "wordLeft" }); i += 2; continue; }
+        // ESC+f = Alt+Right (macOS word movement)
+        if (next === 0x66) { actions.push({ type: "move", dir: "wordRight" }); i += 2; continue; }
+        // ESC+DEL = Option+Backspace (macOS delete word)
+        if (next === 0x7f) { actions.push({ type: "deleteWord" }); i += 2; continue; }
+        // ESC+Enter = Option+Enter → insert newline
+        if (next === 0x0d || next === 0x0a) { actions.push({ type: "insert", text: "\n" }); i += 2; continue; }
         // ESC + other char — skip (unknown sequence)
         i += 2;
         continue;
@@ -261,12 +270,25 @@ export class KeyParser {
       const codepoint = parseInt(parts[0] ?? "", 10);
       const modifier = parseInt(parts[1] ?? "1", 10);
       if (codepoint === 13 || codepoint === 10) {
-        // Enter with modifier
-        if ((modifier - 1) & 1) {
-          // Shift bit set — Shift+Enter → insert newline
+        // Shift or Alt+Enter → insert newline (Option+Enter on macOS)
+        if ((modifier - 1) & 0b11) {
           return { type: "insert", text: "\n" };
         }
         return { type: "submit" };
+      }
+      // Alt+Backspace → deleteWord (Option+Backspace on macOS)
+      if (codepoint === 127 && (modifier - 1) & 2) {
+        return { type: "deleteWord" };
+      }
+      // Ctrl+letter keys (Ghostty sends these as CSI u with Kitty protocol)
+      if ((modifier - 1) & 4) {
+        switch (codepoint) {
+          case 97:  return { type: "move", dir: "home" };  // Ctrl+A
+          case 101: return { type: "move", dir: "end" };   // Ctrl+E
+          case 107: return { type: "deleteToEnd" };         // Ctrl+K
+          case 117: return { type: "deleteToStart" };       // Ctrl+U
+          case 119: return { type: "deleteWord" };          // Ctrl+W
+        }
       }
       return null;
     }

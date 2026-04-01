@@ -6,7 +6,9 @@
   "scripts": {
     "start": "bun run src/mcp.ts",
     "build": "bun run scripts/build.ts",
-    "build:mcp": "bun run scripts/build.ts mcp"
+    "build:mcp": "bun run scripts/build.ts mcp",
+    "build:repl": "bun run scripts/build.ts repl",
+    "start:repl": "bun run src/repl/index.ts"
   },
   "devDependencies": {
     "@types/bun": "latest"

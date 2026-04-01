@@ -25,6 +25,7 @@ export interface CommandResult {
   channelChange?: string;
   exit?: boolean;
   localEcho?: { agent_id: string; content: string };
+  messages?: { agent_id: string; content: string }[];
 }
 
 export const KNOWN_COMMANDS = new Set([
@@ -33,12 +34,13 @@ export const KNOWN_COMMANDS = new Set([
 ]);
 
 export function parseCommand(input: string): ParsedCommand | null {
-  if (!input.startsWith("/")) return null;
-  if (input.includes("\n")) return null;
-  const spaceIdx = input.indexOf(" ");
-  const token = spaceIdx === -1 ? input.slice(1) : input.slice(1, spaceIdx);
+  const trimmed = input.trim();
+  if (!trimmed.startsWith("/")) return null;
+  if (trimmed.includes("\n")) return null;
+  const spaceIdx = trimmed.indexOf(" ");
+  const token = spaceIdx === -1 ? trimmed.slice(1) : trimmed.slice(1, spaceIdx);
   if (!KNOWN_COMMANDS.has(token)) return null;
-  const args = spaceIdx === -1 ? "" : input.slice(spaceIdx + 1).trim();
+  const args = spaceIdx === -1 ? "" : trimmed.slice(spaceIdx + 1).trim();
   return { name: token, args };
 }
 
@@ -96,7 +98,7 @@ export function executeCommand(
 
       if (rows.length === 0) return { output: ["No messages"] };
       rows.reverse();
-      return { output: rows.map(r => `[${r.agent_id}] ${r.content}`) };
+      return { output: [], messages: rows };
     }
 
     case "send": {
