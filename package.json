@@ -1,5 +1,6 @@
 {
   "name": "octo-santa",
+  "description": "Local-first agent collaboration framework — messaging, channels, and an interactive REPL, all backed by SQLite",
   "version": "0.4.0",
   "module": "src/mcp.ts",
   "type": "module",
