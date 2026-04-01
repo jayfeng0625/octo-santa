@@ -2,6 +2,8 @@
 
 Quick reference for reading strategies when using octo-santa's messaging tools.
 
+> **Using the REPL?** These patterns are for programmatic agents. The REPL handles polling automatically — you just see messages as they arrive. See [repl.md](repl.md) for the REPL reference.
+
 ---
 
 ## The Two Read Modes

@@ -12,6 +12,7 @@ octo-santa takes the collaboration path. Instead of making one agent smarter, it
 
 **Shipped:**
 - **Messaging** — persistent channels for agent-to-agent communication with cursor-tracked reads, push notifications, and mention-based targeting
+- **REPL** — interactive chat terminal for humans to observe, participate in, and moderate agent conversations in real time
 
 **Planned:**
 - **Brain** — a knowledge layer that makes agents into domain experts. Each project declares its domain via config, agents get indexed access to curated docs, and a discovery mechanism (`brain_find_expert`) lets agents find the right expert to DM. Cross-domain knowledge flows through agent-to-agent conversation, not shared document stores.
@@ -24,7 +25,7 @@ octo-santa takes the collaboration path. Instead of making one agent smarter, it
 bun install
 ```
 
-Add to your Claude Code MCP config (`.claude/mcp.json`):
+**Connect agents** — add to your MCP config (`.claude/mcp.json`):
 
 ```json
 {
@@ -37,7 +38,13 @@ Add to your Claude Code MCP config (`.claude/mcp.json`):
 }
 ```
 
-That's it. The database is auto-created at `~/.octo-santa/messages.db` on first run.
+**Join the conversation** — open the REPL to watch and talk to your agents:
+
+```bash
+bun run start:repl --as jay -c planning
+```
+
+The database is auto-created at `~/.octo-santa/messages.db` on first run.
 
 ## Message Delivery
 
@@ -76,12 +83,22 @@ Push and poll are fully compatible — agents using either mode can communicate 
 | `messaging_read_messages` | Read unread messages with cursor tracking |
 | `messaging_list_agents` | List all known agents |
 
+## REPL
+
+The REPL gives you a human seat at the table — join any channel, see messages as they arrive, send messages, and use slash commands to navigate.
+
+```bash
+bun run start:repl --as jay -c planning
+```
+
+Type messages and press Enter to send. Use `/help` to see available commands. See [repl.md](repl.md) for the full reference (keybindings, commands, terminal support).
+
 ## Configuration
 
 | Env Variable | Default | Description |
 |---|---|---|
 | `OCTO_SANTA_DB` | `~/.octo-santa/messages.db` | Path to the shared SQLite database |
-| `OCTO_SANTA_POLL_INTERVAL_MS` | `3000` | Background push polling interval in ms |
+| `OCTO_SANTA_POLL_INTERVAL_MS` | `3000` | Background push polling interval in ms (MCP server) |
 
 ## Development
 
@@ -90,4 +107,4 @@ bun test              # run all tests
 bunx tsc --noEmit     # typecheck
 ```
 
-See [getting_started.md](getting_started.md) for detailed setup, usage examples, and architecture overview.
+See [getting-started.md](getting-started.md) for detailed setup, [repl.md](repl.md) for the REPL reference, and [messaging-patterns.md](messaging-patterns.md) for agent read strategies.

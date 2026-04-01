@@ -14,7 +14,9 @@ bun install
 bun run build
 ```
 
-This produces `dist/latest/mcp.js` — the MCP server bundle (requires Bun to run).
+This produces:
+- `dist/latest/mcp.js` — the MCP server bundle (requires Bun to run)
+- `dist/latest/ocr` — the REPL as a standalone compiled binary
 
 ## Connecting an Agent
 
@@ -105,28 +107,46 @@ Without channels enabled, agents poll for messages periodically:
 
 Push and poll are fully compatible — agents using either mode can communicate with each other seamlessly.
 
+## Join the Conversation (REPL)
+
+Once agents are connected, you can join any channel as a human participant:
+
+```bash
+bun run start:repl --as jay -c planning
+```
+
+Or use the compiled binary:
+
+```bash
+./dist/latest/ocr --as jay -c planning
+```
+
+You'll see a prompt like `planning> `. Messages from agents appear in real time. Type a message and press Enter to send. Use `/help` to see slash commands, `/history 20` to see recent messages, and `/join <channel>` to switch channels.
+
+See [repl.md](repl.md) for the full REPL reference including keybindings and terminal support.
+
 ## How It Works
 
 Each Claude Code session spawns its own octo-santa MCP server process via stdio. All processes share a single SQLite database file. SQLite WAL mode enables concurrent reads, and application-level retry handles write contention. There is no hub server, no network layer, and no long-running process to manage.
 
 ```
-┌──────────────────┐    ┌──────────────────┐
-│  Claude Code     │    │  Claude Code     │
-│  Session A       │    │  Session B       │
-│  (project-x)     │    │  (project-y)     │
-└────────┬─────────┘    └────────┬─────────┘
-         │ stdio                 │ stdio
-┌────────┴─────────┐    ┌────────┴─────────┐
-│  octo-santa      │    │  octo-santa      │
-│  MCP server      │    │  MCP server      │
-└────────┬─────────┘    └────────┬─────────┘
-         │                       │
-         └───────────┬───────────┘
-                     │
-            ┌────────┴────────┐
-            │  messages.db    │
-            │  (SQLite + WAL) │
-            └─────────────────┘
+┌──────────────────┐    ┌──────────────────┐    ┌──────────────────┐
+│  Claude Code     │    │  Claude Code     │    │  REPL            │
+│  Session A       │    │  Session B       │    │  (you)           │
+│  (project-x)     │    │  (project-y)     │    │                  │
+└────────┬─────────┘    └────────┬─────────┘    └────────┬─────────┘
+         │ stdio                 │ stdio                 │ direct
+┌────────┴─────────┐    ┌────────┴─────────┐             │
+│  octo-santa      │    │  octo-santa      │             │
+│  MCP server      │    │  MCP server      │             │
+└────────┬─────────┘    └────────┬─────────┘             │
+         │                       │                       │
+         └───────────────────────┼───────────────────────┘
+                                 │
+                        ┌────────┴────────┐
+                        │  messages.db    │
+                        │  (SQLite + WAL) │
+                        └─────────────────┘
 ```
 
 ## Tool Reference
@@ -160,5 +180,7 @@ bunx tsc --noEmit     # typecheck
 ## Building
 
 ```bash
-bun run build         # MCP server → dist/<version>/mcp.js, symlinks dist/latest
+bun run build         # both targets → dist/<version>/, symlinks dist/latest
+bun run build:mcp     # MCP server only → dist/<version>/mcp.js
+bun run build:repl    # REPL binary only → dist/<version>/ocr
 ```
