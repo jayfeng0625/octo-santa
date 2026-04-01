@@ -1,38 +1,45 @@
 // src/repl/index.ts
-
-import React from "react";
-import { render } from "ink";
 import { openDb } from "../bootstrap";
-import { parseArgs } from "./args";
-import { runSendMode } from "./send";
-import { App } from "./app";
+import { startApp } from "./app";
+import { createChannel } from "../modules/messaging/tools";
 
-async function main() {
-  const args = parseArgs(process.argv);
-  const db = openDb();
+function parseArgs(argv: string[]): { agentId: string; channel: string } {
+  let agentId = "";
+  let channel = "";
 
-  if (args.mode === "send") {
-    const msg = runSendMode(db, args.agentId, args.channel, args.filePath);
-    console.log(msg.id);
-    process.exit(0);
+  for (let i = 0; i < argv.length; i++) {
+    if (argv[i] === "--as" && i + 1 < argv.length) {
+      agentId = argv[i + 1]!;
+      i++;
+    } else if (argv[i] === "-c" && i + 1 < argv.length) {
+      channel = argv[i + 1]!;
+      i++;
+    }
   }
 
-  // Interactive mode
-  const pollIntervalMs = Number(process.env.OCTO_SANTA_POLL_INTERVAL_MS) || undefined;
-  const { waitUntilExit } = render(
-    React.createElement(App, {
-      db,
-      agentId: args.agentId,
-      initialChannel: args.channel,
-      ...(pollIntervalMs ? { pollIntervalMs } : {}),
-    })
-  );
-  await waitUntilExit();
+  if (!agentId) {
+    console.error("Usage: bun run src/repl/index.ts --as <name> -c <channel>");
+    process.exit(1);
+  }
+  if (!channel) {
+    console.error("Usage: bun run src/repl/index.ts --as <name> -c <channel>");
+    process.exit(1);
+  }
+
+  return { agentId, channel };
 }
 
-if (import.meta.main) {
-  main().catch((err) => {
-    console.error(err.message);
-    process.exit(1);
-  });
-}
+const { agentId, channel } = parseArgs(process.argv.slice(2));
+const db = openDb();
+
+// Ensure channel exists
+createChannel(db, channel, agentId);
+
+const pollIntervalMs = Number(process.env.OCTO_SANTA_POLL_INTERVAL_MS) || 1000;
+
+// Detect Kitty protocol support — check TERM_PROGRAM or just enable and let fallback handle it
+const kittyTerminals = new Set(["ghostty", "WezTerm", "iTerm2", "kitty"]);
+const termProgram = process.env.TERM_PROGRAM ?? "";
+const kittyEnabled = kittyTerminals.has(termProgram) || process.env.OCTO_SANTA_KITTY === "1";
+
+startApp({ db, agentId, channel, pollIntervalMs, kittyEnabled });

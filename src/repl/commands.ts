@@ -1,18 +1,21 @@
-// src/repl/commands.ts
-
-import { readFileSync } from "node:fs";
 import type { Database } from "bun:sqlite";
+import { readFileSync } from "node:fs";
 import {
-  createChannel,
   listChannels,
-  sendMessage,
-  readMessages,
   listAgents,
   listChannelMembers,
+  createChannel,
+  sendMessage,
 } from "../modules/messaging/tools";
-import { sanitize } from "./display";
 
-export interface Command {
+export interface ReplState {
+  activeChannel: string;
+  joinedChannels: Set<string>;
+  cursors: Map<string, number>;
+  agentId: string;
+}
+
+export interface ParsedCommand {
   name: string;
   args: string;
 }
@@ -20,121 +23,126 @@ export interface Command {
 export interface CommandResult {
   output: string[];
   channelChange?: string;
-  quit?: boolean;
+  exit?: boolean;
+  localEcho?: { agent_id: string; content: string };
+  messages?: { agent_id: string; content: string }[];
 }
 
-export function parseCommand(line: string): Command | null {
-  if (!line.startsWith("/")) return null;
-  const spaceIdx = line.indexOf(" ");
-  if (spaceIdx === -1) return { name: line.slice(1), args: "" };
-  return { name: line.slice(1, spaceIdx), args: line.slice(spaceIdx + 1).trim() };
+export const KNOWN_COMMANDS = new Set([
+  "channels", "agents", "join", "create", "history",
+  "send", "members", "help", "quit",
+]);
+
+export function parseCommand(input: string): ParsedCommand | null {
+  const trimmed = input.trim();
+  if (!trimmed.startsWith("/")) return null;
+  if (trimmed.includes("\n")) return null;
+  const spaceIdx = trimmed.indexOf(" ");
+  const token = spaceIdx === -1 ? trimmed.slice(1) : trimmed.slice(1, spaceIdx);
+  if (!KNOWN_COMMANDS.has(token)) return null;
+  const args = spaceIdx === -1 ? "" : trimmed.slice(spaceIdx + 1).trim();
+  return { name: token, args };
 }
 
-export function handleCommand(
-  cmd: Command,
+export function executeCommand(
+  cmd: ParsedCommand,
   db: Database,
-  agentId: string,
-  activeChannel: string,
-  cursors: Map<string, number>
+  state: ReplState,
 ): CommandResult {
   switch (cmd.name) {
     case "channels": {
       const channels = listChannels(db);
-      const lines = channels.map(
-        (c) => `  ${sanitize(c.name)}${c.name === activeChannel ? " (active)" : ""}`
-      );
-      return { output: lines.length ? lines : ["No channels"] };
+      if (channels.length === 0) return { output: ["No channels"] };
+      return { output: channels.map(ch => `  ${ch.name}`) };
     }
+
     case "agents": {
       const agents = listAgents(db);
-      const lines = agents.map((a) => `  ${sanitize(a.id)}`);
-      return { output: lines.length ? lines : ["No agents"] };
+      if (agents.length === 0) return { output: ["No agents"] };
+      return { output: agents.map(a => `  ${a.id}`) };
     }
+
     case "join": {
-      if (!cmd.args) {
-        return { output: ["Usage: /join <channel>"] };
+      const channelName = cmd.args;
+      if (!channelName) return { output: ["Usage: /join <channel>"] };
+      createChannel(db, channelName, state.agentId);
+      const channel = (db.query("SELECT id FROM channels WHERE name = ?").get(channelName) as { id: number } | null);
+      if (channel) {
+        const maxRow = db.query("SELECT MAX(id) as max_id FROM messages WHERE channel_id = ?").get(channel.id) as { max_id: number | null };
+        state.cursors.set(channelName, maxRow?.max_id ?? 0);
       }
-      createChannel(db, cmd.args, agentId);
-      if (!cursors.has(cmd.args)) {
-        const maxRow = db
-          .query(
-            `SELECT MAX(m.id) as max_id
-             FROM messages m
-             JOIN channels ch ON m.channel_id = ch.id
-             WHERE ch.name = ?`
-          )
-          .get(cmd.args) as { max_id: number | null } | null;
-        cursors.set(cmd.args, maxRow?.max_id ?? 0);
-      }
-      return {
-        output: [`Switched to #${sanitize(cmd.args)}`],
-        channelChange: cmd.args,
-      };
+      state.joinedChannels.add(channelName);
+      return { output: [`Joined #${channelName}`], channelChange: channelName };
     }
+
     case "create": {
-      if (!cmd.args) {
-        return { output: ["Usage: /create <channel>"] };
-      }
-      createChannel(db, cmd.args, agentId);
-      return { output: [`Created #${sanitize(cmd.args)}`] };
+      const channelName = cmd.args;
+      if (!channelName) return { output: ["Usage: /create <channel>"] };
+      createChannel(db, channelName, state.agentId);
+      return { output: [`Created #${channelName}`] };
     }
+
     case "history": {
-      const parsed = parseInt(cmd.args);
-      const n = parsed > 0 ? parsed : 20;
-      const msgs = readMessages(db, agentId, activeChannel, {
-        before_id: Number.MAX_SAFE_INTEGER,
-        limit: n,
-      });
-      if (msgs.length === 0) {
-        return { output: ["No message history"] };
-      }
-      return {
-        output: msgs.map((msg) => `[${sanitize(msg.agent_id)}] ${sanitize(msg.content)}`),
-      };
+      let limit = parseInt(cmd.args, 10);
+      if (!Number.isFinite(limit) || limit <= 0) limit = 20;
+
+      const channel = db.query("SELECT id FROM channels WHERE name = ?").get(state.activeChannel) as { id: number } | null;
+      if (!channel) return { output: ["Channel not found"] };
+
+      const rows = db.query(
+        `SELECT agent_id, content FROM messages
+         WHERE channel_id = ?
+         ORDER BY id DESC
+         LIMIT ?`
+      ).all(channel.id, limit) as { agent_id: string; content: string }[];
+
+      if (rows.length === 0) return { output: ["No messages"] };
+      rows.reverse();
+      return { output: [], messages: rows };
     }
+
     case "send": {
       const match = cmd.args.match(/^-f\s+(.+)$/);
-      if (!match) {
-        return { output: ["Usage: /send -f <path>"] };
-      }
+      if (!match) return { output: ["Usage: /send -f <path>"] };
+      const filePath = match[1]!.trim();
       try {
-        const content = readFileSync(match[1]!, "utf-8");
-        sendMessage(db, agentId, activeChannel, content);
-        return { output: [`[${agentId}] (file: ${match[1]})`] };
-      } catch (err: any) {
-        return { output: [`Error: ${err.message}`] };
+        const content = readFileSync(filePath, "utf-8");
+        sendMessage(db, state.agentId, state.activeChannel, content);
+        return {
+          output: [],
+          localEcho: { agent_id: state.agentId, content },
+        };
+      } catch (err) {
+        return { output: [`Failed to read file: ${(err as Error).message}`] };
       }
     }
+
     case "members": {
-      const members = listChannelMembers(db, activeChannel);
-      if (members.length === 0) {
-        return { output: ["No members in this channel"] };
-      }
-      return {
-        output: members.map(
-          (m) => `  ${sanitize(m.agent_id)} ${m.active ? "(active)" : "(inactive)"}`
-        ),
-      };
+      const members = listChannelMembers(db, state.activeChannel);
+      if (members.length === 0) return { output: ["No members"] };
+      return { output: members.map(m => `  ${m.agent_id} ${m.active ? "(active)" : "(inactive)"}`) };
     }
-    case "help": {
+
+    case "help":
       return {
         output: [
           "Commands:",
-          "  /channels         List all channels",
-          "  /agents           List all known agents",
-          "  /members          List channel members (agents appear after sending/reading)",
-          "  /join <channel>   Switch to a channel",
-          "  /create <channel> Create a channel without switching",
-          "  /history [N]      Show last N messages (default 20)",
-          "  /send -f <path>   Send file contents",
-          "  /help             Show this help",
-          "  /quit             Exit",
+          "  /channels        — List all channels",
+          "  /agents          — List all known agents",
+          "  /join <channel>  — Switch active channel",
+          "  /create <channel> — Create a new channel",
+          "  /history [N]     — Show last N messages (default 20)",
+          "  /send -f <path>  — Send file contents",
+          "  /members         — List channel members",
+          "  /help            — Show this help",
+          "  /quit            — Exit",
         ],
       };
-    }
+
     case "quit":
-      return { output: [], quit: true };
+      return { output: [], exit: true };
+
     default:
-      return { output: [`Unknown command: /${cmd.name}. Type /help for commands.`] };
+      return { output: [`Unknown command: ${cmd.name}`] };
   }
 }

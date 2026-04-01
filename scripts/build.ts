@@ -8,9 +8,9 @@ const root = join(import.meta.dir, "..");
 const versionDir = join(root, "dist", version);
 const latestLink = join(root, "dist", "latest");
 
-const target = process.argv[2]; // "mcp", "repl", or undefined (both)
-
 mkdirSync(versionDir, { recursive: true });
+
+const target = process.argv[2]; // "mcp", "repl", or undefined (build all)
 
 if (!target || target === "mcp") {
   console.log(`Building MCP bundle → dist/${version}/mcp.js`);
@@ -24,7 +24,7 @@ if (!target || target === "mcp") {
 if (!target || target === "repl") {
   console.log(`Building REPL binary → dist/${version}/ocr`);
   const repl = Bun.spawnSync(
-    ["bun", "build", "src/repl/index.ts", "--compile", "--outfile", join(versionDir, "ocr"), "--external", "react-devtools-core"],
+    ["bun", "build", "src/repl/index.ts", "--compile", "--outfile", join(versionDir, "ocr")],
     { cwd: root, stdio: ["inherit", "inherit", "inherit"] }
   );
   if (repl.exitCode !== 0) process.exit(repl.exitCode);

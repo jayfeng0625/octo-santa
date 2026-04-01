@@ -14,9 +14,9 @@ bun install
 bun run build
 ```
 
-This produces two artifacts in `dist/latest/`:
-- `mcp.js` — MCP server for agents (requires Bun to run)
-- `ocr` — standalone REPL binary for humans (no dependencies)
+This produces:
+- `dist/latest/mcp.js` — the MCP server bundle (requires Bun to run)
+- `dist/latest/ocr` — the REPL as a standalone compiled binary
 
 ## Connecting an Agent
 
@@ -83,46 +83,6 @@ claude mcp add octo-santa -- bun run /path/to/octo-santa/src/mcp.ts
 
 The server auto-creates the database file and runs migrations on first startup. No init step required.
 
-## Human REPL
-
-The REPL lets humans send and receive messages without Claude in the loop.
-
-### Interactive mode
-
-```bash
-./dist/latest/ocr --as jay -c planning
-```
-
-This opens an interactive prompt. Type messages, use `/help` for commands.
-
-**Multiline input:** Press Shift+Enter (Kitty-compatible terminals) or Alt/Option+Enter (universal fallback) to insert a newline. Up/Down arrows navigate between lines. Enter submits the message.
-
-**Rich text:** Messages render with token-level coloring — `@mentions` in blue, `#channels` in green, `` `code` `` in yellow, `**bold**` and `*italic*` formatted, and agent prefixes like `[alice]` in cyan.
-
-### Send mode (fire-and-forget)
-
-```bash
-# Send a file
-./dist/latest/ocr send --as jay -c planning -f brief.md
-
-# Pipe content
-echo "deploy approved" | ./dist/latest/ocr send --as jay -c ops
-```
-
-### REPL slash commands
-
-| Command | Description |
-|---|---|
-| `/channels` | List all channels |
-| `/agents` | List all known agents |
-| `/join <channel>` | Switch to a channel |
-| `/create <channel>` | Create a channel without switching |
-| `/history [N]` | Show last N messages (default 20) |
-| `/send -f <path>` | Send file contents |
-| `/members` | Show members of the current channel |
-| `/help` | Show available commands |
-| `/quit` | Exit |
-
 ## Message Delivery: Push vs Poll
 
 octo-santa supports two delivery modes. Both use the same tools — the only difference is whether agents need to poll or get pushed to.
@@ -147,28 +107,46 @@ Without channels enabled, agents poll for messages periodically:
 
 Push and poll are fully compatible — agents using either mode can communicate with each other seamlessly.
 
+## Join the Conversation (REPL)
+
+Once agents are connected, you can join any channel as a human participant:
+
+```bash
+bun run start:repl --as jay -c planning
+```
+
+Or use the compiled binary:
+
+```bash
+./dist/latest/ocr --as jay -c planning
+```
+
+You'll see a prompt like `planning> `. Messages from agents appear in real time. Type a message and press Enter to send. Use `/help` to see slash commands, `/history 20` to see recent messages, and `/join <channel>` to switch channels.
+
+See [repl.md](repl.md) for the full REPL reference including keybindings and terminal support.
+
 ## How It Works
 
 Each Claude Code session spawns its own octo-santa MCP server process via stdio. All processes share a single SQLite database file. SQLite WAL mode enables concurrent reads, and application-level retry handles write contention. There is no hub server, no network layer, and no long-running process to manage.
 
 ```
 ┌──────────────────┐    ┌──────────────────┐    ┌──────────────────┐
-│  Claude Code     │    │  Claude Code     │    │  Human           │
-│  Session A       │    │  Session B       │    │  Terminal        │
+│  Claude Code     │    │  Claude Code     │    │  REPL            │
+│  Session A       │    │  Session B       │    │  (you)           │
 │  (project-x)     │    │  (project-y)     │    │                  │
 └────────┬─────────┘    └────────┬─────────┘    └────────┬─────────┘
-         │ stdio                 │ stdio                 │ stdin/out
-┌────────┴─────────┐    ┌────────┴─────────┐    ┌────────┴─────────┐
-│  octo-santa      │    │  octo-santa      │    │  ocr             │
-│  MCP server      │    │  MCP server      │    │  REPL binary     │
-└────────┬─────────┘    └────────┬─────────┘    └────────┬─────────┘
+         │ stdio                 │ stdio                 │ direct
+┌────────┴─────────┐    ┌────────┴─────────┐             │
+│  octo-santa      │    │  octo-santa      │             │
+│  MCP server      │    │  MCP server      │             │
+└────────┬─────────┘    └────────┬─────────┘             │
          │                       │                       │
-         └───────────┬───────────┴───────────┬───────────┘
-                     │                       │
-              ┌──────┴───────┐        ┌──────┴───────┐
-              │  messages.db │        │  (WAL + SHM) │
-              │  (SQLite)    │        │              │
-              └──────────────┘        └──────────────┘
+         └───────────────────────┼───────────────────────┘
+                                 │
+                        ┌────────┴────────┐
+                        │  messages.db    │
+                        │  (SQLite + WAL) │
+                        └─────────────────┘
 ```
 
 ## Tool Reference
@@ -202,7 +180,7 @@ bunx tsc --noEmit     # typecheck
 ## Building
 
 ```bash
-bun run build         # both artifacts → dist/<version>/, symlinks dist/latest
-bun run build:mcp     # MCP server only
-bun run build:repl    # REPL binary only
+bun run build         # both targets → dist/<version>/, symlinks dist/latest
+bun run build:mcp     # MCP server only → dist/<version>/mcp.js
+bun run build:repl    # REPL binary only → dist/<version>/ocr
 ```

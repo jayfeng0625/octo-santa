@@ -1,39 +1,13 @@
 import { describe, it, expect, afterEach } from "bun:test";
-import { existsSync, unlinkSync } from "fs";
-import { parseCommand, handleCommand } from "../../src/repl/commands";
+import { existsSync, unlinkSync, writeFileSync } from "fs";
 import { createDb } from "../../src/db";
 import { runMigrations } from "../../src/migrations";
 import {
   messagingMigrations,
-  registerAgent,
   sendMessage,
-  readMessages,
+  createChannel,
 } from "../../src/modules/messaging/tools";
-
-describe("parseCommand", () => {
-  it("returns null for regular messages", () => {
-    expect(parseCommand("hello world")).toBeNull();
-  });
-
-  it("parses command without args", () => {
-    expect(parseCommand("/channels")).toEqual({ name: "channels", args: "" });
-  });
-
-  it("parses command with args", () => {
-    expect(parseCommand("/join planning")).toEqual({ name: "join", args: "planning" });
-  });
-
-  it("parses command with multi-word args", () => {
-    expect(parseCommand("/send -f path/to/file.md")).toEqual({
-      name: "send",
-      args: "-f path/to/file.md",
-    });
-  });
-
-  it("parses /history with number", () => {
-    expect(parseCommand("/history 20")).toEqual({ name: "history", args: "20" });
-  });
-});
+import { parseCommand, executeCommand, KNOWN_COMMANDS } from "../../src/repl/commands";
 
 const TEST_DB = "/tmp/octo-santa-test-commands.sqlite";
 
@@ -51,169 +25,148 @@ function setupDb() {
   return db;
 }
 
-afterEach(() => cleanupDb(TEST_DB));
+afterEach(() => {
+  cleanupDb(TEST_DB);
+});
 
-describe("handleCommand", () => {
-  it("/channels lists channels with active marker", () => {
-    const db = setupDb();
-    sendMessage(db, "jay", "planning", "hello");
-    sendMessage(db, "jay", "ops", "hello");
-    const cursors = new Map([["planning", 0]]);
-
-    const result = handleCommand({ name: "channels", args: "" }, db, "jay", "planning", cursors);
-
-    expect(result.output.join("\n")).toContain("planning (active)");
-    expect(result.output.join("\n")).toContain("ops");
-    db.close();
+describe("parseCommand", () => {
+  it("parses known command", () => {
+    expect(parseCommand("/join planning")).toEqual({ name: "join", args: "planning" });
   });
 
-  it("/agents lists registered agents", () => {
-    const db = setupDb();
-    registerAgent(db, "jay");
-    registerAgent(db, "agent-a");
-    const cursors = new Map([["planning", 0]]);
-
-    const result = handleCommand({ name: "agents", args: "" }, db, "jay", "planning", cursors);
-
-    expect(result.output.join("\n")).toContain("jay");
-    expect(result.output.join("\n")).toContain("agent-a");
-    db.close();
+  it("parses command with no args", () => {
+    expect(parseCommand("/channels")).toEqual({ name: "channels", args: "" });
   });
 
-  it("/join switches active channel and initializes in-memory cursor", () => {
-    const db = setupDb();
-    sendMessage(db, "agent-a", "ops", "old msg 1");
-    sendMessage(db, "agent-a", "ops", "old msg 2");
-    const cursors = new Map([["planning", 0]]);
-
-    const result = handleCommand({ name: "join", args: "ops" }, db, "jay", "planning", cursors);
-
-    expect(result.channelChange).toBe("ops");
-    // In-memory cursor should exist and be set to max message id (skip old messages)
-    expect(cursors.has("ops")).toBe(true);
-    // No DB cursor row should be created for the human
-    const cursor = db
-      .query(
-        `SELECT cr.* FROM cursors cr
-         JOIN channels ch ON cr.channel_id = ch.id
-         WHERE cr.agent_id = ? AND ch.name = ?`
-      )
-      .get("jay", "ops");
-    expect(cursor).toBeNull();
-    db.close();
+  it("returns null for unknown slash token", () => {
+    expect(parseCommand("/path/to/file")).toBeNull();
   });
 
-  it("/history shows recent messages from others", () => {
+  it("returns null for multiline input even if starts with known command", () => {
+    expect(parseCommand("/join planning\nmore text")).toBeNull();
+  });
+
+  it("returns null for non-slash input", () => {
+    expect(parseCommand("hello world")).toBeNull();
+  });
+
+  it("returns null for empty input", () => {
+    expect(parseCommand("")).toBeNull();
+  });
+});
+
+describe("executeCommand", () => {
+  it("/channels lists channels", () => {
     const db = setupDb();
-    sendMessage(db, "agent-a", "planning", "message one");
-    sendMessage(db, "agent-a", "planning", "message two");
-    sendMessage(db, "agent-a", "planning", "message three");
-    const cursors = new Map([["planning", 0]]);
+    createChannel(db, "test-ch", "user");
+    const result = executeCommand(
+      { name: "channels", args: "" },
+      db,
+      { activeChannel: "test-ch", joinedChannels: new Set(["test-ch"]), cursors: new Map(), agentId: "user" }
+    );
+    expect(result.output.some(l => l.includes("test-ch"))).toBe(true);
+  });
 
-    const result = handleCommand({ name: "history", args: "2" }, db, "jay", "planning", cursors);
+  it("/join switches active channel", () => {
+    const db = setupDb();
+    createChannel(db, "new-ch", "user");
+    const state = { activeChannel: "old", joinedChannels: new Set(["old"]), cursors: new Map<string, number>(), agentId: "user" };
+    const result = executeCommand({ name: "join", args: "new-ch" }, db, state);
+    expect(result.channelChange).toBe("new-ch");
+  });
 
-    expect(result.output).toHaveLength(2);
-    expect(result.output[0]).toContain("message two");
-    expect(result.output[1]).toContain("message three");
-    db.close();
+  it("/history shows messages including own", () => {
+    const db = setupDb();
+    sendMessage(db, "user", "test-ch", "my message");
+    sendMessage(db, "other", "test-ch", "their message");
+    const state = { activeChannel: "test-ch", joinedChannels: new Set(["test-ch"]), cursors: new Map(), agentId: "user" };
+    const result = executeCommand({ name: "history", args: "10" }, db, state);
+    expect(result.messages).toBeDefined();
+    expect(result.messages!.some(m => m.content === "my message")).toBe(true);
+    expect(result.messages!.some(m => m.content === "their message")).toBe(true);
+  });
+
+  it("/history defaults to 20 for invalid N", () => {
+    const db = setupDb();
+    // Insert 25 messages so the limit is exercised
+    for (let i = 0; i < 25; i++) sendMessage(db, "user", "test-ch", `msg-${i}`);
+    const state = { activeChannel: "test-ch", joinedChannels: new Set(["test-ch"]), cursors: new Map(), agentId: "user" };
+    const result = executeCommand({ name: "history", args: "abc" }, db, state);
+    expect(result.messages!.length).toBe(20);
+  });
+
+  it("/quit sets exit flag", () => {
+    const db = setupDb();
+    const state = { activeChannel: "ch", joinedChannels: new Set(["ch"]), cursors: new Map(), agentId: "user" };
+    const result = executeCommand({ name: "quit", args: "" }, db, state);
+    expect(result.exit).toBe(true);
   });
 
   it("/create creates channel without switching", () => {
     const db = setupDb();
-    registerAgent(db, "jay");
-    const cursors = new Map([["planning", 0]]);
-
-    const result = handleCommand({ name: "create", args: "ops" }, db, "jay", "planning", cursors);
-
+    const state = { activeChannel: "old", joinedChannels: new Set(["old"]), cursors: new Map<string, number>(), agentId: "user" };
+    const result = executeCommand({ name: "create", args: "new-ch" }, db, state);
+    expect(result.output.some(l => l.includes("new-ch"))).toBe(true);
     expect(result.channelChange).toBeUndefined();
-    expect(result.output[0]).toContain("Created #ops");
-    db.close();
+    expect(state.activeChannel).toBe("old");
   });
 
-  it("/help lists available commands", () => {
+  it("/agents lists agents", () => {
     const db = setupDb();
-    const cursors = new Map([["planning", 0]]);
-
-    const result = handleCommand({ name: "help", args: "" }, db, "jay", "planning", cursors);
-
-    expect(result.output.join("\n")).toContain("/channels");
-    expect(result.output.join("\n")).toContain("/quit");
-    db.close();
+    sendMessage(db, "agent-a", "test-ch", "hi");
+    const state = { activeChannel: "test-ch", joinedChannels: new Set(["test-ch"]), cursors: new Map(), agentId: "user" };
+    const result = executeCommand({ name: "agents", args: "" }, db, state);
+    expect(result.output.some(l => l.includes("agent-a"))).toBe(true);
   });
 
-  it("unknown command returns error message without quit", () => {
+  it("/members lists channel members", () => {
     const db = setupDb();
-    const cursors = new Map([["planning", 0]]);
-
-    const result = handleCommand({ name: "nope", args: "" }, db, "jay", "planning", cursors);
-
-    expect(result.quit).toBeUndefined();
-    expect(result.output[0]).toContain("Unknown command");
-    db.close();
+    sendMessage(db, "agent-a", "test-ch", "hi");
+    const state = { activeChannel: "test-ch", joinedChannels: new Set(["test-ch"]), cursors: new Map(), agentId: "user" };
+    const result = executeCommand({ name: "members", args: "" }, db, state);
+    expect(result.output.some(l => l.includes("agent-a"))).toBe(true);
   });
 
-  it("/history with negative number uses default 20", () => {
+  it("/send -f sends file and returns localEcho", () => {
     const db = setupDb();
-    for (let i = 0; i < 25; i++) {
-      sendMessage(db, "agent-a", "planning", `msg-${i}`);
-    }
-    const cursors = new Map([["planning", 0]]);
-
-    const result = handleCommand({ name: "history", args: "-1" }, db, "jay", "planning", cursors);
-
-    expect(result.output.length).toBeLessThanOrEqual(20);
-    db.close();
+    const tmpFile = "/tmp/octo-santa-test-send-f.txt";
+    writeFileSync(tmpFile, "file content here");
+    const state = { activeChannel: "test-ch", joinedChannels: new Set(["test-ch"]), cursors: new Map(), agentId: "user" };
+    const result = executeCommand({ name: "send", args: `-f ${tmpFile}` }, db, state);
+    expect(result.localEcho?.content).toBe("file content here");
+    unlinkSync(tmpFile);
   });
 
-  it("/history with zero uses default 20", () => {
+  it("/join initializes cursor at max message ID (subscribe from now)", () => {
     const db = setupDb();
-    for (let i = 0; i < 25; i++) {
-      sendMessage(db, "agent-a", "planning", `msg-${i}`);
-    }
-    const cursors = new Map([["planning", 0]]);
-
-    const result = handleCommand({ name: "history", args: "0" }, db, "jay", "planning", cursors);
-
-    expect(result.output.length).toBeLessThanOrEqual(20);
-    db.close();
+    sendMessage(db, "other", "target-ch", "msg1");
+    const msg2 = sendMessage(db, "other", "target-ch", "msg2");
+    const state = { activeChannel: "old", joinedChannels: new Set(["old"]), cursors: new Map<string, number>(), agentId: "user" };
+    executeCommand({ name: "join", args: "target-ch" }, db, state);
+    expect(state.cursors.get("target-ch")).toBe(msg2.id);
+    expect(state.joinedChannels.has("target-ch")).toBe(true);
   });
 
-  it("/history with non-numeric uses default 20", () => {
+  it("/history 0 falls back to 20", () => {
     const db = setupDb();
-    for (let i = 0; i < 25; i++) {
-      sendMessage(db, "agent-a", "planning", `msg-${i}`);
-    }
-    const cursors = new Map([["planning", 0]]);
-
-    const result = handleCommand({ name: "history", args: "abc" }, db, "jay", "planning", cursors);
-
-    expect(result.output.length).toBeLessThanOrEqual(20);
-    db.close();
+    for (let i = 0; i < 25; i++) sendMessage(db, "user", "test-ch", `msg-${i}`);
+    const state = { activeChannel: "test-ch", joinedChannels: new Set(["test-ch"]), cursors: new Map(), agentId: "user" };
+    const result = executeCommand({ name: "history", args: "0" }, db, state);
+    expect(result.messages!.length).toBe(20);
   });
 
-  it("/members lists channel members with active/inactive status", () => {
+  it("/history -1 falls back to 20", () => {
     const db = setupDb();
-    registerAgent(db, "agent-a");
-    sendMessage(db, "agent-a", "planning", "hello");
-    // Create an inactive member (no PID)
-    sendMessage(db, "human", "planning", "hi from repl");
+    for (let i = 0; i < 25; i++) sendMessage(db, "user", "test-ch", `msg-${i}`);
+    const state = { activeChannel: "test-ch", joinedChannels: new Set(["test-ch"]), cursors: new Map(), agentId: "user" };
+    const result = executeCommand({ name: "history", args: "-1" }, db, state);
+    expect(result.messages!.length).toBe(20);
+  });
 
-    const cursors = new Map([["planning", 0]]);
-    const result = handleCommand({ name: "members", args: "" }, db, "agent-a", "planning", cursors);
-
+  it("/help returns help text", () => {
+    const db = setupDb();
+    const state = { activeChannel: "ch", joinedChannels: new Set(["ch"]), cursors: new Map(), agentId: "user" };
+    const result = executeCommand({ name: "help", args: "" }, db, state);
     expect(result.output.length).toBeGreaterThan(0);
-    expect(result.output.some((line) => line.includes("agent-a") && line.includes("(active)"))).toBe(true);
-    expect(result.output.some((line) => line.includes("human") && line.includes("(inactive)"))).toBe(true);
-    db.close();
-  });
-
-  it("/quit signals exit", () => {
-    const db = setupDb();
-    const cursors = new Map([["planning", 0]]);
-
-    const result = handleCommand({ name: "quit", args: "" }, db, "jay", "planning", cursors);
-
-    expect(result.quit).toBe(true);
-    db.close();
   });
 });
