@@ -81,8 +81,9 @@ describe("executeCommand", () => {
     sendMessage(db, "other", "test-ch", "their message");
     const state = { activeChannel: "test-ch", joinedChannels: new Set(["test-ch"]), cursors: new Map(), agentId: "user" };
     const result = executeCommand({ name: "history", args: "10" }, db, state);
-    expect(result.output.some(l => l.includes("my message"))).toBe(true);
-    expect(result.output.some(l => l.includes("their message"))).toBe(true);
+    expect(result.messages).toBeDefined();
+    expect(result.messages!.some(m => m.content === "my message")).toBe(true);
+    expect(result.messages!.some(m => m.content === "their message")).toBe(true);
   });
 
   it("/history defaults to 20 for invalid N", () => {
@@ -91,7 +92,7 @@ describe("executeCommand", () => {
     for (let i = 0; i < 25; i++) sendMessage(db, "user", "test-ch", `msg-${i}`);
     const state = { activeChannel: "test-ch", joinedChannels: new Set(["test-ch"]), cursors: new Map(), agentId: "user" };
     const result = executeCommand({ name: "history", args: "abc" }, db, state);
-    expect(result.output.length).toBe(20);
+    expect(result.messages!.length).toBe(20);
   });
 
   it("/quit sets exit flag", () => {
@@ -151,7 +152,7 @@ describe("executeCommand", () => {
     for (let i = 0; i < 25; i++) sendMessage(db, "user", "test-ch", `msg-${i}`);
     const state = { activeChannel: "test-ch", joinedChannels: new Set(["test-ch"]), cursors: new Map(), agentId: "user" };
     const result = executeCommand({ name: "history", args: "0" }, db, state);
-    expect(result.output.length).toBe(20);
+    expect(result.messages!.length).toBe(20);
   });
 
   it("/history -1 falls back to 20", () => {
@@ -159,7 +160,7 @@ describe("executeCommand", () => {
     for (let i = 0; i < 25; i++) sendMessage(db, "user", "test-ch", `msg-${i}`);
     const state = { activeChannel: "test-ch", joinedChannels: new Set(["test-ch"]), cursors: new Map(), agentId: "user" };
     const result = executeCommand({ name: "history", args: "-1" }, db, state);
-    expect(result.output.length).toBe(20);
+    expect(result.messages!.length).toBe(20);
   });
 
   it("/help returns help text", () => {

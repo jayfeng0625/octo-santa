@@ -10,12 +10,25 @@ const latestLink = join(root, "dist", "latest");
 
 mkdirSync(versionDir, { recursive: true });
 
-console.log(`Building MCP bundle → dist/${version}/mcp.js`);
-const mcp = Bun.spawnSync(
-  ["bun", "build", "src/mcp.ts", "--outdir", versionDir, "--target", "bun"],
-  { cwd: root, stdio: ["inherit", "inherit", "inherit"] }
-);
-if (mcp.exitCode !== 0) process.exit(mcp.exitCode);
+const target = process.argv[2]; // "mcp", "repl", or undefined (build all)
+
+if (!target || target === "mcp") {
+  console.log(`Building MCP bundle → dist/${version}/mcp.js`);
+  const mcp = Bun.spawnSync(
+    ["bun", "build", "src/mcp.ts", "--outdir", versionDir, "--target", "bun"],
+    { cwd: root, stdio: ["inherit", "inherit", "inherit"] }
+  );
+  if (mcp.exitCode !== 0) process.exit(mcp.exitCode);
+}
+
+if (!target || target === "repl") {
+  console.log(`Building REPL binary → dist/${version}/ocr`);
+  const repl = Bun.spawnSync(
+    ["bun", "build", "src/repl/index.ts", "--compile", "--outfile", join(versionDir, "ocr")],
+    { cwd: root, stdio: ["inherit", "inherit", "inherit"] }
+  );
+  if (repl.exitCode !== 0) process.exit(repl.exitCode);
+}
 
 // Update latest symlink
 if (existsSync(latestLink)) unlinkSync(latestLink);

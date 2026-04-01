@@ -114,6 +114,30 @@ describe("KeyParser", () => {
       const actions = parser.parse(Buffer.from("\x1b[3~"));
       expect(actions).toEqual([{ type: "delete" }]);
     });
+
+    it("emits wordLeft for ESC+b (macOS Option+Left)", () => {
+      const parser = new KeyParser({ kittyEnabled: false });
+      const actions = parser.parse(Buffer.from("\x1bb"));
+      expect(actions).toEqual([{ type: "move", dir: "wordLeft" }]);
+    });
+
+    it("emits wordRight for ESC+f (macOS Option+Right)", () => {
+      const parser = new KeyParser({ kittyEnabled: false });
+      const actions = parser.parse(Buffer.from("\x1bf"));
+      expect(actions).toEqual([{ type: "move", dir: "wordRight" }]);
+    });
+
+    it("emits deleteWord for ESC+DEL (macOS Option+Backspace)", () => {
+      const parser = new KeyParser({ kittyEnabled: false });
+      const actions = parser.parse(Buffer.from("\x1b\x7f"));
+      expect(actions).toEqual([{ type: "deleteWord" }]);
+    });
+
+    it("emits insert newline for ESC+Enter (macOS Option+Enter)", () => {
+      const parser = new KeyParser({ kittyEnabled: false });
+      const actions = parser.parse(Buffer.from("\x1b\x0d"));
+      expect(actions).toEqual([{ type: "insert", text: "\n" }]);
+    });
   });
 
   describe("fragmented sequences", () => {
@@ -188,6 +212,48 @@ describe("KeyParser", () => {
       const parser = new KeyParser({ kittyEnabled: true });
       const actions = parser.parse(Buffer.from([0x0d]));
       expect(actions).toEqual([{ type: "submit" }]);
+    });
+
+    it("emits insert newline for Option+Enter (Alt modifier)", () => {
+      const parser = new KeyParser({ kittyEnabled: true });
+      const actions = parser.parse(Buffer.from("\x1b[13;3u"));
+      expect(actions).toEqual([{ type: "insert", text: "\n" }]);
+    });
+
+    it("emits deleteWord for Option+Backspace (Alt+DEL via CSI u)", () => {
+      const parser = new KeyParser({ kittyEnabled: true });
+      const actions = parser.parse(Buffer.from("\x1b[127;3u"));
+      expect(actions).toEqual([{ type: "deleteWord" }]);
+    });
+
+    it("emits deleteWord for Ctrl+W", () => {
+      const parser = new KeyParser({ kittyEnabled: true });
+      const actions = parser.parse(Buffer.from("\x1b[119;5u"));
+      expect(actions).toEqual([{ type: "deleteWord" }]);
+    });
+
+    it("emits deleteToStart for Ctrl+U", () => {
+      const parser = new KeyParser({ kittyEnabled: true });
+      const actions = parser.parse(Buffer.from("\x1b[117;5u"));
+      expect(actions).toEqual([{ type: "deleteToStart" }]);
+    });
+
+    it("emits deleteToEnd for Ctrl+K", () => {
+      const parser = new KeyParser({ kittyEnabled: true });
+      const actions = parser.parse(Buffer.from("\x1b[107;5u"));
+      expect(actions).toEqual([{ type: "deleteToEnd" }]);
+    });
+
+    it("emits home for Ctrl+A", () => {
+      const parser = new KeyParser({ kittyEnabled: true });
+      const actions = parser.parse(Buffer.from("\x1b[97;5u"));
+      expect(actions).toEqual([{ type: "move", dir: "home" }]);
+    });
+
+    it("emits end for Ctrl+E", () => {
+      const parser = new KeyParser({ kittyEnabled: true });
+      const actions = parser.parse(Buffer.from("\x1b[101;5u"));
+      expect(actions).toEqual([{ type: "move", dir: "end" }]);
     });
   });
 
