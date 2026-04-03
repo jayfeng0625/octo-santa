@@ -25,7 +25,7 @@ export function withRetrySync<T>(
       lastError = error;
       if (isSqliteBusyError(error) && attempt < maxRetries) {
         const delay = Math.min(
-          baseDelayMs * Math.pow(2, attempt),
+          baseDelayMs * Math.pow(2, attempt) + Math.random() * baseDelayMs,
           2000
         );
         Bun.sleepSync(delay);
