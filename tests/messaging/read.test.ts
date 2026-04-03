@@ -185,10 +185,11 @@ describe("readMessages", () => {
     db.close();
   });
 
-  it("returns empty for nonexistent channel", () => {
+  it("throws for nonexistent channel", () => {
     const db = setupDb();
-    const messages = readMessages(db, "agent-a", "no-such-channel");
-    expect(messages).toHaveLength(0);
+    expect(() => readMessages(db, "agent-a", "no-such-channel")).toThrow(
+      'Channel "no-such-channel" does not exist. Use messaging_create_channel to create it first.'
+    );
     db.close();
   });
 
