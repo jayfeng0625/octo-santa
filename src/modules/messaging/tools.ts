@@ -286,7 +286,7 @@ export function readMessages(
     return messages;
   });
 
-  return withRetrySync(() => doRead());
+  return withRetrySync(() => doRead.immediate());
 }
 
 /**
@@ -362,5 +362,5 @@ export function sendMessage(
     };
   });
 
-  return withRetrySync(() => doSend());
+  return withRetrySync(() => doSend.immediate());
 }
