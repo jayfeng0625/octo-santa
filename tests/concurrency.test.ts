@@ -66,6 +66,16 @@ describe("concurrency", () => {
 
     // Wait for all workers to finish
     const results = await Promise.all(workers.map((w) => w.exited));
+
+    if (!results.every((code) => code === 0)) {
+      for (let i = 0; i < workers.length; i++) {
+        if (results[i] !== 0) {
+          const stderr = await new Response(workers[i]!.stderr).text();
+          console.error(`Worker agent-${i} failed (code ${results[i]}): ${stderr}`);
+        }
+      }
+    }
+
     expect(results.every((code) => code === 0)).toBe(true);
 
     // Verify all messages were written
@@ -104,6 +114,16 @@ describe("concurrency", () => {
     );
 
     const results = await Promise.all(workers.map((w) => w.exited));
+
+    if (!results.every((code) => code === 0)) {
+      for (let i = 0; i < workers.length; i++) {
+        if (results[i] !== 0) {
+          const stderr = await new Response(workers[i]!.stderr).text();
+          console.error(`Worker agent-${i} failed (code ${results[i]}): ${stderr}`);
+        }
+      }
+    }
+
     expect(results.every((code) => code === 0)).toBe(true);
 
     // Verify DB is consistent
