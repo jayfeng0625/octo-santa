@@ -1,7 +1,7 @@
 import type { Database } from "bun:sqlite";
 import type { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import type { Message } from "./modules/messaging/types";
-import { PID_STALE_MS } from "./modules/messaging/tools";
+import { PID_STALE_MS, isProcessAlive } from "./modules/messaging/tools";
 import { log } from "./bootstrap";
 
 export type NotifyFn = (content: string, meta: Record<string, string>) => Promise<void>;
@@ -63,8 +63,19 @@ export function startPolling(
     if (heartbeat.changes === 0) {
       const row = db.query("SELECT pid FROM agents WHERE id = ?").get(agentId) as { pid: number | null } | null;
       if (row && row.pid !== null && row.pid !== process.pid) {
-        active = false;
-        return;
+        if (isProcessAlive(row.pid)) {
+          active = false;
+          return;
+        }
+        // Stale PID from crashed process — reclaim and continue polling.
+        // CAS: if another process won the reclaim race, changes === 0 and we stop.
+        const reclaim = db.query(
+          "UPDATE agents SET pid = ?, last_seen_at = ? WHERE id = ? AND pid = ?"
+        ).run(process.pid, Date.now(), agentId, row.pid);
+        if (reclaim.changes === 0) {
+          active = false;
+          return;
+        }
       }
     }
 
