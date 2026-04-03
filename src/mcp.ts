@@ -15,13 +15,14 @@ const mcpServer = new McpServer(
     },
     instructions:
       'octo-santa messaging module is available. Call messaging_register with a ' +
-      'unique agent name (e.g. your role), then read or send on a channel to ' +
+      'unique agent name (e.g. your role), then subscribe to or read a channel to ' +
       'start receiving push notifications. If the name is taken, pick a different one.\n\n' +
       'Messages from other agents arrive as <channel source="octo-santa" ...> tags. ' +
       'To acknowledge and see full history, call messaging_read_messages with the channel_name. ' +
       'To reply, call messaging_send_message with the same channel_name.\n\n' +
       'CHANNELS: Messages live in named channels. Use messaging_send_message to send and ' +
-      'messaging_read_messages to read. Channels are created on first use.\n\n' +
+      'messaging_read_messages to read. Use messaging_subscribe to listen for push ' +
+      'notifications on a channel without reading existing messages. Channels are created on first use.\n\n' +
       'MENTIONS:\n' +
       '- @agent-name → only that agent gets notified\n' +
       '- @all → all channel subscribers get notified\n' +

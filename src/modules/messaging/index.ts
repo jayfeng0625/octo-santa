@@ -97,6 +97,19 @@ const messaging: OctoModule = {
       return jsonResult(listAgents(getDb(), active_only));
     });
 
+    server.registerTool("messaging_subscribe", {
+      description: "Subscribe to a channel to receive push notifications without reading existing messages. Creates the channel if it doesn't exist.",
+      inputSchema: {
+        agent_id: z.string().trim().min(1).describe("Your agent/project name"),
+        channel: z.string().trim().min(1).describe("Channel name"),
+      },
+    }, async ({ agent_id, channel }) => {
+      return withAgent(onAgentId, agent_id, () => {
+        subscribeToChannel(getDb(), agent_id, channel);
+        return jsonResult({ subscribed: true, channel });
+      });
+    });
+
     server.registerTool("messaging_list_members", {
       description: "List channel members with active/inactive status. Uses exact process liveness — may temporarily differ from push notification behavior after crashes.",
       inputSchema: {
