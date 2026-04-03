@@ -89,7 +89,7 @@ export const messagingMigrations: Migration[] = [
   },
 ];
 
-function isProcessAlive(pid: number): boolean {
+export function isProcessAlive(pid: number): boolean {
   try {
     process.kill(pid, 0);
     return true;
@@ -158,7 +158,8 @@ export function getAgent(db: Database, agentId: string): Agent | null {
 }
 
 /** Lightweight agent upsert — no PID check, no exclusive lock.
- *  Used by createChannel/readMessages where we just need the agent row to exist. */
+ *  Used by createChannel/readMessages where we just need the agent row to exist.
+ *  Reclaims dead PIDs from crashed processes to prevent stale-PID lockout. */
 function ensureAgent(db: Database, agentId: string): void {
   validateAgentName(agentId);
   withRetrySync(() => {
@@ -169,6 +170,19 @@ function ensureAgent(db: Database, agentId: string): void {
        WHERE pid IS NULL OR pid = ?`,
       [agentId, now, now, process.pid]
     );
+
+    // Fast path covered above. Slow path: PID mismatch — check if stale.
+    const existing = db
+      .query("SELECT pid FROM agents WHERE id = ?")
+      .get(agentId) as { pid: number | null } | null;
+    if (existing && existing.pid !== null && existing.pid !== process.pid) {
+      if (!isProcessAlive(existing.pid)) {
+        db.run(
+          "UPDATE agents SET pid = ?, last_seen_at = ? WHERE id = ? AND pid = ?",
+          [process.pid, now, agentId, existing.pid]
+        );
+      }
+    }
   });
 }
 
