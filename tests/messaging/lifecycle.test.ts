@@ -421,9 +421,10 @@ describe("ownership loss stops polling", () => {
     // Let poller run a tick
     await sleep(100);
 
-    // Simulate another process reclaiming agent-a's name
+    // Simulate another process reclaiming agent-a's name.
+    // PID 1 (init/launchd) is always alive — represents a real live takeover.
     const now = Date.now();
-    db.run("UPDATE agents SET pid = 12345, registered_at = ?, last_seen_at = ? WHERE id = ?", [now, now, "agent-a"]);
+    db.run("UPDATE agents SET pid = 1, registered_at = ?, last_seen_at = ? WHERE id = ?", [now, now, "agent-a"]);
 
     // Send a message after reclaim
     sendMessage(db, "agent-b", "ch", "post-reclaim message");
@@ -512,6 +513,38 @@ describe("ensureAgent ownership scoping", () => {
     sendMessage(db, "human", "ch", "second");
     const after = getAgent(db, "human")!;
     expect(after.last_seen_at).toBeGreaterThanOrEqual(firstTime);
+    db.close();
+  });
+
+  it("ensureAgent reclaims dead PID and sets current process PID", () => {
+    const db = setupDb();
+    registerAgent(db, "crashed");
+
+    // Simulate crash: set a dead foreign PID
+    const staleTime = Date.now() - 20 * 60 * 1000;
+    db.run("UPDATE agents SET pid = 999999, last_seen_at = ? WHERE id = ?", [staleTime, "crashed"]);
+
+    // ensureAgent via sendMessage should reclaim the dead PID
+    sendMessage(db, "crashed", "ch", "hello after restart");
+
+    const agent = getAgent(db, "crashed")!;
+    expect(agent.pid).toBe(process.pid);
+    expect(agent.last_seen_at).toBeGreaterThan(staleTime);
+    db.close();
+  });
+
+  it("ensureAgent does NOT reclaim alive foreign PID", () => {
+    const db = setupDb();
+    registerAgent(db, "owned");
+
+    // PID 1 (init/launchd) is always alive
+    db.run("UPDATE agents SET pid = 1 WHERE id = ?", ["owned"]);
+    const before = getAgent(db, "owned")!;
+
+    sendMessage(db, "owned", "ch", "should not reclaim");
+
+    const after = getAgent(db, "owned")!;
+    expect(after.pid).toBe(1); // unchanged — alive process still owns it
     db.close();
   });
 });

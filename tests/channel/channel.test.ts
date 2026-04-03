@@ -556,4 +556,58 @@ describe("startPolling", () => {
     // agent-c aged out → 2 active members → DM mode → unmentioned messages notify
     expect(notifications.length).toBeGreaterThan(0);
   });
+
+  it("reclaims dead PID in heartbeat and continues polling", async () => {
+    registerAgent(db, "agent-a");
+    sendMessage(db, "agent-b", "test-ch", "setup");
+    readMessages(db, "agent-a", "test-ch");
+
+    // Simulate crash: dead foreign PID on agent-a
+    db.run("UPDATE agents SET pid = 999999 WHERE id = ?", ["agent-a"]);
+
+    // New message arrives after crash
+    sendMessage(db, "agent-b", "test-ch", "hello after crash");
+
+    const notifications: { content: string; meta: Record<string, string> }[] = [];
+    const stop = startPolling(db, "agent-a", async (content, meta) => {
+      notifications.push({ content, meta });
+    }, FAST_INTERVAL);
+    await sleep(200);
+    await stop();
+
+    // Polling should have reclaimed the dead PID and delivered notification
+    expect(notifications.length).toBe(1);
+    expect(notifications[0]!.content).toBe("hello after crash");
+
+    // Agent should now have current PID
+    const agent = db.query("SELECT pid FROM agents WHERE id = ?")
+      .get("agent-a") as { pid: number };
+    expect(agent.pid).toBe(process.pid);
+  });
+
+  it("stops polling when alive foreign PID owns the agent", async () => {
+    registerAgent(db, "agent-a");
+    sendMessage(db, "agent-b", "test-ch", "setup");
+    readMessages(db, "agent-a", "test-ch");
+
+    // PID 1 (init/launchd) is always alive — simulates real takeover
+    db.run("UPDATE agents SET pid = 1 WHERE id = ?", ["agent-a"]);
+
+    sendMessage(db, "agent-b", "test-ch", "should not arrive");
+
+    const notifications: { content: string; meta: Record<string, string> }[] = [];
+    const stop = startPolling(db, "agent-a", async (content, meta) => {
+      notifications.push({ content, meta });
+    }, FAST_INTERVAL);
+    await sleep(200);
+    await stop();
+
+    // Polling should have stopped — no notifications
+    expect(notifications.length).toBe(0);
+
+    // PID should remain as 1 (not reclaimed)
+    const agent = db.query("SELECT pid FROM agents WHERE id = ?")
+      .get("agent-a") as { pid: number };
+    expect(agent.pid).toBe(1);
+  });
 });
