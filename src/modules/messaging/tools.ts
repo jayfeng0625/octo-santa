@@ -244,7 +244,11 @@ export function readMessages(
   ensureAgent(db, agentId);
 
   const channel = db.query("SELECT id FROM channels WHERE name = ?").get(channelName) as { id: number } | null;
-  if (!channel) return [];
+  if (!channel) {
+    throw new Error(
+      `Channel "${channelName}" does not exist. Use messaging_create_channel to create it first.`
+    );
+  }
 
   // History mode — do NOT advance cursor
   if (options?.before_id !== undefined) {
