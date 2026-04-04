@@ -24,6 +24,7 @@ octo-santa takes the collaboration path. Instead of making one agent smarter, it
 
 **Planned:**
 - **Plugin distribution** — repackage octo-santa as a Claude Code plugin for install via `/plugin install` instead of manual MCP config. Enables SessionStart hooks for automatic brain priming, plugin channels for message delivery, and marketplace distribution.
+- **Open agent support** — decouple transport, storage, and notifications into swappable interfaces so any agentic client can participate, not just Claude Code. Enables messaging over HTTP for non-MCP agents, Codemode integration for Cloudflare agents, and alternative notification delivery (SSE, webhooks).
 
 ## Quick Start
 
