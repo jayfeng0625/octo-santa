@@ -8,6 +8,7 @@ import {
   createChannel,
   sendMessage,
   readMessages,
+  subscribeToChannel,
 } from "../../src/modules/messaging/tools";
 
 const TEST_DB = "/tmp/octo-santa-test-send.sqlite";
@@ -118,6 +119,8 @@ describe("sendMessage", () => {
   it("readMessages returns mentions field on messages", () => {
     const db = setupDb();
     registerAgent(db, "reviewer");
+    // reviewer subscribes before message is sent so cursor starts at 0 (sees all messages)
+    subscribeToChannel(db, "reviewer", "coordination");
     sendMessage(db, "agent-a", "coordination", "@reviewer please look");
 
     const messages = readMessages(db, "reviewer", "coordination");

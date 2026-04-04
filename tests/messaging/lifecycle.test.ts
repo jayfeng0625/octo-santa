@@ -122,7 +122,8 @@ describe("unregisterAgent", () => {
     registerAgent(db, "agent-b");
     sendMessage(db, "agent-b", "planning", "hello");
 
-    // agent-a reads, creating a cursor
+    // agent-a subscribes and reads, creating a cursor
+    subscribeToChannel(db, "agent-a", "planning");
     readMessages(db, "agent-a", "planning");
 
     // Unregister agent-a
@@ -150,11 +151,13 @@ describe("unregisterAgent", () => {
   it("preserves message attribution after unregister", () => {
     const db = setupDb();
     registerAgent(db, "planner");
+    registerAgent(db, "observer");
     sendMessage(db, "planner", "work", "important finding");
 
     unregisterAgent(db, "planner", process.pid);
 
-    // Messages still reference planner
+    // Messages still reference planner — observer needs cursor to read
+    subscribeToChannel(db, "observer", "work");
     const msgs = readMessages(db, "observer", "work", {
       before_id: Number.MAX_SAFE_INTEGER,
       limit: 10,
@@ -227,13 +230,13 @@ describe("listChannelMembers", () => {
     db.close();
   });
 
-  it("includes members created by readMessages (not just sendMessage)", () => {
+  it("includes members created by subscribeToChannel (not just sendMessage)", () => {
     const db = setupDb();
     registerAgent(db, "sender");
     registerAgent(db, "reader");
     sendMessage(db, "sender", "ch", "hello");
-    // reader joins via readMessages (creates cursor), never sends
-    readMessages(db, "reader", "ch");
+    // reader joins via subscribeToChannel (creates cursor), never sends
+    subscribeToChannel(db, "reader", "ch");
 
     const members = listChannelMembers(db, "ch");
     expect(members.find((m) => m.agent_id === "reader")).toBeDefined();
@@ -250,16 +253,17 @@ describe("listChannelMembers", () => {
     db.close();
   });
 
-  it("history-mode reads (before_id) do NOT create membership", () => {
+  it("history-mode reads (before_id) require membership (throws without cursor)", () => {
     const db = setupDb();
     registerAgent(db, "sender");
     registerAgent(db, "browser");
     sendMessage(db, "sender", "ch", "msg1");
     sendMessage(db, "sender", "ch", "msg2");
 
-    // Read in history mode (before_id) — should not create a cursor
-    readMessages(db, "browser", "ch", { before_id: 999, limit: 10 });
+    // Read in history mode (before_id) without a cursor — throws "Not a member"
+    expect(() => readMessages(db, "browser", "ch", { before_id: 999, limit: 10 })).toThrow("Not a member");
 
+    // browser should NOT have been added as a member
     const members = listChannelMembers(db, "ch");
     expect(members.find((m) => m.agent_id === "browser")).toBeUndefined();
     db.close();
@@ -273,6 +277,7 @@ describe("onclose cleanup behavior", () => {
     registerAgent(db, "other");
     // Create cursor BEFORE unregister by subscribing to a channel
     sendMessage(db, "other", "ch", "setup");
+    subscribeToChannel(db, "session-agent", "ch");
     readMessages(db, "session-agent", "ch");
 
     // Simulate what mcp.ts onclose does:
@@ -333,6 +338,7 @@ describe("reconnect behavior", () => {
     registerAgent(db, "agent-a");
     registerAgent(db, "agent-b");
     sendMessage(db, "agent-a", "work", "setup");
+    subscribeToChannel(db, "agent-b", "work");
     readMessages(db, "agent-b", "work"); // agent-b has cursor
 
     // agent-b disconnects
@@ -380,6 +386,7 @@ describe("reconnect polling", () => {
     registerAgent(db, "agent-a");
     registerAgent(db, "agent-b");
     sendMessage(db, "agent-a", "dm-ch", "setup");
+    subscribeToChannel(db, "agent-b", "dm-ch");
     readMessages(db, "agent-b", "dm-ch"); // agent-b subscribes
 
     // agent-b disconnects
@@ -411,6 +418,7 @@ describe("ownership loss stops polling", () => {
     registerAgent(db, "agent-a");
     registerAgent(db, "agent-b");
     sendMessage(db, "agent-b", "ch", "setup");
+    subscribeToChannel(db, "agent-a", "ch");
     readMessages(db, "agent-a", "ch");
 
     const notifications: { content: string }[] = [];

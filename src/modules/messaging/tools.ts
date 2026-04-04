@@ -241,13 +241,19 @@ export function readMessages(
   channelName: string,
   options?: ReadOptions
 ): Message[] {
-  ensureAgent(db, agentId);
-
   const channel = db.query("SELECT id FROM channels WHERE name = ?").get(channelName) as { id: number } | null;
   if (!channel) {
     throw new Error(
       `Channel "${channelName}" does not exist. Use messaging_create_channel to create it first.`
     );
+  }
+
+  // Require existing cursor (agents join through explicit subscription paths)
+  const existingCursor = db.query(
+    "SELECT 1 FROM cursors WHERE agent_id = ? AND channel_id = ?"
+  ).get(agentId, channel.id);
+  if (!existingCursor) {
+    throw new Error(`Not a member of channel "${channelName}". Join via messaging_send_message, messaging_create_channel, or messaging_direct_message.`);
   }
 
   // History mode — do NOT advance cursor
@@ -367,4 +373,62 @@ export function sendMessage(
   });
 
   return withRetrySync(() => doSend.immediate());
+}
+
+export function directMessage(
+  db: Database,
+  agentId: string,
+  targetAgentId: string,
+  content: string
+): Message {
+  validateAgentName(targetAgentId);
+  if (agentId === targetAgentId) throw new Error("Cannot DM yourself");
+  if (!content.trim()) throw new Error("message content must not be empty");
+
+  // Verify target exists
+  const target = getAgent(db, targetAgentId);
+  if (!target) throw new Error(`Agent "${targetAgentId}" not found`);
+
+  // Deterministic DM channel name (sorted, per spec)
+  const sorted = [agentId, targetAgentId].sort();
+  const channelName = `${sorted[0]},${sorted[1]}`;
+
+  const doSend = db.transaction(() => {
+    // Create channel if needed (idempotent)
+    const channel = createChannel(db, channelName, agentId);
+
+    // Subscribe both agents (ON CONFLICT DO NOTHING preserves existing cursors)
+    const maxRow = db.query("SELECT MAX(id) as max_id FROM messages WHERE channel_id = ?").get(channel.id) as { max_id: number | null };
+    const maxId = maxRow?.max_id ?? 0;
+    for (const aid of [agentId, targetAgentId]) {
+      db.run(
+        `INSERT INTO cursors (agent_id, channel_id, last_read_message_id) VALUES (?, ?, ?)
+         ON CONFLICT(agent_id, channel_id) DO NOTHING`,
+        [aid, channel.id, maxId]
+      );
+    }
+
+    // Send the message
+    const now = Date.now();
+    const allAgents = db.query("SELECT id FROM agents").all() as { id: string }[];
+    const validIds = allAgents.map((a) => a.id);
+    const mentions = JSON.stringify(extractMentions(content, validIds));
+
+    db.run(
+      "INSERT INTO messages (channel_id, agent_id, content, created_at, mentions) VALUES (?, ?, ?, ?, ?)",
+      [channel.id, agentId, content, now, mentions]
+    );
+    const lastId = db.query("SELECT last_insert_rowid() as id").get() as { id: number };
+
+    return {
+      id: lastId.id,
+      channel_id: channel.id,
+      agent_id: agentId,
+      content,
+      created_at: now,
+      mentions,
+    };
+  });
+
+  return withRetrySync(() => doSend());
 }

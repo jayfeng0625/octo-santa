@@ -10,6 +10,7 @@ import {
   listChannels,
   sendMessage,
   readMessages,
+  subscribeToChannel,
   listAgents,
 } from "../src/modules/messaging/tools";
 
@@ -37,13 +38,17 @@ describe("full messaging flow", () => {
   it("two agents communicate through a channel", () => {
     const db = setupDb();
 
-    // Agent A sets up and sends
+    // Agent A and B both join the channel first
     registerAgent(db, "frontend-app");
+    registerAgent(db, "backend-api");
     createChannel(db, "coordination", "frontend-app");
+    subscribeToChannel(db, "backend-api", "coordination");
+
+    // Agent A sends
     sendMessage(db, "frontend-app", "coordination", "Need API endpoint for /users");
     sendMessage(db, "frontend-app", "coordination", "Expecting JSON with name and email fields");
 
-    // Agent B reads and replies
+    // Agent B reads
     const incoming = readMessages(db, "backend-api", "coordination");
     expect(incoming).toHaveLength(2);
     expect(incoming[0]!.content).toBe("Need API endpoint for /users");
@@ -71,6 +76,10 @@ describe("full messaging flow", () => {
 
   it("agents can use multiple channels independently", () => {
     const db = setupDb();
+
+    // agent-b subscribes before messages are sent so cursor starts at 0
+    subscribeToChannel(db, "agent-b", "frontend");
+    subscribeToChannel(db, "agent-b", "backend");
 
     sendMessage(db, "agent-a", "frontend", "UI question");
     sendMessage(db, "agent-a", "backend", "API question");

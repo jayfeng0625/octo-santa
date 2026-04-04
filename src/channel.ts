@@ -2,7 +2,7 @@ import type { Database } from "bun:sqlite";
 import type { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import type { Message } from "./modules/messaging/types";
 import { PID_STALE_MS, isProcessAlive } from "./modules/messaging/tools";
-import { log } from "./bootstrap";
+import { log } from "./log";
 
 export type NotifyFn = (content: string, meta: Record<string, string>) => Promise<void>;
 
@@ -45,6 +45,11 @@ export function startPolling(
   const stmtBatchMentions = db.query(
     `SELECT mentions FROM messages
      WHERE channel_id = ? AND id > ? AND id <= ? AND agent_id != ?`
+  );
+  const stmtBatchMessages = db.query(
+    `SELECT id, agent_id, content FROM messages
+     WHERE channel_id = ? AND id > ? AND id <= ? AND agent_id != ?
+     ORDER BY id ASC`
   );
   const stmtHeartbeat = db.query(
     "UPDATE agents SET last_seen_at = ? WHERE id = ? AND pid = ?"
@@ -134,10 +139,18 @@ export function startPolling(
         id: number; agent_id: string; content: string; mentions: string;
       };
 
-      const content =
-        stats.count === 1
-          ? latest.content
-          : `${stats.count} new messages on ${sub.channel_name}. Latest: ${latest.content}`;
+      let content: string;
+      if (stats.count === 1) {
+        content = latest.content;
+      } else {
+        const batch = stmtBatchMessages.all(sub.channel_id, hwm, stats.max_id, agentId) as {
+          id: number; agent_id: string; content: string;
+        }[];
+        const previews = batch.map((m, i) =>
+          `[${i + 1}] ${m.agent_id}: ${m.content.length > 150 ? m.content.slice(0, 147) + "..." : m.content}`
+        ).join("\n");
+        content = `${stats.count} new messages on ${sub.channel_name}:\n${previews}`;
+      }
 
       const meta = {
         channel_name: sub.channel_name,

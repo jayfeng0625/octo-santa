@@ -47,7 +47,8 @@ describe("subscribeToChannel", () => {
     const db = setupDb();
     sendMessage(db, "agent-a", "planning", "old msg");
 
-    // jay reads, setting cursor
+    // jay subscribes and reads, setting cursor
+    subscribeToChannel(db, "jay", "planning");
     readMessages(db, "jay", "planning");
 
     // New messages arrive while jay is away

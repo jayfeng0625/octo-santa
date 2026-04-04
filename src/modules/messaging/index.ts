@@ -9,8 +9,10 @@ import {
   listChannels,
   sendMessage,
   readMessages,
+  directMessage,
   listAgents,
   listChannelMembers,
+  unregisterAgent,
 } from "./tools";
 
 function jsonResult(data: unknown) {
@@ -31,6 +33,10 @@ function withAgent<T>(
 const messaging: OctoModule = {
   name: "messaging",
   migrations: messagingMigrations,
+
+  onDisconnect(db: Database, agentId: string, pid: number) {
+    unregisterAgent(db, agentId, pid);
+  },
 
   registerTools(server: McpServer, getDb: () => Database, onAgentId?: (agentId: string) => { commit: () => void }) {
     server.registerTool("messaging_register", {
@@ -85,6 +91,19 @@ const messaging: OctoModule = {
     }, async ({ agent_id, channel, limit, before_id }) => {
       return withAgent(onAgentId, agent_id, () =>
         jsonResult(readMessages(getDb(), agent_id, channel, { limit, before_id }))
+      );
+    });
+
+    server.registerTool("messaging_direct_message", {
+      description: "Send a direct message to another agent. Creates a DM channel and subscribes both parties.",
+      inputSchema: {
+        agent_id: z.string().trim().min(1).describe("Your agent/project name"),
+        target_agent_id: z.string().trim().min(1).describe("Agent to DM"),
+        content: z.string().trim().min(1).describe("Message content"),
+      },
+    }, async ({ agent_id, target_agent_id, content }) => {
+      return withAgent(onAgentId, agent_id, () =>
+        jsonResult(directMessage(getDb(), agent_id, target_agent_id, content))
       );
     });
 
