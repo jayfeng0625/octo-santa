@@ -561,31 +561,17 @@ describe("startPolling", () => {
     expect(notifications[0]!.content).toBe("@agent-a hey!");
   });
 
-  it("DM channel stays DM even when 3rd member joins (observer doesn't affect DM mode)", async () => {
-    // DM channel: name-based detection, both named agents are members
+  it("DM access control rejects 3rd party subscribe", () => {
     registerAgent(db, "agent-a");
     registerAgent(db, "agent-b");
     registerAgent(db, "agent-c");
     createChannel(db, "agent-a,agent-b", "agent-b");
     sendMessage(db, "agent-b", "agent-a,agent-b", "setup");
-    subscribe(db, "agent-a", "agent-a,agent-b");
-    readMessages(db, "agent-a", "agent-a,agent-b");
-    // 3rd member (observer) joins the DM channel
-    subscribe(db, "agent-c", "agent-a,agent-b");
-    readMessages(db, "agent-c", "agent-a,agent-b");
 
-    // Send unmentioned message from agent-b
-    sendMessage(db, "agent-b", "agent-a,agent-b", "no mention here");
-
-    const notifications: { content: string; meta: Record<string, string> }[] = [];
-    const stop = startPolling(db, "agent-a", async (content, meta) => {
-      notifications.push({ content, meta });
-    }, FAST_INTERVAL);
-    await sleep(200);
-    await stop();
-
-    // DM mode (name-based) — agent-a still gets notified even with 3 members
-    expect(notifications.length).toBeGreaterThan(0);
+    // 3rd agent cannot subscribe to a DM channel
+    expect(() => subscribe(db, "agent-c", "agent-a,agent-b")).toThrow(
+      'DM channel "agent-a,agent-b" is private to agent-a and agent-b'
+    );
   });
 
   it("group channel requires mention regardless of member liveness", async () => {
