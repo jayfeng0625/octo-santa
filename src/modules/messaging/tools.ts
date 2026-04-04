@@ -364,32 +364,31 @@ export function renameChannel(db: Database, agentId: string, channelName: string
   if (!newName.trim()) throw new Error("new channel name must not be empty");
   requireRegistered(db, agentId);
 
-  const channel = getChannelByName(db, channelName);
-  if (!channel) throw new Error(`Channel "${channelName}" not found`);
+  const doRename = db.transaction(() => {
+    const channel = getChannelByName(db, channelName);
+    if (!channel) throw new Error(`Channel "${channelName}" not found`);
 
-  // Membership check: agent must have cursor in this channel
-  const cursor = db.query("SELECT 1 FROM cursors WHERE agent_id = ? AND channel_id = ?").get(agentId, channel.id);
-  if (!cursor) throw new Error(`Not a member of channel "${channelName}"`);
+    // Membership check: agent must have cursor in this channel
+    const cursor = db.query("SELECT 1 FROM cursors WHERE agent_id = ? AND channel_id = ?").get(agentId, channel.id);
+    if (!cursor) throw new Error(`Not a member of channel "${channelName}"`);
 
-  // Check new name isn't taken
-  const existing = db.query("SELECT 1 FROM channels WHERE name = ?").get(newName);
-  if (existing) throw new Error(`Channel "${newName}" already exists`);
+    // Check new name isn't taken
+    const existing = db.query("SELECT 1 FROM channels WHERE name = ?").get(newName);
+    if (existing) throw new Error(`Channel "${newName}" already exists`);
 
-  return withRetrySync(() => {
-    const doRename = db.transaction(() => {
-      db.run("UPDATE channels SET name = ? WHERE id = ?", [newName, channel.id]);
+    db.run("UPDATE channels SET name = ? WHERE id = ?", [newName, channel.id]);
 
-      // Notify all members via a system message with @all mention
-      const now = Date.now();
-      db.run(
-        "INSERT INTO messages (channel_id, agent_id, content, created_at, mentions) VALUES (?, ?, ?, ?, ?)",
-        [channel.id, agentId, `Channel renamed from "${channelName}" to "${newName}"`, now, '["*"]']
-      );
+    // Notify all members via a system message with @all mention
+    const now = Date.now();
+    db.run(
+      "INSERT INTO messages (channel_id, agent_id, content, created_at, mentions) VALUES (?, ?, ?, ?, ?)",
+      [channel.id, agentId, `Channel renamed from "${channelName}" to "${newName}"`, now, '["*"]']
+    );
 
-      return db.query("SELECT * FROM channels WHERE id = ?").get(channel.id) as Channel;
-    });
-    return doRename();
+    return db.query("SELECT * FROM channels WHERE id = ?").get(channel.id) as Channel;
   });
+
+  return withRetrySync(() => doRename.immediate());
 }
 
 export function directMessage(
@@ -447,5 +446,5 @@ export function directMessage(
     };
   });
 
-  return withRetrySync(() => doSend());
+  return withRetrySync(() => doSend.immediate());
 }
