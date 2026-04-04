@@ -9,7 +9,8 @@ import {
   getAgent,
   listAgents,
   listChannelMembers,
-  subscribeToChannel,
+  createChannel,
+  subscribe,
   sendMessage,
   readMessages,
   isAgentActive,
@@ -120,10 +121,11 @@ describe("unregisterAgent", () => {
     const db = setupDb();
     registerAgent(db, "agent-a");
     registerAgent(db, "agent-b");
+    createChannel(db, "planning", "agent-b");
     sendMessage(db, "agent-b", "planning", "hello");
 
     // agent-a subscribes and reads, creating a cursor
-    subscribeToChannel(db, "agent-a", "planning");
+    subscribe(db, "agent-a", "planning");
     readMessages(db, "agent-a", "planning");
 
     // Unregister agent-a
@@ -152,12 +154,13 @@ describe("unregisterAgent", () => {
     const db = setupDb();
     registerAgent(db, "planner");
     registerAgent(db, "observer");
+    createChannel(db, "work", "planner");
     sendMessage(db, "planner", "work", "important finding");
 
     unregisterAgent(db, "planner", process.pid);
 
     // Messages still reference planner — observer needs cursor to read
-    subscribeToChannel(db, "observer", "work");
+    subscribe(db, "observer", "work");
     const msgs = readMessages(db, "observer", "work", {
       before_id: Number.MAX_SAFE_INTEGER,
       limit: 10,
@@ -180,6 +183,7 @@ describe("listChannelMembers", () => {
     const db = setupDb();
     registerAgent(db, "agent-a");
     registerAgent(db, "agent-b");
+    createChannel(db, "planning", "agent-a");
     sendMessage(db, "agent-a", "planning", "hello");
     sendMessage(db, "agent-b", "planning", "hi");
 
@@ -200,6 +204,7 @@ describe("listChannelMembers", () => {
     const db = setupDb();
     registerAgent(db, "agent-a");
     registerAgent(db, "agent-b");
+    createChannel(db, "planning", "agent-a");
     sendMessage(db, "agent-a", "planning", "hello");
     sendMessage(db, "agent-b", "planning", "hi");
 
@@ -218,35 +223,45 @@ describe("listChannelMembers", () => {
     db.close();
   });
 
-  it("REPL-only senders appear with active: false", () => {
+  it("registered agent that unregisters shows as active: false in channel members", () => {
     const db = setupDb();
-    // ensureAgent path (no PID) — simulates human REPL sender
-    sendMessage(db, "jay", "planning", "human message");
+    registerAgent(db, "agent-a");
+    registerAgent(db, "agent-b");
+    registerAgent(db, "jay");
+    createChannel(db, "planning", "agent-a");
+    sendMessage(db, "agent-a", "planning", "setup");
+    sendMessage(db, "agent-b", "planning", "ack");
+    sendMessage(db, "jay", "planning", "from jay");
+
+    // Jay unregisters (clears PID)
+    unregisterAgent(db, "jay", process.pid);
 
     const members = listChannelMembers(db, "planning");
-    const jay = members.find((m) => m.agent_id === "jay");
-    expect(jay).toBeDefined();
-    expect(jay!.active).toBe(false);
+    const jayMember = members.find((m) => m.agent_id === "jay");
+    expect(jayMember).toBeDefined();
+    expect(jayMember!.active).toBe(false);
     db.close();
   });
 
-  it("includes members created by subscribeToChannel (not just sendMessage)", () => {
+  it("includes members created by subscribe (not just sendMessage)", () => {
     const db = setupDb();
     registerAgent(db, "sender");
     registerAgent(db, "reader");
+    createChannel(db, "ch", "sender");
     sendMessage(db, "sender", "ch", "hello");
-    // reader joins via subscribeToChannel (creates cursor), never sends
-    subscribeToChannel(db, "reader", "ch");
+    // reader joins via subscribe (creates cursor), never sends
+    subscribe(db, "reader", "ch");
 
     const members = listChannelMembers(db, "ch");
     expect(members.find((m) => m.agent_id === "reader")).toBeDefined();
     db.close();
   });
 
-  it("includes members created by subscribeToChannel", () => {
+  it("includes members created by subscribe", () => {
     const db = setupDb();
     registerAgent(db, "subscriber");
-    subscribeToChannel(db, "subscriber", "ch");
+    createChannel(db, "ch", "subscriber");
+    subscribe(db, "subscriber", "ch");
 
     const members = listChannelMembers(db, "ch");
     expect(members.find((m) => m.agent_id === "subscriber")).toBeDefined();
@@ -257,6 +272,7 @@ describe("listChannelMembers", () => {
     const db = setupDb();
     registerAgent(db, "sender");
     registerAgent(db, "browser");
+    createChannel(db, "ch", "sender");
     sendMessage(db, "sender", "ch", "msg1");
     sendMessage(db, "sender", "ch", "msg2");
 
@@ -276,8 +292,9 @@ describe("onclose cleanup behavior", () => {
     registerAgent(db, "session-agent");
     registerAgent(db, "other");
     // Create cursor BEFORE unregister by subscribing to a channel
+    createChannel(db, "ch", "other");
     sendMessage(db, "other", "ch", "setup");
-    subscribeToChannel(db, "session-agent", "ch");
+    subscribe(db, "session-agent", "ch");
     readMessages(db, "session-agent", "ch");
 
     // Simulate what mcp.ts onclose does:
@@ -305,27 +322,46 @@ describe("onclose cleanup behavior", () => {
   });
 });
 
-describe("listAgents with active_only", () => {
-  it("active_only false returns all agents (backward compatible)", () => {
+describe("listAgents with include_stale", () => {
+  it("default (no arg) returns only active agents", () => {
     const db = setupDb();
     registerAgent(db, "agent-a");
-    // Create a lightweight agent via sendMessage (no PID)
-    sendMessage(db, "human", "ch", "hi");
+    // Seed a stale agent directly (simulates a row with no PID)
+    const now = Date.now();
+    db.run("INSERT INTO agents (id, created_at, last_seen_at) VALUES (?, ?, ?)", ["human", now, now]);
 
-    const all = listAgents(db);
-    expect(all.length).toBe(2);
+    const active = listAgents(db);
+    expect(active.length).toBe(1);
+    expect(active[0]!.id).toBe("agent-a");
     db.close();
   });
 
-  it("active_only true excludes unregistered and no-PID agents", () => {
+  it("include_stale=true returns all agents including stale", () => {
     const db = setupDb();
     registerAgent(db, "agent-a");
     registerAgent(db, "agent-b");
-    sendMessage(db, "human", "ch", "hi"); // no PID
+    // Seed a no-PID row directly
+    const now = Date.now();
+    db.run("INSERT INTO agents (id, created_at, last_seen_at) VALUES (?, ?, ?)", ["human", now, now]);
 
     unregisterAgent(db, "agent-b", process.pid); // PID nulled
 
-    const active = listAgents(db, true);
+    const all = listAgents(db, true);
+    expect(all.length).toBe(3); // agent-a, agent-b (nulled PID), human (no PID)
+    db.close();
+  });
+
+  it("include_stale=false (explicit) excludes stale agents", () => {
+    const db = setupDb();
+    registerAgent(db, "agent-a");
+    registerAgent(db, "agent-b");
+    // Seed a no-PID row directly
+    const now = Date.now();
+    db.run("INSERT INTO agents (id, created_at, last_seen_at) VALUES (?, ?, ?)", ["human", now, now]);
+
+    unregisterAgent(db, "agent-b", process.pid); // PID nulled
+
+    const active = listAgents(db, false);
     expect(active.length).toBe(1);
     expect(active[0]!.id).toBe("agent-a");
     db.close();
@@ -337,8 +373,9 @@ describe("reconnect behavior", () => {
     const db = setupDb();
     registerAgent(db, "agent-a");
     registerAgent(db, "agent-b");
+    createChannel(db, "work", "agent-a");
     sendMessage(db, "agent-a", "work", "setup");
-    subscribeToChannel(db, "agent-b", "work");
+    subscribe(db, "agent-b", "work");
     readMessages(db, "agent-b", "work"); // agent-b has cursor
 
     // agent-b disconnects
@@ -385,8 +422,9 @@ describe("reconnect polling", () => {
     const db = setupDb();
     registerAgent(db, "agent-a");
     registerAgent(db, "agent-b");
+    createChannel(db, "dm-ch", "agent-a");
     sendMessage(db, "agent-a", "dm-ch", "setup");
-    subscribeToChannel(db, "agent-b", "dm-ch");
+    subscribe(db, "agent-b", "dm-ch");
     readMessages(db, "agent-b", "dm-ch"); // agent-b subscribes
 
     // agent-b disconnects
@@ -417,8 +455,9 @@ describe("ownership loss stops polling", () => {
     const db = setupDb();
     registerAgent(db, "agent-a");
     registerAgent(db, "agent-b");
+    createChannel(db, "ch", "agent-b");
     sendMessage(db, "agent-b", "ch", "setup");
-    subscribeToChannel(db, "agent-a", "ch");
+    subscribe(db, "agent-a", "ch");
     readMessages(db, "agent-a", "ch");
 
     const notifications: { content: string }[] = [];
@@ -457,102 +496,6 @@ describe("crash recovery", () => {
     // Should reclaim immediately — isProcessAlive(999999) returns false
     const reclaimed = registerAgent(db, "planner");
     expect(reclaimed.pid).toBe(process.pid);
-    db.close();
-  });
-});
-
-describe("ensureAgent ownership scoping", () => {
-  it("implicit sendMessage does not refresh last_seen_at for foreign registered agent", () => {
-    const db = setupDb();
-    registerAgent(db, "planner");
-
-    // Simulate crash: foreign PID, stale last_seen_at
-    const staleTime = Date.now() - 20 * 60 * 1000;
-    db.run("UPDATE agents SET pid = 1, last_seen_at = ? WHERE id = ?", [staleTime, "planner"]);
-
-    // Another process sends as "planner" (REPL impersonation or name collision)
-    sendMessage(db, "planner", "ch", "hello from impersonator");
-
-    // last_seen_at should NOT have been refreshed
-    const agent = getAgent(db, "planner")!;
-    expect(agent.last_seen_at).toBe(staleTime);
-    expect(isAgentActive(agent)).toBe(false);
-    db.close();
-  });
-
-  it("stale-PID reclaim still works after implicit traffic on the name", () => {
-    const db = setupDb();
-    registerAgent(db, "planner");
-
-    // Simulate crash
-    const staleTime = Date.now() - 20 * 60 * 1000;
-    db.run("UPDATE agents SET pid = 1, last_seen_at = ? WHERE id = ?", [staleTime, "planner"]);
-
-    // Traffic on the name from a different process
-    sendMessage(db, "planner", "ch", "this should not block reclaim");
-
-    // Reclaim should succeed
-    const reclaimed = registerAgent(db, "planner");
-    expect(reclaimed.pid).toBe(process.pid);
-    db.close();
-  });
-
-  it("ensureAgent still refreshes last_seen_at for own registered agent", () => {
-    const db = setupDb();
-    registerAgent(db, "mine");
-    const before = getAgent(db, "mine")!.last_seen_at;
-
-    sendMessage(db, "mine", "ch", "my own message");
-
-    const after = getAgent(db, "mine")!;
-    expect(after.last_seen_at).toBeGreaterThanOrEqual(before);
-    db.close();
-  });
-
-  it("ensureAgent still refreshes last_seen_at for unregistered agent (no PID)", () => {
-    const db = setupDb();
-    // First call creates lightweight row
-    sendMessage(db, "human", "ch", "first");
-    const first = getAgent(db, "human")!;
-    expect(first.pid).toBeNull();
-    const firstTime = first.last_seen_at;
-
-    // Second call should refresh
-    sendMessage(db, "human", "ch", "second");
-    const after = getAgent(db, "human")!;
-    expect(after.last_seen_at).toBeGreaterThanOrEqual(firstTime);
-    db.close();
-  });
-
-  it("ensureAgent reclaims dead PID and sets current process PID", () => {
-    const db = setupDb();
-    registerAgent(db, "crashed");
-
-    // Simulate crash: set a dead foreign PID
-    const staleTime = Date.now() - 20 * 60 * 1000;
-    db.run("UPDATE agents SET pid = 999999, last_seen_at = ? WHERE id = ?", [staleTime, "crashed"]);
-
-    // ensureAgent via sendMessage should reclaim the dead PID
-    sendMessage(db, "crashed", "ch", "hello after restart");
-
-    const agent = getAgent(db, "crashed")!;
-    expect(agent.pid).toBe(process.pid);
-    expect(agent.last_seen_at).toBeGreaterThan(staleTime);
-    db.close();
-  });
-
-  it("ensureAgent does NOT reclaim alive foreign PID", () => {
-    const db = setupDb();
-    registerAgent(db, "owned");
-
-    // PID 1 (init/launchd) is always alive
-    db.run("UPDATE agents SET pid = 1 WHERE id = ?", ["owned"]);
-    const before = getAgent(db, "owned")!;
-
-    sendMessage(db, "owned", "ch", "should not reclaim");
-
-    const after = getAgent(db, "owned")!;
-    expect(after.pid).toBe(1); // unchanged — alive process still owns it
     db.close();
   });
 });

@@ -10,21 +10,23 @@ const db = openDb();
 function buildInstructions(): string {
   let instructions =
     'octo-santa messaging module is available. Call messaging_register with a ' +
-    'unique agent name (e.g. your role), then read or send on a channel to ' +
-    'start receiving push notifications. If the name is taken, pick a different one.\n\n' +
+    'unique agent name (e.g. your role). If the name is taken, pick a different one.\n\n' +
+    'You must call messaging_register before sending, reading, creating channels, or subscribing. ' +
+    'Read-only tools (messaging_list_channels, messaging_list_agents, messaging_list_members) work without registration.\n\n' +
     'Messages from other agents arrive as <channel source="octo-santa" ...> tags. ' +
-    'To acknowledge and see full history, call messaging_read_messages with the channel_name. ' +
-    'To reply, call messaging_send_message with the same channel_name.\n\n' +
-    'CHANNELS: Messages live in named channels. Use messaging_send_message to send and ' +
-    'messaging_read_messages to read. Channels are created on first use.\n\n' +
+    'To acknowledge and see full history, call messaging_read_messages with the channel. ' +
+    'To reply, call messaging_send_message with the same channel.\n\n' +
+    'CHANNELS: Messages live in named channels. Create channels with messaging_create_channel, ' +
+    'then subscribe with messaging_subscribe to receive notifications. ' +
+    'Channels must exist before sending — use messaging_create_channel to create them.\n\n' +
     'MENTIONS:\n' +
     '- @agent-name → only that agent gets notified\n' +
     '- @all → all channel subscribers get notified\n' +
     '- No mention → message is silent (recipients must read actively)\n\n' +
     'Use @mentions to get attention. Messages without mentions are for ' +
     'context/logging — recipients see them when they check the channel.\n\n' +
-    'DISCOVERY: Use messaging_list_agents to see known agents. ' +
-    'Use messaging_list_agents with active_only=true to see who is currently online. ' +
+    'DISCOVERY: Use messaging_list_agents to see currently online agents. ' +
+    'Use messaging_list_agents with include_stale=true to see all agents including disconnected ones. ' +
     'Use messaging_list_members to see who is in a specific channel.';
 
   const config = readConfig(process.cwd());
@@ -98,7 +100,7 @@ async function main() {
 
   // Bootstrap nudge — prompt agent to register before any tool call
   const config = readConfig(process.cwd());
-  let bootstrapMsg = "octo-santa messaging module is available. Call messaging_register with a unique agent name, then read or send on a channel to start receiving push notifications.";
+  let bootstrapMsg = "octo-santa messaging module is available. Call messaging_register with a unique agent name. Then create channels with messaging_create_channel and subscribe with messaging_subscribe to start receiving notifications.";
   if (config?.domain) {
     bootstrapMsg += `\n\nBrain module active — this repo is domain "${config.domain.identifier}" (${config.domain.description}). ` +
       "After messaging_register, call brain_claim_domain to become a queryable expert.";

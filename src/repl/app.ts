@@ -28,11 +28,12 @@ export function startApp(opts: AppOptions): () => void {
     agentId,
   };
 
-  // Init cursor at current max message ID
+  // Init cursor from DB cursor (preserves unread backlog on reconnect)
   const ch = db.query("SELECT id FROM channels WHERE name = ?").get(channel) as { id: number } | null;
   if (ch) {
-    const maxRow = db.query("SELECT MAX(id) as max_id FROM messages WHERE channel_id = ?").get(ch.id) as { max_id: number | null };
-    state.cursors.set(channel, maxRow?.max_id ?? 0);
+    const cursorRow = db.query("SELECT last_read_message_id FROM cursors WHERE agent_id = ? AND channel_id = ?")
+      .get(agentId, ch.id) as { last_read_message_id: number } | null;
+    state.cursors.set(channel, cursorRow?.last_read_message_id ?? 0);
   } else {
     state.cursors.set(channel, 0);
   }

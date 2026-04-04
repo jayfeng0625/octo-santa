@@ -10,7 +10,7 @@ import {
   listChannels,
   sendMessage,
   readMessages,
-  subscribeToChannel,
+  subscribe,
   listAgents,
 } from "../src/modules/messaging/tools";
 
@@ -42,7 +42,7 @@ describe("full messaging flow", () => {
     registerAgent(db, "frontend-app");
     registerAgent(db, "backend-api");
     createChannel(db, "coordination", "frontend-app");
-    subscribeToChannel(db, "backend-api", "coordination");
+    subscribe(db, "backend-api", "coordination");
 
     // Agent A sends
     sendMessage(db, "frontend-app", "coordination", "Need API endpoint for /users");
@@ -78,8 +78,12 @@ describe("full messaging flow", () => {
     const db = setupDb();
 
     // agent-b subscribes before messages are sent so cursor starts at 0
-    subscribeToChannel(db, "agent-b", "frontend");
-    subscribeToChannel(db, "agent-b", "backend");
+    registerAgent(db, "agent-a");
+    registerAgent(db, "agent-b");
+    createChannel(db, "frontend", "agent-b");
+    createChannel(db, "backend", "agent-b");
+    subscribe(db, "agent-b", "frontend");
+    subscribe(db, "agent-b", "backend");
 
     sendMessage(db, "agent-a", "frontend", "UI question");
     sendMessage(db, "agent-a", "backend", "API question");

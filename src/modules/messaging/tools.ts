@@ -105,7 +105,7 @@ export function isProcessAlive(pid: number): boolean {
 export const PID_STALE_MS = 15 * 60 * 1000;
 
 /** Exact liveness check: PID set + process alive + last_seen_at fresh.
- *  Used by listAgents(active_only), listChannelMembers, registerAgent.
+ *  Used by listAgents() default filtering, listChannelMembers, registerAgent.
  *  For the polling hot path (DM/group mode), use SQL-only approximate liveness instead. */
 export function isAgentActive(agent: Agent): boolean {
   if (agent.pid === null) return false;
@@ -157,38 +157,15 @@ export function getAgent(db: Database, agentId: string): Agent | null {
   return (db.query("SELECT * FROM agents WHERE id = ?").get(agentId) as Agent) ?? null;
 }
 
-/** Lightweight agent upsert — no PID check, no exclusive lock.
- *  Used by createChannel/readMessages where we just need the agent row to exist.
- *  Reclaims dead PIDs from crashed processes to prevent stale-PID lockout. */
-function ensureAgent(db: Database, agentId: string): void {
+function requireRegistered(db: Database, agentId: string): void {
   validateAgentName(agentId);
-  withRetrySync(() => {
-    const now = Date.now();
-    db.run(
-      `INSERT INTO agents (id, created_at, last_seen_at) VALUES (?, ?, ?)
-       ON CONFLICT(id) DO UPDATE SET last_seen_at = excluded.last_seen_at
-       WHERE pid IS NULL OR pid = ?`,
-      [agentId, now, now, process.pid]
-    );
-
-    // Fast path covered above. Slow path: PID mismatch — check if stale.
-    const existing = db
-      .query("SELECT pid FROM agents WHERE id = ?")
-      .get(agentId) as { pid: number | null } | null;
-    if (existing && existing.pid !== null && existing.pid !== process.pid) {
-      if (!isProcessAlive(existing.pid)) {
-        db.run(
-          "UPDATE agents SET pid = ?, last_seen_at = ? WHERE id = ? AND pid = ?",
-          [process.pid, now, agentId, existing.pid]
-        );
-      }
-    }
-  });
+  const agent = db.query("SELECT pid FROM agents WHERE id = ? AND pid = ?").get(agentId, process.pid) as { pid: number } | null;
+  if (!agent) throw new Error(`Agent "${agentId}" must call messaging_register before using messaging tools`);
 }
 
-export function listAgents(db: Database, activeOnly?: boolean): Agent[] {
+export function listAgents(db: Database, includeStale?: boolean): Agent[] {
   const agents = db.query("SELECT * FROM agents ORDER BY id").all() as Agent[];
-  if (!activeOnly) return agents;
+  if (includeStale) return agents;
   return agents.filter(isAgentActive);
 }
 
@@ -213,7 +190,7 @@ export function listChannelMembers(db: Database, channelName: string): ChannelMe
 
 export function createChannel(db: Database, name: string, agentId: string): Channel {
   if (!name.trim()) throw new Error("channel name must not be empty");
-  ensureAgent(db, agentId);
+  requireRegistered(db, agentId);
 
   return withRetrySync(() => {
     db.run(
@@ -241,6 +218,8 @@ export function readMessages(
   channelName: string,
   options?: ReadOptions
 ): Message[] {
+  requireRegistered(db, agentId);
+
   const channel = db.query("SELECT id FROM channels WHERE name = ?").get(channelName) as { id: number } | null;
   if (!channel) {
     throw new Error(
@@ -253,7 +232,7 @@ export function readMessages(
     "SELECT 1 FROM cursors WHERE agent_id = ? AND channel_id = ?"
   ).get(agentId, channel.id);
   if (!existingCursor) {
-    throw new Error(`Not a member of channel "${channelName}". Join via messaging_send_message, messaging_create_channel, or messaging_direct_message.`);
+    throw new Error(`Not a member of channel "${channelName}". Join via messaging_subscribe, messaging_send_message, or messaging_direct_message.`);
   }
 
   // History mode — do NOT advance cursor
@@ -300,28 +279,26 @@ export function readMessages(
 }
 
 /**
- * Subscribe to a channel's poll without consuming unread messages.
+ * Subscribe to an existing channel's poll without consuming unread messages.
  * Creates cursor at the current max message ID if none exists.
  * Leaves existing cursor untouched — preserves unread backlog.
+ * Agent must be registered before subscribing.
  */
-export function subscribeToChannel(
+export function subscribe(
   db: Database,
   agentId: string,
   channelName: string
 ): void {
-  const channel = createChannel(db, channelName, agentId);
+  requireRegistered(db, agentId);
+
+  const channel = db.query("SELECT * FROM channels WHERE name = ?").get(channelName) as Channel | null;
+  if (!channel) throw new Error(`Channel "${channelName}" does not exist`);
 
   withRetrySync(() => {
-    // Get the current max message ID for this channel
-    const maxRow = db
-      .query("SELECT MAX(id) as max_id FROM messages WHERE channel_id = ?")
-      .get(channel.id) as { max_id: number | null };
+    const maxRow = db.query("SELECT MAX(id) as max_id FROM messages WHERE channel_id = ?").get(channel.id) as { max_id: number | null };
     const maxId = maxRow?.max_id ?? 0;
-
-    // Only create cursor if none exists — ON CONFLICT DO NOTHING preserves existing
     db.run(
-      `INSERT INTO cursors (agent_id, channel_id, last_read_message_id)
-       VALUES (?, ?, ?)
+      `INSERT INTO cursors (agent_id, channel_id, last_read_message_id) VALUES (?, ?, ?)
        ON CONFLICT(agent_id, channel_id) DO NOTHING`,
       [agentId, channel.id, maxId]
     );
@@ -335,7 +312,11 @@ export function sendMessage(
   content: string
 ): Message {
   if (!content.trim()) throw new Error("message content must not be empty");
-  const channel = createChannel(db, channelName, agentId);
+  requireRegistered(db, agentId);
+
+  // Channel must already exist — no implicit creation
+  const channel = db.query("SELECT * FROM channels WHERE name = ?").get(channelName) as Channel | null;
+  if (!channel) throw new Error(`Channel "${channelName}" does not exist. Create it with messaging_create_channel first.`);
 
   const doSend = db.transaction(() => {
     const now = Date.now();
@@ -373,6 +354,38 @@ export function sendMessage(
   });
 
   return withRetrySync(() => doSend.immediate());
+}
+
+export function renameChannel(db: Database, agentId: string, channelName: string, newName: string): Channel {
+  if (!newName.trim()) throw new Error("new channel name must not be empty");
+  requireRegistered(db, agentId);
+
+  const channel = db.query("SELECT * FROM channels WHERE name = ?").get(channelName) as Channel | null;
+  if (!channel) throw new Error(`Channel "${channelName}" not found`);
+
+  // Membership check: agent must have cursor in this channel
+  const cursor = db.query("SELECT 1 FROM cursors WHERE agent_id = ? AND channel_id = ?").get(agentId, channel.id);
+  if (!cursor) throw new Error(`Not a member of channel "${channelName}"`);
+
+  // Check new name isn't taken
+  const existing = db.query("SELECT 1 FROM channels WHERE name = ?").get(newName);
+  if (existing) throw new Error(`Channel "${newName}" already exists`);
+
+  return withRetrySync(() => {
+    const doRename = db.transaction(() => {
+      db.run("UPDATE channels SET name = ? WHERE id = ?", [newName, channel.id]);
+
+      // Notify all members via a system message with @all mention
+      const now = Date.now();
+      db.run(
+        "INSERT INTO messages (channel_id, agent_id, content, created_at, mentions) VALUES (?, ?, ?, ?, ?)",
+        [channel.id, agentId, `Channel renamed from "${channelName}" to "${newName}"`, now, '["*"]']
+      );
+
+      return db.query("SELECT * FROM channels WHERE id = ?").get(channel.id) as Channel;
+    });
+    return doRename();
+  });
 }
 
 export function directMessage(

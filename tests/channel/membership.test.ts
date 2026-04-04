@@ -5,7 +5,11 @@ import { runMigrations } from "../../src/migrations";
 import {
   messagingMigrations,
   registerAgent,
+  unregisterAgent,
+  createChannel,
   sendMessage,
+  readMessages,
+  subscribe,
 } from "../../src/modules/messaging/tools";
 import { startPolling, type NotifyFn } from "../../src/channel";
 import type { Database } from "bun:sqlite";
@@ -32,18 +36,25 @@ afterEach(() => {
   cleanupDb(TEST_DB);
 });
 
-describe("human sender does not affect DM notification mode", () => {
-  it("agent gets notified for unmentioned messages when human has sent in channel", async () => {
-    // Two MCP agents in a channel (DM mode)
+describe("unregistered agent does not affect DM notification mode", () => {
+  it("agent gets notified for unmentioned messages when an unregistered member exists in channel", async () => {
+    // Two registered MCP agents in a channel (DM mode: 2 active members)
     registerAgent(db, "agent-a");
     registerAgent(db, "agent-b");
+    registerAgent(db, "jay");
+    createChannel(db, "planning", "agent-a");
     sendMessage(db, "agent-a", "planning", "setup");
     sendMessage(db, "agent-b", "planning", "ack");
 
-    // Human sends a message (creates cursor row via sendMessage, but no PID)
-    sendMessage(db, "jay", "planning", "human message");
+    // Jay sends a message then unregisters (simulates leaving session)
+    sendMessage(db, "jay", "planning", "one-off message");
+    unregisterAgent(db, "jay", process.pid);
 
-    // agent-b sends an unmentioned message
+    // Subscribe agent-a to receive notifications
+    subscribe(db, "agent-a", "planning");
+    readMessages(db, "agent-a", "planning");
+
+    // agent-b sends an unmentioned message — jay is unregistered, so only 2 active members (DM mode)
     sendMessage(db, "agent-b", "planning", "status update — no mentions");
 
     // agent-a polls — should still get notified (DM mode, not group)

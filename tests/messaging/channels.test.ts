@@ -53,11 +53,24 @@ describe("createChannel", () => {
     db.close();
   });
 
-  it("auto-registers the agent if not already registered", () => {
+  it("throws when creating before registering", () => {
     const db = setupDb();
-    const channel = createChannel(db, "frontend", "new-agent");
 
-    expect(channel.created_by).toBe("new-agent");
+    expect(() => createChannel(db, "frontend", "unregistered-agent")).toThrow(
+      `Agent "unregistered-agent" must call messaging_register before using messaging tools`
+    );
+    db.close();
+  });
+
+  it("does not auto-subscribe the creator (no cursor created)", () => {
+    const db = setupDb();
+    createChannel(db, "no-cursor-ch", "octo-santa");
+
+    const channel = db.query("SELECT id FROM channels WHERE name = ?").get("no-cursor-ch") as { id: number };
+    const cursor = db.query(
+      "SELECT * FROM cursors WHERE agent_id = ? AND channel_id = ?"
+    ).get("octo-santa", channel.id);
+    expect(cursor).toBeNull();
 
     db.close();
   });

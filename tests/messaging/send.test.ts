@@ -8,7 +8,7 @@ import {
   createChannel,
   sendMessage,
   readMessages,
-  subscribeToChannel,
+  subscribe,
 } from "../../src/modules/messaging/tools";
 
 const TEST_DB = "/tmp/octo-santa-test-send.sqlite";
@@ -34,6 +34,8 @@ afterEach(() => {
 describe("sendMessage", () => {
   it("sends a message and returns the message with an ID", () => {
     const db = setupDb();
+    registerAgent(db, "octo-santa");
+    createChannel(db, "coordination", "octo-santa");
     const msg = sendMessage(db, "octo-santa", "coordination", "Hello world");
 
     expect(msg.id).toBeGreaterThan(0);
@@ -44,18 +46,11 @@ describe("sendMessage", () => {
     db.close();
   });
 
-  it("auto-creates channel and registers agent if needed", () => {
-    const db = setupDb();
-    const msg = sendMessage(db, "new-agent", "new-channel", "First message");
-
-    expect(msg.agent_id).toBe("new-agent");
-    expect(msg.channel_id).toBeGreaterThan(0);
-
-    db.close();
-  });
-
   it("messages get sequential IDs", () => {
     const db = setupDb();
+    registerAgent(db, "agent-a");
+    registerAgent(db, "agent-b");
+    createChannel(db, "general", "agent-a");
     const msg1 = sendMessage(db, "agent-a", "general", "First");
     const msg2 = sendMessage(db, "agent-b", "general", "Second");
 
@@ -67,6 +62,7 @@ describe("sendMessage", () => {
   it("updates agent last_seen_at on send", () => {
     const db = setupDb();
     const before = registerAgent(db, "octo-santa");
+    createChannel(db, "general", "octo-santa");
     sendMessage(db, "octo-santa", "general", "ping");
     const after = db.query("SELECT * FROM agents WHERE id = ?").get("octo-santa") as { last_seen_at: number };
 
@@ -77,7 +73,9 @@ describe("sendMessage", () => {
 
   it("stores parsed mentions in message", () => {
     const db = setupDb();
+    registerAgent(db, "agent-a");
     registerAgent(db, "reviewer");
+    createChannel(db, "coordination", "agent-a");
     const msg = sendMessage(db, "agent-a", "coordination", "@reviewer check this");
 
     expect(JSON.parse(msg.mentions)).toEqual(["reviewer"]);
@@ -86,6 +84,8 @@ describe("sendMessage", () => {
 
   it("stores empty array when no mentions", () => {
     const db = setupDb();
+    registerAgent(db, "agent-a");
+    createChannel(db, "coordination", "agent-a");
     const msg = sendMessage(db, "agent-a", "coordination", "just a message");
 
     expect(JSON.parse(msg.mentions)).toEqual([]);
@@ -94,6 +94,8 @@ describe("sendMessage", () => {
 
   it("stores broadcast sentinel for @all", () => {
     const db = setupDb();
+    registerAgent(db, "agent-a");
+    createChannel(db, "coordination", "agent-a");
     const msg = sendMessage(db, "agent-a", "coordination", "@all heads up");
 
     expect(JSON.parse(msg.mentions)).toEqual(["*"]);
@@ -102,6 +104,8 @@ describe("sendMessage", () => {
 
   it("drops invalid mentions silently", () => {
     const db = setupDb();
+    registerAgent(db, "agent-a");
+    createChannel(db, "coordination", "agent-a");
     const msg = sendMessage(db, "agent-a", "coordination", "@nonexistent hello");
 
     expect(JSON.parse(msg.mentions)).toEqual([]);
@@ -110,6 +114,8 @@ describe("sendMessage", () => {
 
   it("stores broadcast sentinel for @here", () => {
     const db = setupDb();
+    registerAgent(db, "agent-a");
+    createChannel(db, "coordination", "agent-a");
     const msg = sendMessage(db, "agent-a", "coordination", "@here attention please");
 
     expect(JSON.parse(msg.mentions)).toEqual(["*"]);
@@ -118,14 +124,38 @@ describe("sendMessage", () => {
 
   it("readMessages returns mentions field on messages", () => {
     const db = setupDb();
+    registerAgent(db, "agent-a");
     registerAgent(db, "reviewer");
     // reviewer subscribes before message is sent so cursor starts at 0 (sees all messages)
-    subscribeToChannel(db, "reviewer", "coordination");
+    createChannel(db, "coordination", "reviewer");
+    subscribe(db, "reviewer", "coordination");
     sendMessage(db, "agent-a", "coordination", "@reviewer please look");
 
     const messages = readMessages(db, "reviewer", "coordination");
     expect(messages.length).toBe(1);
     expect(JSON.parse(messages[0]!.mentions)).toEqual(["reviewer"]);
+    db.close();
+  });
+
+  it("throws when sending before registering", () => {
+    const db = setupDb();
+    // Create channel via a registered agent first
+    registerAgent(db, "setup-agent");
+    createChannel(db, "general", "setup-agent");
+
+    expect(() => sendMessage(db, "unregistered", "general", "hello")).toThrow(
+      `Agent "unregistered" must call messaging_register before using messaging tools`
+    );
+    db.close();
+  });
+
+  it("throws when sending to non-existent channel", () => {
+    const db = setupDb();
+    registerAgent(db, "agent-a");
+
+    expect(() => sendMessage(db, "agent-a", "no-such-channel", "hello")).toThrow(
+      `Channel "no-such-channel" does not exist`
+    );
     db.close();
   });
 });
