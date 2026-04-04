@@ -1,8 +1,0 @@
-{
-  "mcpServers": {
-    "octo-santa": {
-      "command": "bun",
-      "args": ["run", "/Users/jayfeng/Development/personal/octo-santa/dist/latest/mcp.js"]
-    }
-  }
-}
