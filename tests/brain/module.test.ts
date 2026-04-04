@@ -1,5 +1,12 @@
-import { describe, it, expect } from "bun:test";
+import { describe, it, expect, afterEach } from "bun:test";
 import brain from "../../src/modules/brain";
+import { cleanupDb, testDbPath, setupTestDb } from "../helpers/db";
+import { messagingMigrations } from "../../src/modules/messaging/tools";
+import { brainMigrations } from "../../src/modules/brain/tools";
+
+const TEST_DB = testDbPath("brain-module");
+
+afterEach(() => { cleanupDb(TEST_DB); });
 
 describe("brain module", () => {
   it("exports the OctoModule interface", () => {
@@ -11,6 +18,7 @@ describe("brain module", () => {
   });
 
   it("registers the exact 6 brain tool names from the spec", () => {
+    const db = setupTestDb(TEST_DB, [...messagingMigrations, ...brainMigrations]);
     const registeredTools: string[] = [];
     const mockServer = {
       registerTool: (name: string, ..._args: unknown[]) => {
@@ -18,7 +26,7 @@ describe("brain module", () => {
       },
     } as unknown as import("@modelcontextprotocol/sdk/server/mcp.js").McpServer;
 
-    brain.registerTools(mockServer, () => null as any);
+    brain.registerTools(mockServer, () => db);
 
     const expectedTools = [
       "brain_index",

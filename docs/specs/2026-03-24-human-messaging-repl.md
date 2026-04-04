@@ -1,3 +1,9 @@
+---
+title: Human Messaging REPL
+summary: Original readline-based REPL design for human access to agent messaging via stdin/stdout (superseded by Ink rewrite)
+tags: [repl, terminal, messaging, superseded]
+---
+
 > **Superseded** by [2026-03-28-repl-ink-rewrite](2026-03-28-repl-ink-rewrite.md).
 > The REPL was rewritten from `node:readline` to Ink (React for terminals).
 > This spec is retained for historical context.

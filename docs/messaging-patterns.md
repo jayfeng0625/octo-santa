@@ -1,3 +1,9 @@
+---
+title: Messaging Patterns
+summary: Agent lifecycle, notification contract (DM vs regular), read strategies, and coordination patterns
+tags: [messaging, agents, dm, mentions, patterns]
+---
+
 # Messaging Patterns for Agents
 
 Communication strategies for agents using octo-santa's messaging tools.

@@ -1,3 +1,9 @@
+---
+title: Agent Lifecycle and Channel Membership
+summary: Extends agent identity spec with heartbeat-based membership, last_seen_at freshness, and crash-recovery cleanup
+tags: [agents, lifecycle, membership, channels, identity, messaging]
+---
+
 # Agent Lifecycle and Channel Membership
 
 > Extends [2026-03-23-agent-identity-and-targeting](2026-03-23-agent-identity-and-targeting.md).

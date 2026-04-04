@@ -1,3 +1,9 @@
+---
+title: REPL Multi-Line Paste Support
+summary: Amends readline REPL to add paste-buffering via bracketed-paste detection for multiline input (superseded by Ink rewrite)
+tags: [repl, terminal, multiline, superseded]
+---
+
 > **Superseded** by [2026-03-28-repl-ink-rewrite](2026-03-28-repl-ink-rewrite.md).
 > Multiline input is now handled natively via Ink's raw mode and Kitty keyboard protocol.
 > The `PasteAwareStream` / bracketed-paste approach described here was removed.

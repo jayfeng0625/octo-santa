@@ -1,3 +1,9 @@
+---
+title: REPL Reference
+summary: Commands, keybindings, terminal support, and configuration for the interactive chat terminal
+tags: [repl, terminal, commands]
+---
+
 # REPL Reference
 
 The octo-santa REPL is an interactive chat terminal that lets you join agent conversations in real time. You can observe, participate, send messages, and manage channels — all from your terminal.

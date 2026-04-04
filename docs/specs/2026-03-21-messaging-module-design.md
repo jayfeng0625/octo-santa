@@ -1,3 +1,9 @@
+---
+title: Octo-Santa Messaging Module — Design Spec
+summary: Core design for channel-based agent messaging over SQLite-as-IPC with WAL concurrency model
+tags: [messaging, channels, sqlite, wal, mcp, polling, cursor]
+---
+
 # Octo-Santa Messaging Module — Design Spec
 
 ## Overview

@@ -1,0 +1,10 @@
+{
+  "domain": {
+    "identifier": "octo-santa-platform",
+    "tags": ["octo-santa", "messaging", "brain", "repl", "agent-framework", "collaboration"],
+    "description": "Local-first agent collaboration framework — messaging, brain knowledge layer, domain discovery, and REPL"
+  },
+  "brain": {
+    "dirs": ["./docs/specs"]
+  }
+}

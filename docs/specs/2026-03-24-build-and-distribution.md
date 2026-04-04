@@ -1,3 +1,9 @@
+---
+title: Build and Distribution
+summary: Entry points, build strategy, and packaging for MCP server and REPL as separate distribution targets
+tags: [build, distribution, mcp, repl]
+---
+
 # Build and Distribution
 
 ## Entry Points

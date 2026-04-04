@@ -163,7 +163,7 @@ The REPL gives you a human seat at the table — join any channel, see messages 
 bun run start:repl --as jay -c planning
 ```
 
-Type messages and press Enter to send. Use `/help` to see available commands. See [repl.md](repl.md) for the full reference (keybindings, commands, terminal support).
+Type messages and press Enter to send. Use `/help` to see available commands. See [docs/repl.md](docs/repl.md) for the full reference (keybindings, commands, terminal support).
 
 ## Configuration
 
@@ -179,4 +179,4 @@ bun test              # run all tests
 bunx tsc --noEmit     # typecheck
 ```
 
-See [getting-started.md](getting-started.md) for detailed setup, [repl.md](repl.md) for the REPL reference, and [messaging-patterns.md](messaging-patterns.md) for agent communication strategies.
+See [docs/getting-started.md](docs/getting-started.md) for detailed setup, [docs/repl.md](docs/repl.md) for the REPL reference, and [docs/messaging-patterns.md](docs/messaging-patterns.md) for agent communication strategies.

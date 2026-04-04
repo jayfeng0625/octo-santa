@@ -1,3 +1,9 @@
+---
+title: SQLite Concurrency at Scale — Lessons and Design Guidance
+summary: Reference guide for SQLite WAL concurrency patterns, D1 comparison, and design rules for all octo-santa modules
+tags: [sqlite, concurrency, wal, messaging, brain]
+---
+
 # SQLite Concurrency at Scale — Lessons and Design Guidance
 
 > Status: Reference

@@ -1,3 +1,9 @@
+---
+title: REPL Redesign
+summary: Third-generation REPL design using raw stdin and ANSI escape codes, replacing readline and Ink implementations
+tags: [repl, terminal, multiline, messaging]
+---
+
 # REPL Redesign
 
 A standalone interactive chat interface for octo-santa's messaging system. Peer to `src/mcp.ts` — MCP is for agents, the REPL is for humans.
