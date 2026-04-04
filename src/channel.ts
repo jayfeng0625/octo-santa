@@ -2,6 +2,7 @@ import type { Database } from "bun:sqlite";
 import type { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import type { Message } from "./modules/messaging/types";
 import { isProcessAlive } from "./modules/messaging/tools";
+import { withRetrySync } from "./db";
 import { log } from "./log";
 
 export type NotifyFn = (content: string, meta: Record<string, string>) => Promise<void>;
@@ -62,7 +63,7 @@ export function startPolling(
     // another process has reclaimed our agent name — stop polling to avoid
     // delivering notifications to a stale session. An unregistered agent row
     // (null PID from unregisterAgent) is expected to have 0-change heartbeats.
-    const heartbeat = stmtHeartbeat.run(Date.now(), agentId, process.pid);
+    const heartbeat = withRetrySync(() => stmtHeartbeat.run(Date.now(), agentId, process.pid));
     if (heartbeat.changes === 0) {
       const row = db.query("SELECT pid FROM agents WHERE id = ?").get(agentId) as { pid: number | null } | null;
       if (row && row.pid !== null && row.pid !== process.pid) {
@@ -72,9 +73,9 @@ export function startPolling(
         }
         // Stale PID from crashed process — reclaim and continue polling.
         // CAS: if another process won the reclaim race, changes === 0 and we stop.
-        const reclaim = db.query(
+        const reclaim = withRetrySync(() => db.query(
           "UPDATE agents SET pid = ?, last_seen_at = ? WHERE id = ? AND pid = ?"
-        ).run(process.pid, Date.now(), agentId, row.pid);
+        ).run(process.pid, Date.now(), agentId, row.pid));
         if (reclaim.changes === 0) {
           active = false;
           return;

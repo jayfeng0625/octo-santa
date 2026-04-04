@@ -9,6 +9,20 @@ Bun auto-loads `.env` — don't use dotenv.
 - `bun:sqlite` for SQLite. Don't use `better-sqlite3`.
 - `@modelcontextprotocol/sdk` for MCP server/transport.
 
+## SQLite Concurrency
+
+Reference specs: `docs/specs/2026-03-21-messaging-module-design.md` (concurrency section),
+`docs/specs/2026-04-03-sqlite-concurrency-at-scale.md` (design rules).
+
+- Use `db.query()` for all queries — it caches compiled prepared statements by SQL string.
+  Never use `db.prepare()` unless generating one-off dynamic SQL you don't want cached.
+  See: https://bun.sh/docs/runtime/sqlite#query
+- All write transactions MUST use `.immediate()` or `.exclusive()` — never bare `doTx()`.
+- All writes MUST be wrapped in `withRetrySync()` from `src/db.ts`.
+- Keep write transactions short — no async work, no network calls inside.
+- Reads are free in WAL mode — no retry needed, no transaction needed.
+- One DB connection per process. Never open a second connection in the same process.
+
 ## Testing
 
 ```bash
