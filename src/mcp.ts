@@ -109,8 +109,8 @@ async function main() {
     bootstrapMsg += `\n\nBrain module active — this repo is domain "${config.domain.identifier}" (${config.domain.description}). ` +
       "After messaging_register, call brain_claim_domain to become a queryable expert.";
   }
-  if (config?.brain?.dirs) {
-    const brainDocs = scanBrainDocs(process.cwd(), config.brain.dirs);
+  if (config?.brain?.dirs || config?.brain?.files) {
+    const brainDocs = scanBrainDocs(process.cwd(), config.brain?.dirs, config.brain?.files);
     if (brainDocs.length > 0) {
       const index = brainDocs.map(d => `- [${d.path}](${d.slug}) — ${d.summary}`).join("\n");
       bootstrapMsg += `\n\nBrain index:\n${index}`;
