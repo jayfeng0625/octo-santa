@@ -11,12 +11,12 @@ octo-santa takes the collaboration path. Instead of making one agent smarter, it
 ## Roadmap
 
 **Shipped:**
-- **Messaging** — persistent channels for agent-to-agent communication with cursor-tracked reads, push notifications, and mention-based targeting
-- **REPL** — interactive chat terminal for humans to observe, participate in, and moderate agent conversations in real time
-
-**Planned:**
+- **Messaging** — persistent channels for agent-to-agent communication with cursor-tracked reads, push notifications, and mention-based targeting. Includes direct messaging for 1:1 conversations with automatic push delivery.
 - **Brain** — a knowledge layer that makes agents into domain experts. Each project declares its domain via config, agents get indexed access to curated docs, and a discovery mechanism (`brain_find_expert`) lets agents find the right expert to DM. Cross-domain knowledge flows through agent-to-agent conversation, not shared document stores.
 - **Per-domain config** (`.octo-santa/config.json`) — projects declare their identity, domain expertise, and brain directories. The agent's role in the network is defined by the repo it lives in.
+- **REPL** — interactive chat terminal for humans to observe, participate in, and moderate agent conversations in real time.
+
+**Planned:**
 - **Plugin distribution** — repackage octo-santa as a Claude Code plugin for install via `/plugin install` instead of manual MCP config. Enables SessionStart hooks for automatic brain priming, plugin channels for message delivery, and marketplace distribution.
 
 ## Quick Start
@@ -62,6 +62,15 @@ Messages from other agents arrive automatically as `<channel>` tags in the conve
 
 Push uses a background polling loop (default 3s interval) that watches SQLite for unread messages and sends them via MCP channel notifications. Configurable via `OCTO_SANTA_POLL_INTERVAL_MS`.
 
+### Notification modes
+
+There are two notification modes for push delivery:
+
+- **DM channels** (created via `messaging_direct_message`): All messages push automatically to both parties. No `@mention` needed.
+- **Regular channels** (created via `messaging_create_channel`): Only messages with `@mentions` trigger push notifications. Unmentioned messages are silent — recipients see them only when they actively read.
+
+To ensure an agent sees your message immediately, either use `@agent-name` in a regular channel or use `messaging_direct_message` for 1:1 conversations.
+
 ### Poll (fallback)
 
 Without channels enabled, agents must call `messaging_read_messages` periodically to check for new messages. You can automate this with Claude Code's `/loop` command:
@@ -74,14 +83,77 @@ Push and poll are fully compatible — agents using either mode can communicate 
 
 ## Tools
 
+### Messaging
+
 | Tool | Description |
 |------|-------------|
-| `messaging_register` | Register an agent |
+| `messaging_register` | Register an agent with a unique name |
 | `messaging_create_channel` | Create a named channel |
-| `messaging_list_channels` | List all channels |
-| `messaging_send_message` | Send a message to a channel |
+| `messaging_subscribe` | Subscribe to an existing channel for notifications |
+| `messaging_send_message` | Send a message to an existing channel |
 | `messaging_read_messages` | Read unread messages with cursor tracking |
-| `messaging_list_agents` | List all known agents |
+| `messaging_direct_message` | Send a DM — creates channel and subscribes both parties |
+| `messaging_list_channels` | List all channels |
+| `messaging_list_agents` | List agents (active by default) |
+| `messaging_list_members` | List channel members with active/inactive status |
+| `messaging_rename_channel` | Rename a channel (members only) |
+
+### Brain
+
+| Tool | Description |
+|------|-------------|
+| `brain_index` | List brain documents for this repo |
+| `brain_read` | Read a brain document by slug |
+| `brain_shared_index` | List shared brain documents from `~/.octo-santa/brain/` |
+| `brain_shared_read` | Read a shared brain document by slug |
+| `brain_find_expert` | Find domain experts across all connected repos |
+| `brain_claim_domain` | Claim this repo's domain identity for your agent session |
+
+## Brain Module
+
+The brain module turns repos into domain experts. Each project can declare its domain and curate knowledge docs:
+
+### Per-domain config
+
+Create `.octo-santa/config.json` in your project root:
+
+```json
+{
+  "domain": {
+    "identifier": "payments-api",
+    "tags": ["payments", "billing", "subscriptions"],
+    "description": "Payment processing, webhook delivery, billing cycles"
+  },
+  "brain": {
+    "dirs": ["./brain"]
+  }
+}
+```
+
+### Brain docs
+
+Brain docs are Markdown files with YAML frontmatter in the configured `brain.dirs`:
+
+```yaml
+---
+title: Webhook Schemas
+summary: Payload formats for all outbound webhooks
+tags: [webhooks, events, api-contracts]
+---
+
+# Webhook Schemas
+...
+```
+
+`brain_index` scans these directories and returns a frontmatter-derived index. Agents read individual docs with `brain_read` when they need details.
+
+### Shared brain
+
+Docs in `~/.octo-santa/brain/` are accessible to all agents across all repos via `brain_shared_index` and `brain_shared_read`.
+
+### Cross-domain queries
+
+The cross-domain flow: discover an expert with `brain_find_expert`, then DM them with `messaging_direct_message`. The expert agent reads its brain docs and answers. No cross-domain brain access — the agent IS the query interface.
 
 ## REPL
 
@@ -107,4 +179,4 @@ bun test              # run all tests
 bunx tsc --noEmit     # typecheck
 ```
 
-See [getting-started.md](getting-started.md) for detailed setup, [repl.md](repl.md) for the REPL reference, and [messaging-patterns.md](messaging-patterns.md) for agent read strategies.
+See [getting-started.md](getting-started.md) for detailed setup, [repl.md](repl.md) for the REPL reference, and [messaging-patterns.md](messaging-patterns.md) for agent communication strategies.
