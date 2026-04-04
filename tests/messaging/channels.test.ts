@@ -1,27 +1,16 @@
 import { describe, it, expect, afterEach } from "bun:test";
-import { existsSync, unlinkSync } from "fs";
-import { createDb } from "../../src/db";
-import { runMigrations } from "../../src/migrations";
 import {
   messagingMigrations,
   registerAgent,
   createChannel,
   listChannels,
 } from "../../src/modules/messaging/tools";
+import { cleanupDb, testDbPath, setupTestDb } from "../helpers/db";
 
-const TEST_DB = "/tmp/octo-santa-test-channels.sqlite";
-
-function cleanupDb(path: string) {
-  for (const suffix of ["", "-wal", "-shm"]) {
-    const f = path + suffix;
-    if (existsSync(f)) unlinkSync(f);
-  }
-}
+const TEST_DB = testDbPath("channels");
 
 function setupDb() {
-  cleanupDb(TEST_DB);
-  const db = createDb(TEST_DB);
-  runMigrations(db, messagingMigrations);
+  const db = setupTestDb(TEST_DB, messagingMigrations);
   registerAgent(db, "octo-santa");
   return db;
 }
@@ -53,11 +42,24 @@ describe("createChannel", () => {
     db.close();
   });
 
-  it("auto-registers the agent if not already registered", () => {
+  it("throws when creating before registering", () => {
     const db = setupDb();
-    const channel = createChannel(db, "frontend", "new-agent");
 
-    expect(channel.created_by).toBe("new-agent");
+    expect(() => createChannel(db, "frontend", "unregistered-agent")).toThrow(
+      `Agent "unregistered-agent" must call messaging_register before using messaging tools`
+    );
+    db.close();
+  });
+
+  it("does not auto-subscribe the creator (no cursor created)", () => {
+    const db = setupDb();
+    createChannel(db, "no-cursor-ch", "octo-santa");
+
+    const channel = db.query("SELECT id FROM channels WHERE name = ?").get("no-cursor-ch") as { id: number };
+    const cursor = db.query(
+      "SELECT * FROM cursors WHERE agent_id = ? AND channel_id = ?"
+    ).get("octo-santa", channel.id);
+    expect(cursor).toBeNull();
 
     db.close();
   });

@@ -10,4 +10,5 @@ export interface OctoModule {
     getDb: () => import("bun:sqlite").Database,
     onAgentId?: (agentId: string) => { commit: () => void }
   ) => void;
+  onDisconnect?: (db: import("bun:sqlite").Database, agentId: string, pid: number) => void;
 }

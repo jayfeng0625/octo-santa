@@ -5,7 +5,10 @@ import {
   listAgents,
   listChannelMembers,
   createChannel,
+  subscribe,
   sendMessage,
+  getChannelByName,
+  getCursor,
 } from "../modules/messaging/tools";
 
 export interface ReplState {
@@ -65,11 +68,15 @@ export function executeCommand(
     case "join": {
       const channelName = cmd.args;
       if (!channelName) return { output: ["Usage: /join <channel>"] };
-      createChannel(db, channelName, state.agentId);
-      const channel = (db.query("SELECT id FROM channels WHERE name = ?").get(channelName) as { id: number } | null);
-      if (channel) {
-        const maxRow = db.query("SELECT MAX(id) as max_id FROM messages WHERE channel_id = ?").get(channel.id) as { max_id: number | null };
-        state.cursors.set(channelName, maxRow?.max_id ?? 0);
+      try {
+        subscribe(db, state.agentId, channelName);
+      } catch (err) {
+        return { output: [(err as Error).message] };
+      }
+      // Sync in-memory cursor from DB to prevent historical message flood
+      const ch = getChannelByName(db, channelName);
+      if (ch) {
+        state.cursors.set(channelName, getCursor(db, state.agentId, ch.id));
       }
       state.joinedChannels.add(channelName);
       return { output: [`Joined #${channelName}`], channelChange: channelName };
@@ -86,7 +93,7 @@ export function executeCommand(
       let limit = parseInt(cmd.args, 10);
       if (!Number.isFinite(limit) || limit <= 0) limit = 20;
 
-      const channel = db.query("SELECT id FROM channels WHERE name = ?").get(state.activeChannel) as { id: number } | null;
+      const channel = getChannelByName(db, state.activeChannel);
       if (!channel) return { output: ["Channel not found"] };
 
       const rows = db.query(

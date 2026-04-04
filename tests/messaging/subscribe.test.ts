@@ -1,41 +1,33 @@
 import { describe, it, expect, afterEach } from "bun:test";
-import { existsSync, unlinkSync } from "fs";
-import { createDb } from "../../src/db";
-import { runMigrations } from "../../src/migrations";
 import {
   messagingMigrations,
   registerAgent,
+  createChannel,
   sendMessage,
   readMessages,
-  subscribeToChannel,
+  subscribe,
 } from "../../src/modules/messaging/tools";
+import { cleanupDb, testDbPath, setupTestDb } from "../helpers/db";
 
-const TEST_DB = "/tmp/octo-santa-test-subscribe.sqlite";
-
-function cleanupDb(path: string) {
-  for (const suffix of ["", "-wal", "-shm"]) {
-    const f = path + suffix;
-    if (existsSync(f)) unlinkSync(f);
-  }
-}
+const TEST_DB = testDbPath("subscribe");
 
 function setupDb() {
-  cleanupDb(TEST_DB);
-  const db = createDb(TEST_DB);
-  runMigrations(db, messagingMigrations);
-  return db;
+  return setupTestDb(TEST_DB, messagingMigrations);
 }
 
 afterEach(() => cleanupDb(TEST_DB));
 
-describe("subscribeToChannel", () => {
+describe("subscribe", () => {
   it("creates cursor at max message ID for new subscriber", () => {
     const db = setupDb();
+    registerAgent(db, "agent-a");
+    createChannel(db, "planning", "agent-a");
     sendMessage(db, "agent-a", "planning", "msg one");
     sendMessage(db, "agent-a", "planning", "msg two");
     sendMessage(db, "agent-a", "planning", "msg three");
 
-    subscribeToChannel(db, "jay", "planning");
+    registerAgent(db, "jay");
+    subscribe(db, "jay", "planning");
 
     // Cursor should be at the latest message, so readMessages returns nothing
     const unread = readMessages(db, "jay", "planning");
@@ -45,17 +37,21 @@ describe("subscribeToChannel", () => {
 
   it("preserves existing cursor (does not lose unread backlog)", () => {
     const db = setupDb();
+    registerAgent(db, "agent-a");
+    createChannel(db, "planning", "agent-a");
     sendMessage(db, "agent-a", "planning", "old msg");
 
-    // jay reads, setting cursor
+    // jay subscribes and reads, setting cursor
+    registerAgent(db, "jay");
+    subscribe(db, "jay", "planning");
     readMessages(db, "jay", "planning");
 
     // New messages arrive while jay is away
     sendMessage(db, "agent-a", "planning", "new msg 1");
     sendMessage(db, "agent-a", "planning", "new msg 2");
 
-    // Reconnect: subscribeToChannel should NOT advance cursor
-    subscribeToChannel(db, "jay", "planning");
+    // Reconnect: subscribe should NOT advance cursor
+    subscribe(db, "jay", "planning");
 
     // Unread messages should still be available
     const unread = readMessages(db, "jay", "planning");
@@ -64,26 +60,45 @@ describe("subscribeToChannel", () => {
     db.close();
   });
 
-  it("creates channel if it does not exist", () => {
+  it("subscribe to non-existent channel throws error", () => {
     const db = setupDb();
     registerAgent(db, "jay");
 
-    subscribeToChannel(db, "jay", "new-channel");
-
-    // Channel exists and cursor is set
-    const channels = db.query("SELECT * FROM channels WHERE name = ?").get("new-channel");
-    expect(channels).not.toBeNull();
+    expect(() => subscribe(db, "jay", "no-such-channel")).toThrow(
+      `Channel "no-such-channel" does not exist`
+    );
     db.close();
   });
 
-  it("creates cursor at 0 for empty channel", () => {
+  it("double-subscribe is idempotent (no error, cursor preserved)", () => {
     const db = setupDb();
+    registerAgent(db, "jay");
+    registerAgent(db, "agent-a");
+    createChannel(db, "my-channel", "jay");
 
-    subscribeToChannel(db, "jay", "empty-channel");
+    subscribe(db, "jay", "my-channel");
+    sendMessage(db, "agent-a", "my-channel", "message after first subscribe");
 
-    // readMessages returns nothing (channel is empty)
-    const unread = readMessages(db, "jay", "empty-channel");
-    expect(unread).toHaveLength(0);
+    // Second subscribe should not throw and should not advance cursor
+    expect(() => subscribe(db, "jay", "my-channel")).not.toThrow();
+
+    // Cursor still sees the unread message
+    const unread = readMessages(db, "jay", "my-channel");
+    expect(unread).toHaveLength(1);
+    expect(unread[0]!.content).toBe("message after first subscribe");
+    db.close();
+  });
+
+  it("subscribe before register throws error", () => {
+    const db = setupDb();
+    registerAgent(db, "agent-a");
+    createChannel(db, "planning", "agent-a");
+    sendMessage(db, "agent-a", "planning", "msg");
+    // jay is NOT registered
+
+    expect(() => subscribe(db, "jay", "planning")).toThrow(
+      `Agent "jay" must call messaging_register before using messaging tools`
+    );
     db.close();
   });
 });

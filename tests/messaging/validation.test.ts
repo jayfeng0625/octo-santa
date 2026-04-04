@@ -1,23 +1,11 @@
 import { describe, it, expect, afterEach } from "bun:test";
-import { existsSync, unlinkSync } from "fs";
-import { createDb } from "../../src/db";
-import { runMigrations } from "../../src/migrations";
 import { messagingMigrations, registerAgent, createChannel, sendMessage, readMessages } from "../../src/modules/messaging/tools";
+import { cleanupDb, testDbPath, setupTestDb } from "../helpers/db";
 
-const TEST_DB = "/tmp/octo-santa-test-validation.sqlite";
-
-function cleanupDb(path: string) {
-  for (const suffix of ["", "-wal", "-shm"]) {
-    const f = path + suffix;
-    if (existsSync(f)) unlinkSync(f);
-  }
-}
+const TEST_DB = testDbPath("validation");
 
 function setupDb() {
-  cleanupDb(TEST_DB);
-  const db = createDb(TEST_DB);
-  runMigrations(db, messagingMigrations);
-  return db;
+  return setupTestDb(TEST_DB, messagingMigrations);
 }
 
 afterEach(() => {
@@ -39,6 +27,7 @@ describe("input validation", () => {
 
   it("rejects empty channel name", () => {
     const db = setupDb();
+    registerAgent(db, "agent-a");
     expect(() => createChannel(db, "", "agent-a")).toThrow();
     db.close();
   });
@@ -67,8 +56,9 @@ describe("input validation", () => {
     db.close();
   });
 
-  it("rejects invalid agent_id characters on readMessages", () => {
+  it("readMessages rejects unregistered agent (requireRegistered validates agent name)", () => {
     const db = setupDb();
+    // requireRegistered calls validateAgentName, so invalid names throw before DB check
     expect(() => readMessages(db, "bad@name", "ch")).toThrow("must match");
     db.close();
   });
@@ -85,8 +75,9 @@ describe("input validation", () => {
     db.close();
   });
 
-  it("rejects reserved name 'all' on readMessages", () => {
+  it("readMessages rejects reserved agent name 'all'", () => {
     const db = setupDb();
+    // requireRegistered runs validateAgentName which rejects reserved names
     expect(() => readMessages(db, "all", "ch")).toThrow("reserved");
     db.close();
   });

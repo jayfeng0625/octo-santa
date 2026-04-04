@@ -17,15 +17,18 @@ Each Claude Code session spawns its own octo-santa MCP server process via stdio.
 
 ### Concurrency Model
 
+> See [2026-04-03-sqlite-concurrency-at-scale.md](2026-04-03-sqlite-concurrency-at-scale.md) for the full concurrency reference with D1 comparison and module design rules.
+
 SQLite WAL mode provides:
 - Multiple concurrent readers without blocking
 - Readers don't block writers
-- Atomic writes
+- Single writer at a time (fundamental SQLite constraint)
 
 Write contention is handled by:
-1. `PRAGMA busy_timeout = 5000` — SQLite retries internally for up to 5 seconds
-2. Application-level retry with exponential backoff (2-3 retries) if BUSY persists
-3. At our scale (handful of agents, low write frequency), contention is negligible
+1. **Immediate transactions** (`.immediate()`) for all write paths — acquires write lock upfront, preventing SHARED→EXCLUSIVE lock-upgrade deadlocks
+2. `PRAGMA busy_timeout = 5000` — SQLite retries internally for up to 5 seconds when another process holds the write lock
+3. Application-level retry with exponential backoff + jitter (`withRetrySync`) if BUSY persists
+4. At our scale (handful of agents, low write frequency), contention is negligible
 
 ### Deliverability Guarantee (99.99%)
 

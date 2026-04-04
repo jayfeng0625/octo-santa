@@ -22,12 +22,14 @@ describe("messaging module", () => {
     const expectedTools = [
       "messaging_register",
       "messaging_create_channel",
+      "messaging_subscribe",
       "messaging_list_channels",
       "messaging_send_message",
-      "messaging_subscribe",
       "messaging_read_messages",
       "messaging_list_agents",
       "messaging_list_members",
+      "messaging_direct_message",
+      "messaging_rename_channel",
     ];
     expect(registeredTools.sort()).toEqual(expectedTools.sort());
   });

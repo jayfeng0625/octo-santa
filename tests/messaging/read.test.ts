@@ -1,28 +1,19 @@
 import { describe, it, expect, afterEach } from "bun:test";
-import { existsSync, unlinkSync } from "fs";
-import { createDb } from "../../src/db";
-import { runMigrations } from "../../src/migrations";
 import {
   messagingMigrations,
+  registerAgent,
+  createChannel,
   sendMessage,
   readMessages,
+  subscribe,
 } from "../../src/modules/messaging/tools";
 import type { Message } from "../../src/modules/messaging/types";
+import { cleanupDb, testDbPath, setupTestDb } from "../helpers/db";
 
-const TEST_DB = "/tmp/octo-santa-test-read.sqlite";
-
-function cleanupDb(path: string) {
-  for (const suffix of ["", "-wal", "-shm"]) {
-    const f = path + suffix;
-    if (existsSync(f)) unlinkSync(f);
-  }
-}
+const TEST_DB = testDbPath("read");
 
 function setupDb() {
-  cleanupDb(TEST_DB);
-  const db = createDb(TEST_DB);
-  runMigrations(db, messagingMigrations);
-  return db;
+  return setupTestDb(TEST_DB, messagingMigrations);
 }
 
 afterEach(() => {
@@ -32,6 +23,11 @@ afterEach(() => {
 describe("readMessages", () => {
   it("returns all messages for a first-time reader", () => {
     const db = setupDb();
+    // agent-b subscribes before messages are sent (cursor at 0, sees all history)
+    registerAgent(db, "agent-a");
+    registerAgent(db, "agent-b");
+    createChannel(db, "general", "agent-b");
+    subscribe(db, "agent-b", "general");
     sendMessage(db, "agent-a", "general", "Hello");
     sendMessage(db, "agent-a", "general", "World");
 
@@ -45,6 +41,10 @@ describe("readMessages", () => {
 
   it("advances cursor — second read returns only new messages", () => {
     const db = setupDb();
+    registerAgent(db, "agent-a");
+    registerAgent(db, "agent-b");
+    createChannel(db, "general", "agent-b");
+    subscribe(db, "agent-b", "general");
     sendMessage(db, "agent-a", "general", "First");
     readMessages(db, "agent-b", "general");
 
@@ -58,6 +58,10 @@ describe("readMessages", () => {
 
   it("returns empty array when no new messages", () => {
     const db = setupDb();
+    registerAgent(db, "agent-a");
+    registerAgent(db, "agent-b");
+    createChannel(db, "general", "agent-b");
+    subscribe(db, "agent-b", "general");
     sendMessage(db, "agent-a", "general", "Hello");
     readMessages(db, "agent-b", "general");
 
@@ -69,6 +73,12 @@ describe("readMessages", () => {
 
   it("each agent has independent cursors", () => {
     const db = setupDb();
+    registerAgent(db, "agent-a");
+    registerAgent(db, "agent-b");
+    registerAgent(db, "agent-c");
+    createChannel(db, "general", "agent-b");
+    subscribe(db, "agent-b", "general");
+    subscribe(db, "agent-c", "general");
     sendMessage(db, "agent-a", "general", "Hello");
 
     readMessages(db, "agent-b", "general");
@@ -81,6 +91,10 @@ describe("readMessages", () => {
 
   it("supports limit parameter", () => {
     const db = setupDb();
+    registerAgent(db, "agent-a");
+    registerAgent(db, "agent-b");
+    createChannel(db, "general", "agent-b");
+    subscribe(db, "agent-b", "general");
     for (let i = 0; i < 10; i++) {
       sendMessage(db, "agent-a", "general", `Message ${i}`);
     }
@@ -94,6 +108,10 @@ describe("readMessages", () => {
 
   it("paginated reads advance cursor correctly across pages", () => {
     const db = setupDb();
+    registerAgent(db, "agent-a");
+    registerAgent(db, "agent-b");
+    createChannel(db, "general", "agent-b");
+    subscribe(db, "agent-b", "general");
     for (let i = 0; i < 6; i++) {
       sendMessage(db, "agent-a", "general", `Message ${i}`);
     }
@@ -119,6 +137,10 @@ describe("readMessages", () => {
 
   it("supports before_id for history queries without advancing cursor", () => {
     const db = setupDb();
+    registerAgent(db, "agent-a");
+    registerAgent(db, "agent-b");
+    createChannel(db, "general", "agent-b");
+    subscribe(db, "agent-b", "general");
     sendMessage(db, "agent-a", "general", "Old");
     const mid = sendMessage(db, "agent-a", "general", "Middle");
     sendMessage(db, "agent-a", "general", "New");
@@ -142,6 +164,11 @@ describe("readMessages", () => {
 
   it("sender's cursor is advanced so they don't re-read their own message", () => {
     const db = setupDb();
+    // agent-b subscribes first so they can see all messages from start
+    registerAgent(db, "agent-a");
+    registerAgent(db, "agent-b");
+    createChannel(db, "general", "agent-b");
+    subscribe(db, "agent-b", "general");
     sendMessage(db, "agent-a", "general", "Hello from A");
 
     // Agent A should not see their own message when reading
@@ -158,6 +185,9 @@ describe("readMessages", () => {
 
   it("sender does not skip unread messages from others when sending", () => {
     const db = setupDb();
+    registerAgent(db, "agent-a");
+    registerAgent(db, "agent-b");
+    createChannel(db, "general", "agent-a");
     // B sends first
     sendMessage(db, "agent-b", "general", "Message from B");
     // A sends without reading first
@@ -173,10 +203,14 @@ describe("readMessages", () => {
 
   it("history reads also filter out own messages", () => {
     const db = setupDb();
+    registerAgent(db, "agent-a");
+    registerAgent(db, "agent-b");
+    createChannel(db, "general", "agent-a");
     sendMessage(db, "agent-a", "general", "From A");
     sendMessage(db, "agent-b", "general", "From B");
     sendMessage(db, "agent-a", "general", "From A again");
 
+    // agent-a has cursor via sendMessage, so before_id read works
     const history = readMessages(db, "agent-a", "general", { before_id: 999 });
     // Should only see B's message, not A's own
     expect(history).toHaveLength(1);
@@ -187,20 +221,24 @@ describe("readMessages", () => {
 
   it("throws for nonexistent channel", () => {
     const db = setupDb();
+    registerAgent(db, "agent-a");
     expect(() => readMessages(db, "agent-a", "no-such-channel")).toThrow(
-      'Channel "no-such-channel" does not exist. Use messaging_create_channel to create it first.'
+      'Channel "no-such-channel" does not exist'
     );
     db.close();
   });
 
   it("creates cursor row on first read even if no messages exist", () => {
     const db = setupDb();
-    sendMessage(db, "agent-a", "general", "setup"); // creates channel
+    registerAgent(db, "agent-a");
+    registerAgent(db, "agent-b");
+    createChannel(db, "general", "agent-b");
+    subscribe(db, "agent-b", "general");
+    sendMessage(db, "agent-a", "general", "setup");
     readMessages(db, "agent-a", "general"); // agent-a reads (sees nothing, own messages filtered)
 
-    // Agent B reads — channel exists but no unread messages for B after B reads all
+    // Agent B reads and reads again
     readMessages(db, "agent-b", "general");
-    // Read again — should still be caught up
     readMessages(db, "agent-b", "general");
 
     const cursor = db.query(
@@ -208,6 +246,32 @@ describe("readMessages", () => {
     ).get("agent-b", "general");
     expect(cursor).not.toBeNull();
 
+    db.close();
+  });
+
+  it("throws when reading without cursor (access control)", () => {
+    const db = setupDb();
+    // Create channel via a registered agent (agent-a has cursor)
+    registerAgent(db, "agent-a");
+    registerAgent(db, "agent-b");
+    createChannel(db, "secret", "agent-a");
+    sendMessage(db, "agent-a", "secret", "hello");
+
+    // agent-b has no cursor — should throw
+    expect(() => readMessages(db, "agent-b", "secret")).toThrow("Not a member");
+
+    db.close();
+  });
+
+  it("throws when reading before registering", () => {
+    const db = setupDb();
+    registerAgent(db, "agent-a");
+    createChannel(db, "general", "agent-a");
+    sendMessage(db, "agent-a", "general", "hello");
+
+    expect(() => readMessages(db, "unregistered", "general")).toThrow(
+      `Agent "unregistered" must call messaging_register before using messaging tools`
+    );
     db.close();
   });
 });

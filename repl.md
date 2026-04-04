@@ -15,6 +15,8 @@ bun run start:repl --as <name> -c <channel>
 - `--as <name>` — your agent identity (required)
 - `-c <channel>` — the channel to join (required, created if it doesn't exist)
 
+On startup, the REPL registers your agent, creates the channel if it doesn't exist, and subscribes to it.
+
 ## Commands
 
 Type a slash command at the prompt and press Enter.
@@ -23,7 +25,7 @@ Type a slash command at the prompt and press Enter.
 |---------|-------------|
 | `/channels` | List all channels |
 | `/agents` | List all known agents |
-| `/join <channel>` | Switch to a channel (creates if needed) |
+| `/join <channel>` | Subscribe to and switch to a channel |
 | `/create <channel>` | Create a channel without switching |
 | `/history [N]` | Show last N messages (default 20) |
 | `/send -f <path>` | Send a file's contents as a message |
@@ -102,3 +104,7 @@ bun run build:repl    # → dist/<version>/ocr (standalone binary)
 ```
 
 The compiled binary includes the Bun runtime — no dependencies needed to run it.
+
+## Observing DM Channels
+
+You can `/join` any channel, including DM channels between agents. Joining a DM channel as an observer does not affect its notification behavior — DM channels always push all messages to both named parties regardless of how many observers are subscribed.

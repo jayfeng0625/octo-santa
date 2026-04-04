@@ -1,12 +1,10 @@
 // tests/channel/channel.test.ts
 import { describe, it, expect, beforeEach, afterEach } from "bun:test";
-import { existsSync, unlinkSync } from "fs";
-import { createDb } from "../../src/db";
-import { runMigrations } from "../../src/migrations";
 import {
   messagingMigrations,
   registerAgent,
-  subscribeToChannel,
+  createChannel,
+  subscribe,
   sendMessage,
   readMessages,
   unregisterAgent,
@@ -14,40 +12,34 @@ import {
 } from "../../src/modules/messaging/tools";
 import { startPolling, type NotifyFn } from "../../src/channel";
 import type { Database } from "bun:sqlite";
+import { cleanupDb, testDbPath, setupTestDb } from "../helpers/db";
 
-let testDbPath: string;
+let TEST_DB: string;
 let db: Database;
 
-function cleanupDb(path: string) {
-  for (const suffix of ["", "-wal", "-shm"]) {
-    const f = path + suffix;
-    if (existsSync(f)) unlinkSync(f);
-  }
-}
-
-function sleep(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
+const sleep = Bun.sleep;
 
 const FAST_INTERVAL = 50;
 
 beforeEach(() => {
-  testDbPath = `/tmp/octo-santa-test-channel-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}.sqlite`;
-  cleanupDb(testDbPath);
-  db = createDb(testDbPath);
-  runMigrations(db, messagingMigrations);
+  TEST_DB = testDbPath("channel");
+  db = setupTestDb(TEST_DB, messagingMigrations);
 });
 
 afterEach(() => {
   try { db.close(); } catch {}
-  cleanupDb(testDbPath);
+  cleanupDb(TEST_DB);
 });
 
 describe("startPolling", () => {
   it("finds unread messages and calls notify with correct format", async () => {
+    registerAgent(db, "agent-a");
+    registerAgent(db, "agent-b");
+    createChannel(db, "coordination", "agent-b");
     sendMessage(db, "agent-b", "coordination", "hello from b");
+    subscribe(db, "agent-a", "coordination");
     readMessages(db, "agent-a", "coordination");
-    sendMessage(db, "agent-b", "coordination", "second msg");
+    sendMessage(db, "agent-b", "coordination", "@agent-a second msg");
 
     const notifications: { content: string; meta: Record<string, string> }[] = [];
     const notify: NotifyFn = async (content, meta) => {
@@ -59,14 +51,18 @@ describe("startPolling", () => {
     await stop();
 
     expect(notifications.length).toBe(1);
-    expect(notifications[0]!.content).toBe("second msg");
+    expect(notifications[0]!.content).toBe("@agent-a second msg");
     expect(notifications[0]!.meta.channel_name).toBe("coordination");
     expect(notifications[0]!.meta.sender).toBe("agent-b");
     expect(notifications[0]!.meta.message_id).toBeDefined();
   });
 
   it("skips messages sent by the subscribing agent (self-exclusion)", async () => {
+    registerAgent(db, "agent-a");
+    registerAgent(db, "agent-b");
+    createChannel(db, "coordination", "agent-b");
     sendMessage(db, "agent-b", "coordination", "setup");
+    subscribe(db, "agent-a", "coordination");
     readMessages(db, "agent-a", "coordination");
     sendMessage(db, "agent-a", "coordination", "my own message");
 
@@ -94,7 +90,11 @@ describe("startPolling", () => {
   });
 
   it("does nothing when there are no unread messages", async () => {
+    registerAgent(db, "agent-a");
+    registerAgent(db, "agent-b");
+    createChannel(db, "coordination", "agent-b");
     sendMessage(db, "agent-b", "coordination", "hello");
+    subscribe(db, "agent-a", "coordination");
     readMessages(db, "agent-a", "coordination");
 
     const notifications: { content: string; meta: Record<string, string> }[] = [];
@@ -108,7 +108,11 @@ describe("startPolling", () => {
   });
 
   it("does NOT advance cursors on push", async () => {
+    registerAgent(db, "agent-a");
+    registerAgent(db, "agent-b");
+    createChannel(db, "coordination", "agent-b");
     sendMessage(db, "agent-b", "coordination", "first");
+    subscribe(db, "agent-a", "coordination");
     readMessages(db, "agent-a", "coordination");
     sendMessage(db, "agent-b", "coordination", "second");
 
@@ -129,9 +133,13 @@ describe("startPolling", () => {
   });
 
   it("does not notify the same message twice across poll cycles", async () => {
+    registerAgent(db, "agent-a");
+    registerAgent(db, "agent-b");
+    createChannel(db, "coordination", "agent-b");
     sendMessage(db, "agent-b", "coordination", "setup");
+    subscribe(db, "agent-a", "coordination");
     readMessages(db, "agent-a", "coordination");
-    sendMessage(db, "agent-b", "coordination", "hello");
+    sendMessage(db, "agent-b", "coordination", "@agent-a hello");
 
     const notifications: { content: string; meta: Record<string, string> }[] = [];
     const stop = startPolling(db, "agent-a", async (content, meta) => {
@@ -144,9 +152,13 @@ describe("startPolling", () => {
   });
 
   it("initializes lastPushedId from cursor position (no historical flood)", async () => {
+    registerAgent(db, "agent-a");
+    registerAgent(db, "agent-b");
+    createChannel(db, "coordination", "agent-b");
     sendMessage(db, "agent-b", "coordination", "first");
     sendMessage(db, "agent-b", "coordination", "second");
     sendMessage(db, "agent-b", "coordination", "third");
+    subscribe(db, "agent-a", "coordination");
     readMessages(db, "agent-a", "coordination");
 
     const notifications: { content: string; meta: Record<string, string> }[] = [];
@@ -160,7 +172,11 @@ describe("startPolling", () => {
   });
 
   it("picks up new cursor mid-session without flooding history", async () => {
+    registerAgent(db, "agent-a");
+    registerAgent(db, "agent-b");
+    createChannel(db, "coordination", "agent-b");
     sendMessage(db, "agent-b", "coordination", "coord msg");
+    subscribe(db, "agent-a", "coordination");
     readMessages(db, "agent-a", "coordination");
 
     const notifications: { content: string; meta: Record<string, string> }[] = [];
@@ -169,22 +185,28 @@ describe("startPolling", () => {
     }, FAST_INTERVAL);
     await sleep(100);
 
+    createChannel(db, "frontend", "agent-b");
     sendMessage(db, "agent-b", "frontend", "old frontend msg");
+    subscribe(db, "agent-a", "frontend");
     readMessages(db, "agent-a", "frontend");
-    sendMessage(db, "agent-b", "frontend", "new frontend msg");
+    sendMessage(db, "agent-b", "frontend", "@agent-a new frontend msg");
 
     await sleep(200);
     await stop();
 
     const frontendNotifs = notifications.filter((n) => n.meta.channel_name === "frontend");
     expect(frontendNotifs.length).toBe(1);
-    expect(frontendNotifs[0]!.content).toBe("new frontend msg");
+    expect(frontendNotifs[0]!.content).toBe("@agent-a new frontend msg");
   });
 
   it("coalesces multiple unread messages on same channel into one notification", async () => {
+    registerAgent(db, "agent-a");
+    registerAgent(db, "agent-b");
+    createChannel(db, "coordination", "agent-b");
     sendMessage(db, "agent-b", "coordination", "setup");
+    subscribe(db, "agent-a", "coordination");
     readMessages(db, "agent-a", "coordination");
-    sendMessage(db, "agent-b", "coordination", "first");
+    sendMessage(db, "agent-b", "coordination", "@agent-a first");
     sendMessage(db, "agent-b", "coordination", "second");
     sendMessage(db, "agent-b", "coordination", "third");
 
@@ -201,9 +223,13 @@ describe("startPolling", () => {
   });
 
   it("does not advance watermark when notify fails", async () => {
+    registerAgent(db, "agent-a");
+    registerAgent(db, "agent-b");
+    createChannel(db, "coordination", "agent-b");
     sendMessage(db, "agent-b", "coordination", "setup");
+    subscribe(db, "agent-a", "coordination");
     readMessages(db, "agent-a", "coordination");
-    sendMessage(db, "agent-b", "coordination", "hello");
+    sendMessage(db, "agent-b", "coordination", "@agent-a hello");
 
     let callCount = 0;
     const notify: NotifyFn = async () => {
@@ -219,9 +245,13 @@ describe("startPolling", () => {
   });
 
   it("does not run concurrent ticks (serialization)", async () => {
+    registerAgent(db, "agent-a");
+    registerAgent(db, "agent-b");
+    createChannel(db, "coordination", "agent-b");
     sendMessage(db, "agent-b", "coordination", "setup");
+    subscribe(db, "agent-a", "coordination");
     readMessages(db, "agent-a", "coordination");
-    sendMessage(db, "agent-b", "coordination", "unread");
+    sendMessage(db, "agent-b", "coordination", "@agent-a unread");
 
     let concurrentCount = 0;
     let maxConcurrent = 0;
@@ -240,9 +270,13 @@ describe("startPolling", () => {
   });
 
   it("stop() waits for in-flight tick to complete (quiescent shutdown)", async () => {
+    registerAgent(db, "agent-a");
+    registerAgent(db, "agent-b");
+    createChannel(db, "coordination", "agent-b");
     sendMessage(db, "agent-b", "coordination", "setup");
+    subscribe(db, "agent-a", "coordination");
     readMessages(db, "agent-a", "coordination");
-    sendMessage(db, "agent-b", "coordination", "unread");
+    sendMessage(db, "agent-b", "coordination", "@agent-a unread");
 
     let notifyStarted = false;
     let notifyFinished = false;
@@ -261,10 +295,14 @@ describe("startPolling", () => {
   });
 
   it("coalesces more than 10 unread messages into a single notification", async () => {
+    registerAgent(db, "agent-a");
+    registerAgent(db, "agent-b");
+    createChannel(db, "coordination", "agent-b");
     sendMessage(db, "agent-b", "coordination", "setup");
+    subscribe(db, "agent-a", "coordination");
     readMessages(db, "agent-a", "coordination");
     for (let i = 1; i <= 15; i++) {
-      sendMessage(db, "agent-b", "coordination", `msg-${i}`);
+      sendMessage(db, "agent-b", "coordination", i === 1 ? `@agent-a msg-${i}` : `msg-${i}`);
     }
 
     const notifications: { content: string; meta: Record<string, string> }[] = [];
@@ -280,7 +318,11 @@ describe("startPolling", () => {
   });
 
   it("updates agent last_seen_at on each poll tick (heartbeat)", async () => {
+    registerAgent(db, "agent-a");
+    registerAgent(db, "agent-b");
+    createChannel(db, "coordination", "agent-b");
     sendMessage(db, "agent-b", "coordination", "setup");
+    subscribe(db, "agent-a", "coordination");
     readMessages(db, "agent-a", "coordination");
 
     const before = db.query("SELECT last_seen_at FROM agents WHERE id = ?")
@@ -301,8 +343,11 @@ describe("startPolling", () => {
     registerAgent(db, "agent-a");
     registerAgent(db, "agent-b");
     registerAgent(db, "agent-c");
+    createChannel(db, "group-ch", "agent-b");
     sendMessage(db, "agent-b", "group-ch", "setup");
+    subscribe(db, "agent-a", "group-ch");
     readMessages(db, "agent-a", "group-ch");
+    subscribe(db, "agent-c", "group-ch");
     readMessages(db, "agent-c", "group-ch");  // 3rd member
 
     // agent-b sends a message without mentions
@@ -322,8 +367,11 @@ describe("startPolling", () => {
     registerAgent(db, "agent-a");
     registerAgent(db, "agent-b");
     registerAgent(db, "agent-c");
+    createChannel(db, "group-ch", "agent-b");
     sendMessage(db, "agent-b", "group-ch", "setup");
+    subscribe(db, "agent-a", "group-ch");
     readMessages(db, "agent-a", "group-ch");
+    subscribe(db, "agent-c", "group-ch");
     readMessages(db, "agent-c", "group-ch");  // 3rd member
 
     sendMessage(db, "agent-b", "group-ch", "@agent-a check this");
@@ -343,8 +391,11 @@ describe("startPolling", () => {
     registerAgent(db, "agent-a");
     registerAgent(db, "agent-b");
     registerAgent(db, "agent-c");
+    createChannel(db, "group-ch", "agent-b");
     sendMessage(db, "agent-b", "group-ch", "setup");
+    subscribe(db, "agent-a", "group-ch");
     readMessages(db, "agent-a", "group-ch");
+    subscribe(db, "agent-c", "group-ch");
     readMessages(db, "agent-c", "group-ch");  // 3rd member
 
     sendMessage(db, "agent-b", "group-ch", "@agent-c only for you");
@@ -363,8 +414,11 @@ describe("startPolling", () => {
     registerAgent(db, "agent-a");
     registerAgent(db, "agent-b");
     registerAgent(db, "agent-c");
+    createChannel(db, "group-ch", "agent-b");
     sendMessage(db, "agent-b", "group-ch", "setup");
+    subscribe(db, "agent-a", "group-ch");
     readMessages(db, "agent-a", "group-ch");
+    subscribe(db, "agent-c", "group-ch");
     readMessages(db, "agent-c", "group-ch");  // 3rd member
 
     sendMessage(db, "agent-b", "group-ch", "@all deploying now");
@@ -381,11 +435,15 @@ describe("startPolling", () => {
   });
 
   it("auto-notifies in DM mode (2 members, no mention needed)", async () => {
-    sendMessage(db, "agent-b", "dm-ch", "setup");
-    readMessages(db, "agent-a", "dm-ch");
-    // Only 2 members: agent-a and agent-b
+    registerAgent(db, "agent-a");
+    registerAgent(db, "agent-b");
+    createChannel(db, "agent-a,agent-b", "agent-b");
+    sendMessage(db, "agent-b", "agent-a,agent-b", "setup");
+    subscribe(db, "agent-a", "agent-a,agent-b");
+    readMessages(db, "agent-a", "agent-a,agent-b");
+    // Only 2 members: agent-a and agent-b, DM format channel name
 
-    sendMessage(db, "agent-b", "dm-ch", "hey, no mention here");
+    sendMessage(db, "agent-b", "agent-a,agent-b", "hey, no mention here");
 
     const notifications: { content: string; meta: Record<string, string> }[] = [];
     const stop = startPolling(db, "agent-a", async (content, meta) => {
@@ -398,45 +456,37 @@ describe("startPolling", () => {
     expect(notifications[0]!.content).toBe("hey, no mention here");
   });
 
-  it("transitions from DM to group mode when 3rd member joins", async () => {
+  it("non-DM channel with 2 members behaves as group (requires mentions)", async () => {
     registerAgent(db, "agent-a");
     registerAgent(db, "agent-b");
+    createChannel(db, "evolve-ch", "agent-b");
     sendMessage(db, "agent-b", "evolve-ch", "setup");
+    subscribe(db, "agent-a", "evolve-ch");
     readMessages(db, "agent-a", "evolve-ch");
-    // 2 members — DM mode
+    // 2 members but channel name is NOT DM format — group channel
 
-    sendMessage(db, "agent-b", "evolve-ch", "dm message");
+    sendMessage(db, "agent-b", "evolve-ch", "no mention here");
 
-    const notifs1: { content: string; meta: Record<string, string> }[] = [];
-    const stop1 = startPolling(db, "agent-a", async (content, meta) => {
-      notifs1.push({ content, meta });
+    const notifications: { content: string; meta: Record<string, string> }[] = [];
+    const stop = startPolling(db, "agent-a", async (content, meta) => {
+      notifications.push({ content, meta });
     }, FAST_INTERVAL);
     await sleep(200);
-    await stop1();
-    expect(notifs1.length).toBe(1);
+    await stop();
 
-    // 3rd registered member joins
-    registerAgent(db, "agent-c");
-    readMessages(db, "agent-c", "evolve-ch");
-    sendMessage(db, "agent-b", "evolve-ch", "group message no mention");
-
-    const notifs2: { content: string; meta: Record<string, string> }[] = [];
-    const stop2 = startPolling(db, "agent-a", async (content, meta) => {
-      notifs2.push({ content, meta });
-    }, FAST_INTERVAL);
-    await sleep(200);
-    await stop2();
-
-    // Group mode — no mention means no push
-    expect(notifs2.length).toBe(0);
+    // Group channel — no mention means no push, regardless of member count
+    expect(notifications.length).toBe(0);
   });
 
   it("pushes when ANY message in batch mentions the agent (not just latest)", async () => {
     registerAgent(db, "agent-a");
     registerAgent(db, "agent-b");
     registerAgent(db, "agent-c");
+    createChannel(db, "group-ch", "agent-b");
     sendMessage(db, "agent-b", "group-ch", "setup");
+    subscribe(db, "agent-a", "group-ch");
     readMessages(db, "agent-a", "group-ch");
+    subscribe(db, "agent-c", "group-ch");
     readMessages(db, "agent-c", "group-ch");  // 3rd member, group mode
 
     // Batch: first mentions agent-a, second and third do not
@@ -457,9 +507,15 @@ describe("startPolling", () => {
   });
 
   it("does not push duplicate when cursor advances during in-flight notify", async () => {
+    registerAgent(db, "agent-a");
+    registerAgent(db, "agent-b");
+    createChannel(db, "ch-a", "agent-b");
     sendMessage(db, "agent-b", "ch-a", "setup-a");
+    subscribe(db, "agent-a", "ch-a");
     readMessages(db, "agent-a", "ch-a");
+    createChannel(db, "ch-b", "agent-b");
     sendMessage(db, "agent-b", "ch-b", "setup-b");
+    subscribe(db, "agent-a", "ch-b");
     readMessages(db, "agent-a", "ch-b");
 
     // Unread messages on both channels
@@ -483,12 +539,13 @@ describe("startPolling", () => {
     expect(chBNotifs.length).toBe(0);
   });
 
-  it("auto-subscribes channel creator — creator receives notifications", async () => {
+  it("channel creator receives notifications after subscribing", async () => {
     registerAgent(db, "agent-a");
     registerAgent(db, "agent-b");
 
-    // agent-a creates the channel via subscribeToChannel (same path as messaging_create_channel tool)
-    subscribeToChannel(db, "agent-a", "my-channel");
+    // agent-a creates the channel then subscribes (two-step, as per new semantics)
+    createChannel(db, "my-channel", "agent-a");
+    subscribe(db, "agent-a", "my-channel");
 
     // agent-b sends a message mentioning agent-a
     sendMessage(db, "agent-b", "my-channel", "@agent-a hey!");
@@ -504,39 +561,29 @@ describe("startPolling", () => {
     expect(notifications[0]!.content).toBe("@agent-a hey!");
   });
 
-  it("reverts from group to DM mode after unregister", async () => {
-    // 3 agents = group mode
+  it("DM access control rejects 3rd party subscribe", () => {
     registerAgent(db, "agent-a");
     registerAgent(db, "agent-b");
     registerAgent(db, "agent-c");
-    sendMessage(db, "agent-b", "group-ch", "setup");
-    readMessages(db, "agent-a", "group-ch");
-    readMessages(db, "agent-c", "group-ch");
+    createChannel(db, "agent-a,agent-b", "agent-b");
+    sendMessage(db, "agent-b", "agent-a,agent-b", "setup");
 
-    // Unregister agent-c — PID nulled, drops to 2 active members (DM mode)
-    unregisterAgent(db, "agent-c", process.pid);
-
-    // Send unmentioned message
-    sendMessage(db, "agent-b", "group-ch", "no mention here");
-
-    const notifications: { content: string; meta: Record<string, string> }[] = [];
-    const stop = startPolling(db, "agent-a", async (content, meta) => {
-      notifications.push({ content, meta });
-    }, FAST_INTERVAL);
-    await sleep(200);
-    await stop();
-
-    // DM mode (2 members) → unmentioned messages notify
-    expect(notifications.length).toBeGreaterThan(0);
+    // 3rd agent cannot subscribe to a DM channel
+    expect(() => subscribe(db, "agent-c", "agent-a,agent-b")).toThrow(
+      'DM channel "agent-a,agent-b" is private to agent-a and agent-b'
+    );
   });
 
-  it("stale-PID agent ages out of group mode member count", async () => {
-    // 3 agents = group mode
+  it("group channel requires mention regardless of member liveness", async () => {
+    // 3 agents on a non-DM named channel
     registerAgent(db, "agent-a");
     registerAgent(db, "agent-b");
     registerAgent(db, "agent-c");
+    createChannel(db, "group-ch2", "agent-b");
     sendMessage(db, "agent-b", "group-ch2", "setup");
+    subscribe(db, "agent-a", "group-ch2");
     readMessages(db, "agent-a", "group-ch2");
+    subscribe(db, "agent-c", "group-ch2");
     readMessages(db, "agent-c", "group-ch2");
 
     // Simulate agent-c crashed: PID still set but last_seen_at is stale.
@@ -553,20 +600,23 @@ describe("startPolling", () => {
     await sleep(200);
     await stop();
 
-    // agent-c aged out → 2 active members → DM mode → unmentioned messages notify
-    expect(notifications.length).toBeGreaterThan(0);
+    // group-ch2 is not DM format → group channel regardless of active member count → no push without mention
+    expect(notifications.length).toBe(0);
   });
 
   it("reclaims dead PID in heartbeat and continues polling", async () => {
     registerAgent(db, "agent-a");
+    registerAgent(db, "agent-b");
+    createChannel(db, "test-ch", "agent-b");
     sendMessage(db, "agent-b", "test-ch", "setup");
+    subscribe(db, "agent-a", "test-ch");
     readMessages(db, "agent-a", "test-ch");
 
     // Simulate crash: dead foreign PID on agent-a
     db.run("UPDATE agents SET pid = 999999 WHERE id = ?", ["agent-a"]);
 
     // New message arrives after crash
-    sendMessage(db, "agent-b", "test-ch", "hello after crash");
+    sendMessage(db, "agent-b", "test-ch", "@agent-a hello after crash");
 
     const notifications: { content: string; meta: Record<string, string> }[] = [];
     const stop = startPolling(db, "agent-a", async (content, meta) => {
@@ -577,7 +627,7 @@ describe("startPolling", () => {
 
     // Polling should have reclaimed the dead PID and delivered notification
     expect(notifications.length).toBe(1);
-    expect(notifications[0]!.content).toBe("hello after crash");
+    expect(notifications[0]!.content).toBe("@agent-a hello after crash");
 
     // Agent should now have current PID
     const agent = db.query("SELECT pid FROM agents WHERE id = ?")
@@ -587,7 +637,10 @@ describe("startPolling", () => {
 
   it("stops polling when alive foreign PID owns the agent", async () => {
     registerAgent(db, "agent-a");
+    registerAgent(db, "agent-b");
+    createChannel(db, "test-ch", "agent-b");
     sendMessage(db, "agent-b", "test-ch", "setup");
+    subscribe(db, "agent-a", "test-ch");
     readMessages(db, "agent-a", "test-ch");
 
     // PID 1 (init/launchd) is always alive — simulates real takeover

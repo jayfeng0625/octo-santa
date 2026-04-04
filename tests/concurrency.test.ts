@@ -1,25 +1,15 @@
 // tests/concurrency.test.ts
 import { describe, it, expect, afterEach } from "bun:test";
-import { existsSync, unlinkSync } from "fs";
+import { cleanupDb, testDbPath, setupTestDb } from "./helpers/db";
 import { createDb, withRetrySync } from "../src/db";
 import { runMigrations } from "../src/migrations";
-import { messagingMigrations, sendMessage, readMessages } from "../src/modules/messaging/tools";
+import { messagingMigrations, registerAgent, createChannel, sendMessage, readMessages, subscribe } from "../src/modules/messaging/tools";
 
-const TEST_DB = "/tmp/octo-santa-test-concurrency.sqlite";
+const TEST_DB = testDbPath("concurrency");
 const projectRoot = process.cwd();
 
-function cleanupDb(path: string) {
-  for (const suffix of ["", "-wal", "-shm"]) {
-    const f = path + suffix;
-    if (existsSync(f)) unlinkSync(f);
-  }
-}
-
 function setupDb() {
-  cleanupDb(TEST_DB);
-  const db = createDb(TEST_DB);
-  runMigrations(db, messagingMigrations);
-  return db;
+  return setupTestDb(TEST_DB, messagingMigrations);
 }
 
 afterEach(() => {
@@ -28,7 +18,12 @@ afterEach(() => {
 
 describe("concurrency", () => {
   it("handles concurrent writes without losing messages", async () => {
-    setupDb().close();
+    const setupDbRef = setupDb();
+    // Subscribe verifier before workers run so cursor starts at 0 (sees all messages)
+    registerAgent(setupDbRef, "verifier");
+    createChannel(setupDbRef, "stress-test", "verifier");
+    subscribe(setupDbRef, "verifier", "stress-test");
+    setupDbRef.close();
 
     const NUM_AGENTS = 5;
     const MESSAGES_PER_AGENT = 20;
@@ -38,7 +33,7 @@ describe("concurrency", () => {
     const workerScript = `
       import { createDb } from "${projectRoot}/src/db";
       import { runMigrations } from "${projectRoot}/src/migrations";
-      import { messagingMigrations, sendMessage } from "${projectRoot}/src/modules/messaging/tools";
+      import { messagingMigrations, registerAgent, sendMessage } from "${projectRoot}/src/modules/messaging/tools";
 
       const db = createDb("${TEST_DB}");
       runMigrations(db, messagingMigrations);
@@ -46,6 +41,8 @@ describe("concurrency", () => {
       const agentId = process.argv[2];
       const count = parseInt(process.argv[3]);
 
+      // Register before sending (channel already created by verifier)
+      registerAgent(db, agentId);
       for (let i = 0; i < count; i++) {
         sendMessage(db, agentId, "stress-test", \`Message \${i} from \${agentId}\`);
       }
@@ -81,6 +78,7 @@ describe("concurrency", () => {
     // Verify all messages were written
     const db = createDb(TEST_DB);
     runMigrations(db, messagingMigrations);
+    // Cursor was already created at 0 before workers ran — just read
     const allMessages = readMessages(db, "verifier", "stress-test", { limit: 1000 });
     expect(allMessages).toHaveLength(NUM_AGENTS * MESSAGES_PER_AGENT);
 
@@ -93,11 +91,14 @@ describe("concurrency", () => {
     const workerScript = `
       import { createDb } from "${projectRoot}/src/db";
       import { runMigrations } from "${projectRoot}/src/migrations";
-      import { messagingMigrations, sendMessage } from "${projectRoot}/src/modules/messaging/tools";
+      import { messagingMigrations, registerAgent, createChannel, sendMessage } from "${projectRoot}/src/modules/messaging/tools";
 
       const db = createDb("${TEST_DB}");
       runMigrations(db, messagingMigrations);
-      sendMessage(db, process.argv[2], "init", "ready");
+      const agentId = process.argv[2];
+      registerAgent(db, agentId);
+      createChannel(db, "init", agentId); // idempotent — one winner creates it
+      sendMessage(db, agentId, "init", "ready");
       db.close();
     `;
 
@@ -133,6 +134,10 @@ describe("concurrency", () => {
     expect(names).toContain("messaging_001_initial_schema");
     expect(names).toContain("messaging_002_mentions_and_pid");
 
+    // Register verifier with proper PID and create cursor at 0 to read all messages
+    registerAgent(db, "verifier");
+    const channel = db.query("SELECT id FROM channels WHERE name = ?").get("init") as { id: number };
+    db.run("INSERT INTO cursors (agent_id, channel_id, last_read_message_id) VALUES (?, ?, 0) ON CONFLICT DO NOTHING", ["verifier", channel.id]);
     const messages = readMessages(db, "verifier", "init", { limit: 100 });
     expect(messages).toHaveLength(NUM_WORKERS);
 

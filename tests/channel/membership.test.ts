@@ -1,30 +1,24 @@
 import { describe, it, expect, beforeEach, afterEach } from "bun:test";
-import { existsSync, unlinkSync } from "fs";
-import { createDb } from "../../src/db";
-import { runMigrations } from "../../src/migrations";
 import {
   messagingMigrations,
   registerAgent,
+  unregisterAgent,
+  createChannel,
   sendMessage,
+  readMessages,
+  subscribe,
+  directMessage,
 } from "../../src/modules/messaging/tools";
 import { startPolling, type NotifyFn } from "../../src/channel";
 import type { Database } from "bun:sqlite";
+import { cleanupDb, testDbPath, setupTestDb } from "../helpers/db";
 
-const TEST_DB = "/tmp/octo-santa-test-membership.sqlite";
-
-function cleanupDb(path: string) {
-  for (const suffix of ["", "-wal", "-shm"]) {
-    const f = path + suffix;
-    if (existsSync(f)) unlinkSync(f);
-  }
-}
+const TEST_DB = testDbPath("membership");
 
 let db: Database;
 
 beforeEach(() => {
-  cleanupDb(TEST_DB);
-  db = createDb(TEST_DB);
-  runMigrations(db, messagingMigrations);
+  db = setupTestDb(TEST_DB, messagingMigrations);
 });
 
 afterEach(() => {
@@ -32,23 +26,17 @@ afterEach(() => {
   cleanupDb(TEST_DB);
 });
 
-describe("human sender does not affect DM notification mode", () => {
-  it("agent gets notified for unmentioned messages when human has sent in channel", async () => {
-    // Two MCP agents in a channel (DM mode)
+describe("DM notification mode", () => {
+  it("DM channel push-all works for named agents without mentions", async () => {
     registerAgent(db, "agent-a");
     registerAgent(db, "agent-b");
-    sendMessage(db, "agent-a", "planning", "setup");
-    sendMessage(db, "agent-b", "planning", "ack");
+    directMessage(db, "agent-a", "agent-b", "setup");
+    readMessages(db, "agent-a", "agent-a,agent-b");
 
-    // Human sends a message (creates cursor row via sendMessage, but no PID)
-    sendMessage(db, "jay", "planning", "human message");
+    // agent-b sends an unmentioned message — DM mode pushes to agent-a anyway
+    sendMessage(db, "agent-b", "agent-a,agent-b", "status update — no mentions");
 
-    // agent-b sends an unmentioned message
-    sendMessage(db, "agent-b", "planning", "status update — no mentions");
-
-    // agent-a polls — should still get notified (DM mode, not group)
-    const notifications: { content: string; meta: Record<string, string> }[] =
-      [];
+    const notifications: { content: string; meta: Record<string, string> }[] = [];
     const notify: NotifyFn = async (content, meta) => {
       notifications.push({ content, meta });
     };
@@ -61,5 +49,16 @@ describe("human sender does not affect DM notification mode", () => {
     expect(
       notifications.some((n) => n.content.includes("status update"))
     ).toBe(true);
+  });
+
+  it("3rd party cannot send on DM channel", () => {
+    registerAgent(db, "agent-a");
+    registerAgent(db, "agent-b");
+    registerAgent(db, "jay");
+    directMessage(db, "agent-a", "agent-b", "private");
+
+    expect(() => sendMessage(db, "jay", "agent-a,agent-b", "intruding")).toThrow(
+      'DM channel "agent-a,agent-b" is private to agent-a and agent-b'
+    );
   });
 });

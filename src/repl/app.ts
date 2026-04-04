@@ -4,7 +4,7 @@ import { InputBuffer } from "./buffer";
 import { KeyParser, type Action } from "./keys";
 import { Renderer, formatMessage } from "./renderer";
 import { parseCommand, executeCommand, type ReplState } from "./commands";
-import { sendMessage } from "../modules/messaging/tools";
+import { sendMessage, getChannelByName, getCursor } from "../modules/messaging/tools";
 
 export interface AppOptions {
   db: Database;
@@ -28,14 +28,9 @@ export function startApp(opts: AppOptions): () => void {
     agentId,
   };
 
-  // Init cursor at current max message ID
-  const ch = db.query("SELECT id FROM channels WHERE name = ?").get(channel) as { id: number } | null;
-  if (ch) {
-    const maxRow = db.query("SELECT MAX(id) as max_id FROM messages WHERE channel_id = ?").get(ch.id) as { max_id: number | null };
-    state.cursors.set(channel, maxRow?.max_id ?? 0);
-  } else {
-    state.cursors.set(channel, 0);
-  }
+  // Init cursor from DB cursor (preserves unread backlog on reconnect)
+  const ch = getChannelByName(db, channel);
+  state.cursors.set(channel, ch ? getCursor(db, agentId, ch.id) : 0);
 
   function getPrompt(): string {
     return `${state.activeChannel}> `;

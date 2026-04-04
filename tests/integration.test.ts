@@ -1,8 +1,6 @@
 // tests/integration.test.ts
 import { describe, it, expect, afterEach } from "bun:test";
-import { existsSync, unlinkSync } from "fs";
-import { createDb } from "../src/db";
-import { runMigrations } from "../src/migrations";
+import { cleanupDb, testDbPath, setupTestDb } from "./helpers/db";
 import {
   messagingMigrations,
   registerAgent,
@@ -10,23 +8,14 @@ import {
   listChannels,
   sendMessage,
   readMessages,
+  subscribe,
   listAgents,
 } from "../src/modules/messaging/tools";
 
-const TEST_DB = "/tmp/octo-santa-test-integration.sqlite";
-
-function cleanupDb(path: string) {
-  for (const suffix of ["", "-wal", "-shm"]) {
-    const f = path + suffix;
-    if (existsSync(f)) unlinkSync(f);
-  }
-}
+const TEST_DB = testDbPath("integration");
 
 function setupDb() {
-  cleanupDb(TEST_DB);
-  const db = createDb(TEST_DB);
-  runMigrations(db, messagingMigrations);
-  return db;
+  return setupTestDb(TEST_DB, messagingMigrations);
 }
 
 afterEach(() => {
@@ -37,13 +26,17 @@ describe("full messaging flow", () => {
   it("two agents communicate through a channel", () => {
     const db = setupDb();
 
-    // Agent A sets up and sends
+    // Agent A and B both join the channel first
     registerAgent(db, "frontend-app");
+    registerAgent(db, "backend-api");
     createChannel(db, "coordination", "frontend-app");
+    subscribe(db, "backend-api", "coordination");
+
+    // Agent A sends
     sendMessage(db, "frontend-app", "coordination", "Need API endpoint for /users");
     sendMessage(db, "frontend-app", "coordination", "Expecting JSON with name and email fields");
 
-    // Agent B reads and replies
+    // Agent B reads
     const incoming = readMessages(db, "backend-api", "coordination");
     expect(incoming).toHaveLength(2);
     expect(incoming[0]!.content).toBe("Need API endpoint for /users");
@@ -71,6 +64,14 @@ describe("full messaging flow", () => {
 
   it("agents can use multiple channels independently", () => {
     const db = setupDb();
+
+    // agent-b subscribes before messages are sent so cursor starts at 0
+    registerAgent(db, "agent-a");
+    registerAgent(db, "agent-b");
+    createChannel(db, "frontend", "agent-b");
+    createChannel(db, "backend", "agent-b");
+    subscribe(db, "agent-b", "frontend");
+    subscribe(db, "agent-b", "backend");
 
     sendMessage(db, "agent-a", "frontend", "UI question");
     sendMessage(db, "agent-a", "backend", "API question");
