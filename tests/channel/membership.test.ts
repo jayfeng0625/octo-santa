@@ -7,6 +7,7 @@ import {
   sendMessage,
   readMessages,
   subscribe,
+  directMessage,
 } from "../../src/modules/messaging/tools";
 import { startPolling, type NotifyFn } from "../../src/channel";
 import type { Database } from "bun:sqlite";
@@ -25,30 +26,17 @@ afterEach(() => {
   cleanupDb(TEST_DB);
 });
 
-describe("unregistered agent does not affect DM notification mode", () => {
-  it("agent gets notified for unmentioned messages when an unregistered member exists in channel", async () => {
-    // Two MCP agents in a DM channel (name-based DM: agent-a,agent-b format)
+describe("DM notification mode", () => {
+  it("DM channel push-all works for named agents without mentions", async () => {
     registerAgent(db, "agent-a");
     registerAgent(db, "agent-b");
-    registerAgent(db, "jay");
-    createChannel(db, "agent-a,agent-b", "agent-a");
-    sendMessage(db, "agent-a", "agent-a,agent-b", "setup");
-    sendMessage(db, "agent-b", "agent-a,agent-b", "ack");
-
-    // Jay sends a message then unregisters (simulates leaving session)
-    sendMessage(db, "jay", "agent-a,agent-b", "one-off message");
-    unregisterAgent(db, "jay", process.pid);
-
-    // Subscribe agent-a to receive notifications
-    subscribe(db, "agent-a", "agent-a,agent-b");
+    directMessage(db, "agent-a", "agent-b", "setup");
     readMessages(db, "agent-a", "agent-a,agent-b");
 
-    // agent-b sends an unmentioned message — DM channel by name, both named agents are members
+    // agent-b sends an unmentioned message — DM mode pushes to agent-a anyway
     sendMessage(db, "agent-b", "agent-a,agent-b", "status update — no mentions");
 
-    // agent-a polls — should still get notified (DM mode based on channel name)
-    const notifications: { content: string; meta: Record<string, string> }[] =
-      [];
+    const notifications: { content: string; meta: Record<string, string> }[] = [];
     const notify: NotifyFn = async (content, meta) => {
       notifications.push({ content, meta });
     };
@@ -61,5 +49,16 @@ describe("unregistered agent does not affect DM notification mode", () => {
     expect(
       notifications.some((n) => n.content.includes("status update"))
     ).toBe(true);
+  });
+
+  it("3rd party cannot send on DM channel", () => {
+    registerAgent(db, "agent-a");
+    registerAgent(db, "agent-b");
+    registerAgent(db, "jay");
+    directMessage(db, "agent-a", "agent-b", "private");
+
+    expect(() => sendMessage(db, "jay", "agent-a,agent-b", "intruding")).toThrow(
+      'DM channel "agent-a,agent-b" is private to agent-a and agent-b'
+    );
   });
 });

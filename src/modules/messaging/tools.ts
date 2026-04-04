@@ -5,6 +5,22 @@ import type { Agent, Channel, ChannelMember, Message } from "./types";
 
 const AGENT_NAME_RE = /^[\w-]+$/;
 const RESERVED_AGENT_NAMES = new Set(["all", "here"]);
+const DM_CHANNEL_RE = /^([\w-]+),([\w-]+)$/;
+
+export function isDmChannel(channelName: string): boolean {
+  const m = DM_CHANNEL_RE.exec(channelName);
+  if (!m) return false;
+  // Must be sorted and non-duplicate (directMessage always sorts)
+  return m[1]! < m[2]!;
+}
+
+function assertDmAccess(channelName: string, agentId: string): void {
+  const m = DM_CHANNEL_RE.exec(channelName);
+  if (!m || m[1]! >= m[2]!) return; // not a valid DM channel (must be sorted, non-duplicate)
+  if (agentId !== m[1] && agentId !== m[2]) {
+    throw new Error(`DM channel "${channelName}" is private to ${m[1]} and ${m[2]}`);
+  }
+}
 
 export function validateAgentName(agentId: string): void {
   if (!agentId.trim()) throw new Error("agent_id must not be empty");
@@ -294,6 +310,7 @@ export function subscribe(
   channelName: string
 ): void {
   requireRegistered(db, agentId);
+  assertDmAccess(channelName, agentId);
 
   const channel = getChannelByName(db, channelName);
   if (!channel) throw new Error(`Channel "${channelName}" does not exist`);
@@ -317,6 +334,7 @@ export function sendMessage(
 ): Message {
   if (!content.trim()) throw new Error("message content must not be empty");
   requireRegistered(db, agentId);
+  assertDmAccess(channelName, agentId);
 
   // Channel must already exist — no implicit creation
   const channel = getChannelByName(db, channelName);
@@ -363,6 +381,8 @@ export function sendMessage(
 export function renameChannel(db: Database, agentId: string, channelName: string, newName: string): Channel {
   if (!newName.trim()) throw new Error("new channel name must not be empty");
   requireRegistered(db, agentId);
+  if (isDmChannel(channelName)) throw new Error("Cannot rename a DM channel");
+  if (isDmChannel(newName)) throw new Error("Cannot rename a channel to a DM-style name");
 
   const doRename = db.transaction(() => {
     const channel = getChannelByName(db, channelName);

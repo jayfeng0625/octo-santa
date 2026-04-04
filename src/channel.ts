@@ -118,7 +118,7 @@ export function startPolling(
       // don't flip it to group mode.
       const dmMatch = DM_CHANNEL_RE.exec(sub.channel_name);
       let isDmChannel = false;
-      if (dmMatch) {
+      if (dmMatch && dmMatch[1]! < dmMatch[2]!) {
         const memberCheck = stmtDmMemberCheck.get(sub.channel_id, dmMatch[1]!, dmMatch[2]!) as { count: number };
         isDmChannel = memberCheck.count === 2;
       }
