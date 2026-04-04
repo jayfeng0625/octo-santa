@@ -1,7 +1,5 @@
 import { describe, it, expect, afterEach } from "bun:test";
-import { existsSync, unlinkSync } from "fs";
-import { createDb } from "../../src/db";
-import { runMigrations } from "../../src/migrations";
+import { cleanupDb, testDbPath, setupTestDb } from "../helpers/db";
 import {
   messagingMigrations,
   registerAgent,
@@ -18,26 +16,14 @@ import {
 import type { Agent } from "../../src/modules/messaging/types";
 import { startPolling } from "../../src/channel";
 
-function sleep(ms: number) {
-  return new Promise((r) => setTimeout(r, ms));
-}
+const sleep = Bun.sleep;
 
 const FAST_INTERVAL = 50;
 
-const TEST_DB = `/tmp/octo-santa-test-lifecycle-${process.pid}.sqlite`;
-
-function cleanupDb(path: string) {
-  for (const suffix of ["", "-wal", "-shm"]) {
-    const f = path + suffix;
-    if (existsSync(f)) unlinkSync(f);
-  }
-}
+const TEST_DB = testDbPath("lifecycle");
 
 function setupDb() {
-  cleanupDb(TEST_DB);
-  const db = createDb(TEST_DB);
-  runMigrations(db, messagingMigrations);
-  return db;
+  return setupTestDb(TEST_DB, messagingMigrations);
 }
 
 afterEach(() => {
@@ -422,10 +408,10 @@ describe("reconnect polling", () => {
     const db = setupDb();
     registerAgent(db, "agent-a");
     registerAgent(db, "agent-b");
-    createChannel(db, "dm-ch", "agent-a");
-    sendMessage(db, "agent-a", "dm-ch", "setup");
-    subscribe(db, "agent-b", "dm-ch");
-    readMessages(db, "agent-b", "dm-ch"); // agent-b subscribes
+    createChannel(db, "agent-a,agent-b", "agent-a");
+    sendMessage(db, "agent-a", "agent-a,agent-b", "setup");
+    subscribe(db, "agent-b", "agent-a,agent-b");
+    readMessages(db, "agent-b", "agent-a,agent-b"); // agent-b subscribes
 
     // agent-b disconnects
     unregisterAgent(db, "agent-b", process.pid);
@@ -434,7 +420,7 @@ describe("reconnect polling", () => {
     registerAgent(db, "agent-b");
 
     // agent-a sends while agent-b is back
-    sendMessage(db, "agent-a", "dm-ch", "welcome back");
+    sendMessage(db, "agent-a", "agent-a,agent-b", "welcome back");
 
     // agent-b starts polling — should get notification on existing subscription
     const notifications: { content: string; meta: Record<string, string> }[] = [];

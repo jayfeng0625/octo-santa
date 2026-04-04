@@ -4,7 +4,7 @@ import { InputBuffer } from "./buffer";
 import { KeyParser, type Action } from "./keys";
 import { Renderer, formatMessage } from "./renderer";
 import { parseCommand, executeCommand, type ReplState } from "./commands";
-import { sendMessage } from "../modules/messaging/tools";
+import { sendMessage, getChannelByName, getCursor } from "../modules/messaging/tools";
 
 export interface AppOptions {
   db: Database;
@@ -29,14 +29,8 @@ export function startApp(opts: AppOptions): () => void {
   };
 
   // Init cursor from DB cursor (preserves unread backlog on reconnect)
-  const ch = db.query("SELECT id FROM channels WHERE name = ?").get(channel) as { id: number } | null;
-  if (ch) {
-    const cursorRow = db.query("SELECT last_read_message_id FROM cursors WHERE agent_id = ? AND channel_id = ?")
-      .get(agentId, ch.id) as { last_read_message_id: number } | null;
-    state.cursors.set(channel, cursorRow?.last_read_message_id ?? 0);
-  } else {
-    state.cursors.set(channel, 0);
-  }
+  const ch = getChannelByName(db, channel);
+  state.cursors.set(channel, ch ? getCursor(db, agentId, ch.id) : 0);
 
   function getPrompt(): string {
     return `${state.activeChannel}> `;

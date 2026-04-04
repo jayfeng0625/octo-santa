@@ -1,7 +1,4 @@
 import { describe, it, expect, afterEach } from "bun:test";
-import { existsSync, unlinkSync } from "fs";
-import { createDb } from "../../src/db";
-import { runMigrations } from "../../src/migrations";
 import {
   upsertDomain,
   claimDomain,
@@ -11,21 +8,12 @@ import {
 } from "../../src/modules/brain/tools";
 import { messagingMigrations, registerAgent } from "../../src/modules/messaging/tools";
 import type { OctoSantaConfig } from "../../src/modules/brain/types";
+import { cleanupDb, testDbPath, setupTestDb } from "../helpers/db";
 
-const TEST_DB = `/tmp/octo-santa-test-brain-domain-${process.pid}.sqlite`;
-
-function cleanupDb(path: string) {
-  for (const suffix of ["", "-wal", "-shm"]) {
-    const f = path + suffix;
-    if (existsSync(f)) unlinkSync(f);
-  }
-}
+const TEST_DB = testDbPath("brain-domain");
 
 function setupDb() {
-  cleanupDb(TEST_DB);
-  const db = createDb(TEST_DB);
-  runMigrations(db, [...messagingMigrations, ...brainMigrations]);
-  return db;
+  return setupTestDb(TEST_DB, [...messagingMigrations, ...brainMigrations]);
 }
 
 afterEach(() => {

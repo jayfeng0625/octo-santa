@@ -2,6 +2,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { Database } from "bun:sqlite";
 import type { OctoModule } from "../../types";
+import { jsonResult, withAgent } from "../../lib/mcp-helpers";
 import {
   brainMigrations,
   readConfig,
@@ -14,21 +15,6 @@ import {
   claimDomain,
   onBrainDisconnect,
 } from "./tools";
-
-function jsonResult(data: unknown) {
-  return { content: [{ type: "text" as const, text: JSON.stringify(data) }] };
-}
-
-function withAgent<T>(
-  onAgentId: ((agentId: string) => { commit: () => void }) | undefined,
-  agentId: string,
-  fn: () => T
-): T {
-  const handle = onAgentId?.(agentId);
-  const result = fn();
-  handle?.commit();
-  return result;
-}
 
 const brain: OctoModule = {
   name: "brain",

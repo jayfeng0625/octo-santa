@@ -1,16 +1,9 @@
 import { describe, it, expect, afterEach } from "bun:test";
-import { existsSync, unlinkSync } from "fs";
 import { createDb } from "../src/db";
 import { runMigrations, type Migration } from "../src/migrations";
+import { cleanupDb, testDbPath } from "./helpers/db";
 
-const TEST_DB = `/tmp/octo-santa-test-migrations-${process.pid}.sqlite`;
-
-function cleanupDb(path: string) {
-  for (const suffix of ["", "-wal", "-shm"]) {
-    const f = path + suffix;
-    if (existsSync(f)) unlinkSync(f);
-  }
-}
+const TEST_DB = testDbPath("migrations");
 
 afterEach(() => {
   cleanupDb(TEST_DB);

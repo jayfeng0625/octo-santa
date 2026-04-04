@@ -2,6 +2,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { Database } from "bun:sqlite";
 import type { OctoModule } from "../../types";
+import { jsonResult, withAgent } from "../../lib/mcp-helpers";
 import {
   messagingMigrations,
   registerAgent,
@@ -16,21 +17,6 @@ import {
   unregisterAgent,
   renameChannel,
 } from "./tools";
-
-function jsonResult(data: unknown) {
-  return { content: [{ type: "text" as const, text: JSON.stringify(data) }] };
-}
-
-function withAgent<T>(
-  onAgentId: ((agentId: string) => { commit: () => void }) | undefined,
-  agentId: string,
-  fn: () => T
-): T {
-  const handle = onAgentId?.(agentId); // Phase 1: guard check (throws if mismatched)
-  const result = fn();
-  handle?.commit(); // Phase 2: bind session (only on success)
-  return result;
-}
 
 const messaging: OctoModule = {
   name: "messaging",
@@ -83,7 +69,7 @@ const messaging: OctoModule = {
     });
 
     server.registerTool("messaging_send_message", {
-      description: "Send a message to a channel. Requires prior messaging_register and an existing channel. Use @agent-name to notify specific agents, or @all to notify everyone. Messages without mentions are silent.",
+      description: "Send a message to an existing channel. Requires prior messaging_register. Use @agent-name to notify specific agents, or @all to notify everyone. Messages without mentions are silent — recipients see them only when they check the channel.",
       inputSchema: {
         agent_id: z.string().trim().min(1).describe("Your agent/project name"),
         channel: z.string().trim().min(1).describe("Channel name"),
@@ -110,7 +96,7 @@ const messaging: OctoModule = {
     });
 
     server.registerTool("messaging_direct_message", {
-      description: "Send a direct message to another agent. Creates a DM channel and subscribes both parties.",
+      description: "Send a direct message to another agent. Creates a DM channel and subscribes both parties. DM channels push all messages automatically — no @mention needed.",
       inputSchema: {
         agent_id: z.string().trim().min(1).describe("Your agent/project name"),
         target_agent_id: z.string().trim().min(1).describe("Agent to DM"),

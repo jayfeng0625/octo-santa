@@ -37,6 +37,10 @@ export function extractMentions(content: string, validAgentIds: string[]): strin
   return [...result];
 }
 
+export function getChannelByName(db: Database, name: string): Channel | null {
+  return (db.query("SELECT * FROM channels WHERE name = ?").get(name) as Channel) ?? null;
+}
+
 export function getCursor(
   db: Database,
   agentId: string,
@@ -170,7 +174,7 @@ export function listAgents(db: Database, includeStale?: boolean): Agent[] {
 }
 
 export function listChannelMembers(db: Database, channelName: string): ChannelMember[] {
-  const channel = db.query("SELECT id FROM channels WHERE name = ?").get(channelName) as { id: number } | null;
+  const channel = getChannelByName(db, channelName);
   if (!channel) return [];
 
   const rows = db
@@ -199,7 +203,7 @@ export function createChannel(db: Database, name: string, agentId: string): Chan
       [name, agentId, Date.now()]
     );
 
-    return db.query("SELECT * FROM channels WHERE name = ?").get(name) as Channel;
+    return getChannelByName(db, name) as Channel;
   });
 }
 
@@ -220,7 +224,7 @@ export function readMessages(
 ): Message[] {
   requireRegistered(db, agentId);
 
-  const channel = db.query("SELECT id FROM channels WHERE name = ?").get(channelName) as { id: number } | null;
+  const channel = getChannelByName(db, channelName);
   if (!channel) {
     throw new Error(
       `Channel "${channelName}" does not exist. Use messaging_create_channel to create it first.`
@@ -291,7 +295,7 @@ export function subscribe(
 ): void {
   requireRegistered(db, agentId);
 
-  const channel = db.query("SELECT * FROM channels WHERE name = ?").get(channelName) as Channel | null;
+  const channel = getChannelByName(db, channelName);
   if (!channel) throw new Error(`Channel "${channelName}" does not exist`);
 
   withRetrySync(() => {
@@ -315,7 +319,7 @@ export function sendMessage(
   requireRegistered(db, agentId);
 
   // Channel must already exist — no implicit creation
-  const channel = db.query("SELECT * FROM channels WHERE name = ?").get(channelName) as Channel | null;
+  const channel = getChannelByName(db, channelName);
   if (!channel) throw new Error(`Channel "${channelName}" does not exist. Create it with messaging_create_channel first.`);
 
   const doSend = db.transaction(() => {
@@ -360,7 +364,7 @@ export function renameChannel(db: Database, agentId: string, channelName: string
   if (!newName.trim()) throw new Error("new channel name must not be empty");
   requireRegistered(db, agentId);
 
-  const channel = db.query("SELECT * FROM channels WHERE name = ?").get(channelName) as Channel | null;
+  const channel = getChannelByName(db, channelName);
   if (!channel) throw new Error(`Channel "${channelName}" not found`);
 
   // Membership check: agent must have cursor in this channel

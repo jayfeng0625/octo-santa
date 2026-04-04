@@ -7,6 +7,8 @@ import {
   createChannel,
   subscribe,
   sendMessage,
+  getChannelByName,
+  getCursor,
 } from "../modules/messaging/tools";
 
 export interface ReplState {
@@ -72,11 +74,9 @@ export function executeCommand(
         return { output: [(err as Error).message] };
       }
       // Sync in-memory cursor from DB to prevent historical message flood
-      const ch = db.query("SELECT id FROM channels WHERE name = ?").get(channelName) as { id: number } | null;
+      const ch = getChannelByName(db, channelName);
       if (ch) {
-        const cur = db.query("SELECT last_read_message_id FROM cursors WHERE agent_id = ? AND channel_id = ?")
-          .get(state.agentId, ch.id) as { last_read_message_id: number } | null;
-        if (cur) state.cursors.set(channelName, cur.last_read_message_id);
+        state.cursors.set(channelName, getCursor(db, state.agentId, ch.id));
       }
       state.joinedChannels.add(channelName);
       return { output: [`Joined #${channelName}`], channelChange: channelName };
@@ -93,7 +93,7 @@ export function executeCommand(
       let limit = parseInt(cmd.args, 10);
       if (!Number.isFinite(limit) || limit <= 0) limit = 20;
 
-      const channel = db.query("SELECT id FROM channels WHERE name = ?").get(state.activeChannel) as { id: number } | null;
+      const channel = getChannelByName(db, state.activeChannel);
       if (!channel) return { output: ["Channel not found"] };
 
       const rows = db.query(

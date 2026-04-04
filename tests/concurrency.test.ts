@@ -1,25 +1,15 @@
 // tests/concurrency.test.ts
 import { describe, it, expect, afterEach } from "bun:test";
-import { existsSync, unlinkSync } from "fs";
+import { cleanupDb, testDbPath, setupTestDb } from "./helpers/db";
 import { createDb, withRetrySync } from "../src/db";
 import { runMigrations } from "../src/migrations";
 import { messagingMigrations, registerAgent, createChannel, sendMessage, readMessages, subscribe } from "../src/modules/messaging/tools";
 
-const TEST_DB = "/tmp/octo-santa-test-concurrency.sqlite";
+const TEST_DB = testDbPath("concurrency");
 const projectRoot = process.cwd();
 
-function cleanupDb(path: string) {
-  for (const suffix of ["", "-wal", "-shm"]) {
-    const f = path + suffix;
-    if (existsSync(f)) unlinkSync(f);
-  }
-}
-
 function setupDb() {
-  cleanupDb(TEST_DB);
-  const db = createDb(TEST_DB);
-  runMigrations(db, messagingMigrations);
-  return db;
+  return setupTestDb(TEST_DB, messagingMigrations);
 }
 
 afterEach(() => {

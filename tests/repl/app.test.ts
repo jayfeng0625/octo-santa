@@ -1,28 +1,16 @@
 // tests/repl/app.test.ts
 import { describe, it, expect, afterEach } from "bun:test";
-import { existsSync, unlinkSync } from "fs";
-import { createDb } from "../../src/db";
-import { runMigrations } from "../../src/migrations";
 import { messagingMigrations, sendMessage, registerAgent, createChannel } from "../../src/modules/messaging/tools";
 import { InputBuffer } from "../../src/repl/buffer";
 import { KeyParser } from "../../src/repl/keys";
 import { parseCommand, executeCommand, type ReplState } from "../../src/repl/commands";
 import { formatMessage } from "../../src/repl/renderer";
+import { cleanupDb, testDbPath, setupTestDb } from "../helpers/db";
 
-const TEST_DB = "/tmp/octo-santa-test-app.sqlite";
-
-function cleanupDb(path: string) {
-  for (const suffix of ["", "-wal", "-shm"]) {
-    const f = path + suffix;
-    if (existsSync(f)) unlinkSync(f);
-  }
-}
+const TEST_DB = testDbPath("app");
 
 function setupDb() {
-  cleanupDb(TEST_DB);
-  const db = createDb(TEST_DB);
-  runMigrations(db, messagingMigrations);
-  return db;
+  return setupTestDb(TEST_DB, messagingMigrations);
 }
 
 afterEach(() => {
