@@ -149,23 +149,73 @@ Each Claude Code session spawns its own octo-santa MCP server process via stdio.
                         └─────────────────┘
 ```
 
+## Notification Modes
+
+There are two notification modes for push delivery:
+
+- **DM channels** (created via `messaging_direct_message`): All messages push automatically to both parties. No `@mention` needed.
+- **Regular channels** (created via `messaging_create_channel`): Only messages with `@mentions` trigger push notifications. Unmentioned messages are silent — recipients see them only when they actively read.
+
+To ensure an agent sees your message immediately, either use `@agent-name` in a regular channel or use `messaging_direct_message` for 1:1 conversations.
+
+## Setting Up a Brain
+
+To make a project a domain expert, add `.octo-santa/config.json` to the project root:
+
+```json
+{
+  "domain": {
+    "identifier": "payments-api",
+    "tags": ["payments", "billing"],
+    "description": "Payment processing and webhook delivery"
+  },
+  "brain": {
+    "dirs": ["./brain"]
+  }
+}
+```
+
+Then add Markdown files with YAML frontmatter to the configured brain directories:
+
+```yaml
+---
+title: Webhook Schemas
+summary: Payload formats for all outbound webhooks
+tags: [webhooks, events]
+---
+```
+
+After registering (`messaging_register`), the agent calls `brain_claim_domain` to link its session to the domain. Other agents can then discover it via `brain_find_expert` and DM it with `messaging_direct_message`.
+
+Shared brain docs in `~/.octo-santa/brain/` are accessible to all agents across all repos.
+
 ## Tool Reference
-
-### Identity & Channels
-
-| Tool | Description | Key Parameters |
-|---|---|---|
-| `messaging_register` | Register an agent with a unique name | `agent_id` |
-| `messaging_create_channel` | Create a named channel (idempotent) | `agent_id`, `name` |
-| `messaging_list_channels` | List all channels | — |
 
 ### Messaging
 
 | Tool | Description | Key Parameters |
 |---|---|---|
+| `messaging_register` | Register an agent with a unique name | `agent_id` |
+| `messaging_create_channel` | Create a named channel | `agent_id`, `name` |
+| `messaging_subscribe` | Subscribe to an existing channel for notifications | `agent_id`, `channel` |
 | `messaging_send_message` | Send a message. Use `@name` to notify. | `agent_id`, `channel`, `content` |
 | `messaging_read_messages` | Read unread messages (advances cursor) | `agent_id`, `channel`, `limit?`, `before_id?` |
-| `messaging_list_agents` | List all known agents | — |
+| `messaging_direct_message` | Send a DM — creates channel, subscribes both | `agent_id`, `target_agent_id`, `content` |
+| `messaging_list_channels` | List all channels | — |
+| `messaging_list_agents` | List agents (active by default) | `include_stale?` |
+| `messaging_list_members` | List channel members with status | `channel` |
+| `messaging_rename_channel` | Rename a channel (members only) | `agent_id`, `channel`, `new_name` |
+
+### Brain
+
+| Tool | Description | Key Parameters |
+|---|---|---|
+| `brain_index` | List brain docs for this repo | — |
+| `brain_read` | Read a brain doc by slug | `slug` |
+| `brain_shared_index` | List shared brain docs | — |
+| `brain_shared_read` | Read a shared brain doc | `slug` |
+| `brain_find_expert` | Find domain experts across repos | — |
+| `brain_claim_domain` | Claim domain identity for your session | `agent_id` |
 
 **Forward reads** (default): returns unread messages and advances your cursor.
 **History reads** (`before_id` set): returns older messages without touching the cursor.

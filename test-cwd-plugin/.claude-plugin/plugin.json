@@ -1,5 +1,0 @@
-{
-  "name": "test-cwd",
-  "description": "Minimal plugin to verify process.cwd() for plugin MCP servers",
-  "version": "0.0.1"
-}
