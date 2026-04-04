@@ -39,6 +39,7 @@ describe("input validation", () => {
 
   it("rejects empty channel name", () => {
     const db = setupDb();
+    registerAgent(db, "agent-a");
     expect(() => createChannel(db, "", "agent-a")).toThrow();
     db.close();
   });
@@ -67,11 +68,10 @@ describe("input validation", () => {
     db.close();
   });
 
-  it("readMessages returns empty array for nonexistent channel (no agent validation)", () => {
+  it("readMessages rejects unregistered agent (requireRegistered validates agent name)", () => {
     const db = setupDb();
-    // readMessages no longer calls ensureAgent, so agent name is not validated.
-    // When channel doesn't exist, it returns [] regardless of agent name.
-    expect(readMessages(db, "bad@name", "ch")).toEqual([]);
+    // requireRegistered calls validateAgentName, so invalid names throw before DB check
+    expect(() => readMessages(db, "bad@name", "ch")).toThrow("must match");
     db.close();
   });
 
@@ -87,11 +87,10 @@ describe("input validation", () => {
     db.close();
   });
 
-  it("readMessages returns empty array for nonexistent channel with reserved name", () => {
+  it("readMessages rejects reserved agent name 'all'", () => {
     const db = setupDb();
-    // readMessages no longer calls ensureAgent, so reserved names are not rejected.
-    // When channel doesn't exist, it returns [] regardless of agent name.
-    expect(readMessages(db, "all", "ch")).toEqual([]);
+    // requireRegistered runs validateAgentName which rejects reserved names
+    expect(() => readMessages(db, "all", "ch")).toThrow("reserved");
     db.close();
   });
 });

@@ -61,9 +61,8 @@ export function startPolling(
     // Prevents PID staleness reclaim of actively-listening agents.
     // If the heartbeat matches 0 rows and the agent has a different PID,
     // another process has reclaimed our agent name — stop polling to avoid
-    // delivering notifications to a stale session. A null-PID agent (REPL
-    // or test-only path) is expected to have 0-change heartbeats and should
-    // continue polling.
+    // delivering notifications to a stale session. An unregistered agent row
+    // (null PID from unregisterAgent) is expected to have 0-change heartbeats.
     const heartbeat = stmtHeartbeat.run(Date.now(), agentId, process.pid);
     if (heartbeat.changes === 0) {
       const row = db.query("SELECT pid FROM agents WHERE id = ?").get(agentId) as { pid: number | null } | null;

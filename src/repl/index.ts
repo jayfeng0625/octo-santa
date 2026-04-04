@@ -1,7 +1,7 @@
 // src/repl/index.ts
 import { openDb } from "../bootstrap";
 import { startApp } from "./app";
-import { createChannel } from "../modules/messaging/tools";
+import { startupRepl } from "./startup";
 
 function parseArgs(argv: string[]): { agentId: string; channel: string } {
   let agentId = "";
@@ -32,8 +32,8 @@ function parseArgs(argv: string[]): { agentId: string; channel: string } {
 const { agentId, channel } = parseArgs(process.argv.slice(2));
 const db = openDb();
 
-// Ensure channel exists
-createChannel(db, channel, agentId);
+// REPL startup: register → create channel → subscribe
+startupRepl(db, agentId, channel);
 
 const pollIntervalMs = Number(process.env.OCTO_SANTA_POLL_INTERVAL_MS) || 1000;
 
