@@ -1,23 +1,13 @@
 import { describe, it, expect, afterEach } from "bun:test";
-import { mkdtempSync, writeFileSync, mkdirSync, rmSync, existsSync } from "fs";
+import { writeFileSync, mkdirSync } from "fs";
 import { join } from "path";
-import { tmpdir } from "os";
 import { readConfig, validateBrainDir } from "../../src/modules/brain/tools";
+import { createTmpDirTracker } from "../helpers/tmpdir";
 
-let tmpDirs: string[] = [];
+const tmpDirs = createTmpDirTracker("config");
+const makeTmpDir = tmpDirs.make.bind(tmpDirs);
 
-function makeTmpDir(): string {
-  const dir = mkdtempSync(join(tmpdir(), "octo-santa-test-config-"));
-  tmpDirs.push(dir);
-  return dir;
-}
-
-afterEach(() => {
-  for (const dir of tmpDirs) {
-    if (existsSync(dir)) rmSync(dir, { recursive: true, force: true });
-  }
-  tmpDirs = [];
-});
+afterEach(() => { tmpDirs.cleanup(); });
 
 describe("readConfig", () => {
   it("returns parsed config for a valid .octo-santa/config.json", () => {

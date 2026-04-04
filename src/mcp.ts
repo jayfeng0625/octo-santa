@@ -25,6 +25,10 @@ function buildInstructions(): string {
     '- No mention → message is silent (recipients must read actively)\n\n' +
     'Use @mentions to get attention. Messages without mentions are for ' +
     'context/logging — recipients see them when they check the channel.\n\n' +
+    'NOTIFICATIONS: There are two notification modes:\n' +
+    '- DM channels (created via messaging_direct_message): All messages push automatically to both parties. No @mention needed.\n' +
+    '- Regular channels (created via messaging_create_channel): Only messages with @mentions trigger push notifications. Unmentioned messages are silent.\n\n' +
+    'To ensure an agent sees your message immediately, either use @agent-name in a regular channel or use messaging_direct_message for 1:1 conversations.\n\n' +
     'DISCOVERY: Use messaging_list_agents to see currently online agents. ' +
     'Use messaging_list_agents with include_stale=true to see all agents including disconnected ones. ' +
     'Use messaging_list_members to see who is in a specific channel.';
@@ -100,7 +104,7 @@ async function main() {
 
   // Bootstrap nudge — prompt agent to register before any tool call
   const config = readConfig(process.cwd());
-  let bootstrapMsg = "octo-santa messaging module is available. Call messaging_register with a unique agent name. Then create channels with messaging_create_channel and subscribe with messaging_subscribe to start receiving notifications.";
+  let bootstrapMsg = "octo-santa messaging module is available. Call messaging_register with a unique agent name (e.g. your role), then create or subscribe to channels to start receiving push notifications. If the name is taken, pick a different one.";
   if (config?.domain) {
     bootstrapMsg += `\n\nBrain module active — this repo is domain "${config.domain.identifier}" (${config.domain.description}). ` +
       "After messaging_register, call brain_claim_domain to become a queryable expert.";

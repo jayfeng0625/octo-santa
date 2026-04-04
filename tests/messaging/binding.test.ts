@@ -1,18 +1,9 @@
 import { describe, it, expect, afterEach } from "bun:test";
-import { existsSync, unlinkSync } from "fs";
-import { createDb } from "../../src/db";
-import { runMigrations } from "../../src/migrations";
+import { cleanupDb, testDbPath, setupTestDb } from "../helpers/db";
 import messaging from "../../src/modules/messaging";
 import { messagingMigrations } from "../../src/modules/messaging/tools";
 
-const TEST_DB = `/tmp/octo-santa-test-binding-${process.pid}.sqlite`;
-
-function cleanupDb(path: string) {
-  for (const suffix of ["", "-wal", "-shm"]) {
-    const f = path + suffix;
-    if (existsSync(f)) unlinkSync(f);
-  }
-}
+const TEST_DB = testDbPath("binding");
 
 afterEach(() => {
   cleanupDb(TEST_DB);
@@ -20,9 +11,7 @@ afterEach(() => {
 
 describe("agent binding enforcement", () => {
   function setup() {
-    cleanupDb(TEST_DB);
-    const db = createDb(TEST_DB);
-    runMigrations(db, messagingMigrations);
+    const db = setupTestDb(TEST_DB, messagingMigrations);
 
     const handlers: Record<string, (...args: any[]) => Promise<any>> = {};
     const mockServer = {

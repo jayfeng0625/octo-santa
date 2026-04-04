@@ -1,7 +1,7 @@
 import type { Database } from "bun:sqlite";
 import type { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import type { Message } from "./modules/messaging/types";
-import { PID_STALE_MS, isProcessAlive } from "./modules/messaging/tools";
+import { isProcessAlive } from "./modules/messaging/tools";
 import { log } from "./log";
 
 export type NotifyFn = (content: string, meta: Record<string, string>) => Promise<void>;
@@ -37,10 +37,9 @@ export function startPolling(
      WHERE channel_id = ? AND id > ? AND agent_id != ?`
   );
   const stmtLatest = db.query("SELECT id, agent_id, content, mentions FROM messages WHERE id = ?");
-  const stmtMemberCount = db.query(
-    `SELECT COUNT(*) as count FROM cursors cr
-     JOIN agents a ON cr.agent_id = a.id
-     WHERE cr.channel_id = ? AND a.pid IS NOT NULL AND a.last_seen_at > ?`
+  const DM_CHANNEL_RE = /^([\w-]+),([\w-]+)$/;
+  const stmtDmMemberCheck = db.query(
+    "SELECT COUNT(*) as count FROM cursors WHERE channel_id = ? AND agent_id IN (?, ?)"
   );
   const stmtBatchMentions = db.query(
     `SELECT mentions FROM messages
@@ -111,13 +110,21 @@ export function startPolling(
         .get(sub.channel_id, hwm, agentId) as { count: number; max_id: number | null };
 
       if (stats.count === 0 || stats.max_id === null) continue;
-      log(`${agentId} on ${sub.channel_name}: ${stats.count} unread, hwm=${hwm}, max_id=${stats.max_id}, memberCount=${(stmtMemberCount.get(sub.channel_id, Date.now() - PID_STALE_MS) as { count: number }).count}`);
 
-      // Check channel mode: DM (2 members) vs. group (3+)
-      const freshThreshold = Date.now() - PID_STALE_MS;
-      const memberCount = (stmtMemberCount.get(sub.channel_id, freshThreshold) as { count: number }).count;
+      // DM detection: channel name matches "agentA,agentB" AND both named
+      // agents are actual members. This is structural (name-based) rather than
+      // count-based, so observers (e.g. REPL users) joining a DM channel
+      // don't flip it to group mode.
+      const dmMatch = DM_CHANNEL_RE.exec(sub.channel_name);
+      let isDmChannel = false;
+      if (dmMatch) {
+        const memberCheck = stmtDmMemberCheck.get(sub.channel_id, dmMatch[1]!, dmMatch[2]!) as { count: number };
+        isDmChannel = memberCheck.count === 2;
+      }
 
-      if (memberCount > 2) {
+      log(`${agentId} on ${sub.channel_name}: ${stats.count} unread, hwm=${hwm}, max_id=${stats.max_id}, isDm=${isDmChannel}`);
+
+      if (!isDmChannel) {
         // Group mode — check if ANY message in the batch targets this agent
         const batchMentions = stmtBatchMentions
           .all(sub.channel_id, hwm, stats.max_id, agentId) as { mentions: string }[];
@@ -132,7 +139,7 @@ export function startPolling(
         }
         if (!shouldNotify) continue;
       }
-      // DM mode (2 members) or passed group filter — proceed to notify
+      // DM mode or passed group filter — proceed to notify
 
       const latest = stmtLatest.get(stats.max_id) as {
         id: number; agent_id: string; content: string; mentions: string;
