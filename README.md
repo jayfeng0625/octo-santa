@@ -1,3 +1,9 @@
+---
+title: octo-santa
+summary: Local-first agent collaboration framework — messaging, brain, domain discovery, REPL. Quick start and full tool reference.
+tags: [overview, getting-started, tools, architecture]
+---
+
 # octo-santa
 
 A local-first agent framework that facilitates agentic workflows — between developers and between agents. No infrastructure required — just SQLite and Markdown files.

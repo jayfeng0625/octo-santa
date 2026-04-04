@@ -1,5 +1,5 @@
 import { readFileSync, existsSync, readdirSync } from "fs";
-import { join, resolve, normalize, relative, isAbsolute, sep } from "path";
+import { basename, join, resolve, normalize, relative, isAbsolute, sep } from "path";
 import { homedir } from "os";
 import { parse as parseYaml } from "yaml";
 import { z } from "zod";
@@ -74,33 +74,47 @@ function parseFrontmatter(content: string): { title: string; summary: string; ta
   }
 }
 
-export function scanBrainDocs(cwd: string, dirs: string[]): BrainDoc[] {
+function scanFile(cwd: string, absPath: string, docs: BrainDoc[]): void {
+  const content = readFileSync(absPath, "utf-8");
+  const fm = parseFrontmatter(content);
+  if (!fm) return;
+  const slug = basename(absPath).replace(/\.md$/, "");
+  docs.push({
+    slug,
+    path: `./${relative(cwd, absPath).replace(/\\/g, "/")}`,
+    title: fm.title,
+    summary: fm.summary,
+    tags: fm.tags,
+  });
+}
+
+export function scanBrainDocs(cwd: string, dirs?: string[], files?: string[]): BrainDoc[] {
   const docs: BrainDoc[] = [];
-  for (const dir of dirs) {
+  const seen = new Set<string>();
+  for (const dir of dirs ?? []) {
     const absDir = validateBrainDir(cwd, dir);
     if (!existsSync(absDir)) continue;
-    const files = readdirSync(absDir).filter(f => f.endsWith(".md")).sort();
-    for (const file of files) {
-      const content = readFileSync(join(absDir, file), "utf-8");
-      const fm = parseFrontmatter(content);
-      if (!fm) continue;
-      const slug = file.replace(/\.md$/, "");
-      docs.push({
-        slug,
-        path: `./${relative(cwd, join(absDir, file)).replace(/\\/g, "/")}`,
-        title: fm.title,
-        summary: fm.summary,
-        tags: fm.tags,
-      });
+    const dirFiles = readdirSync(absDir).filter(f => f.endsWith(".md")).sort();
+    for (const file of dirFiles) {
+      const absPath = join(absDir, file);
+      seen.add(absPath);
+      scanFile(cwd, absPath, docs);
     }
+  }
+  for (const file of files ?? []) {
+    const absPath = resolve(cwd, file);
+    if (escapesParent(cwd, absPath)) continue;
+    if (!existsSync(absPath) || !absPath.endsWith(".md")) continue;
+    if (seen.has(absPath)) continue; // already included via dirs
+    scanFile(cwd, absPath, docs);
   }
   return docs;
 }
 
 // Step 4: Brain read
 
-export function readBrainDoc(cwd: string, dirs: string[], slug: string): string {
-  for (const dir of dirs) {
+export function readBrainDoc(cwd: string, dirs: string[] | undefined, slug: string, files?: string[]): string {
+  for (const dir of dirs ?? []) {
     const absDir = validateBrainDir(cwd, dir);
     const filePath = join(absDir, `${slug}.md`);
     if (existsSync(filePath)) {
@@ -108,6 +122,13 @@ export function readBrainDoc(cwd: string, dirs: string[], slug: string): string 
         throw new Error(`slug "${slug}" escapes brain directory`);
       }
       return readFileSync(filePath, "utf-8");
+    }
+  }
+  for (const file of files ?? []) {
+    const absPath = resolve(cwd, file);
+    if (basename(absPath).replace(/\.md$/, "") === slug) {
+      if (escapesParent(cwd, absPath)) throw new Error(`file "${file}" escapes CWD`);
+      if (existsSync(absPath)) return readFileSync(absPath, "utf-8");
     }
   }
   throw new Error(`brain doc "${slug}" not found`);

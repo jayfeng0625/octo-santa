@@ -5,7 +5,8 @@ export interface DomainConfig {
 }
 
 export interface BrainConfig {
-  dirs: string[];
+  dirs?: string[];
+  files?: string[];
 }
 
 export interface OctoSantaConfig {

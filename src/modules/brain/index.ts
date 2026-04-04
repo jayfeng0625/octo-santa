@@ -27,11 +27,13 @@ const brain: OctoModule = {
       upsertDomain(getDb(), config, cwd);
     }
 
+    const hasBrain = config?.brain?.dirs || config?.brain?.files;
+
     server.registerTool("brain_index", {
-      description: "List brain documents for this repo (from .octo-santa/config.json brain.dirs)",
+      description: "List brain documents for this repo (from .octo-santa/config.json brain.dirs and brain.files)",
     }, async () => {
-      if (!config?.brain?.dirs) return { content: [{ type: "text" as const, text: "" }] };
-      const docs = scanBrainDocs(cwd, config.brain.dirs);
+      if (!hasBrain) return { content: [{ type: "text" as const, text: "" }] };
+      const docs = scanBrainDocs(cwd, config!.brain!.dirs, config!.brain!.files);
       if (docs.length === 0) return { content: [{ type: "text" as const, text: "" }] };
       const index = docs.map(d => `- [${d.path}](${d.slug}) — ${d.summary}`).join("\n");
       return { content: [{ type: "text" as const, text: index }] };
@@ -41,8 +43,8 @@ const brain: OctoModule = {
       description: "Read a brain document by slug",
       inputSchema: { slug: z.string().trim().min(1).describe("Document slug (filename without .md)") },
     }, async ({ slug }) => {
-      if (!config?.brain?.dirs) throw new Error("No brain dirs configured");
-      const content = readBrainDoc(cwd, config.brain.dirs, slug);
+      if (!hasBrain) throw new Error("No brain configured");
+      const content = readBrainDoc(cwd, config!.brain!.dirs, slug, config!.brain!.files);
       return { content: [{ type: "text" as const, text: content }] };
     });
 
