@@ -3,9 +3,46 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { startPolling, sendChannelNotification, type NotifyFn } from "./channel";
 import { openDb, modules, log } from "./bootstrap";
-import { unregisterAgent } from "./modules/messaging/tools";
+import { readConfig, scanBrainDocs } from "./modules/brain/tools";
 
 const db = openDb();
+
+function buildInstructions(): string {
+  let instructions =
+    'octo-santa messaging module is available. Call messaging_register with a ' +
+    'unique agent name (e.g. your role), then read or send on a channel to ' +
+    'start receiving push notifications. If the name is taken, pick a different one.\n\n' +
+    'Messages from other agents arrive as <channel source="octo-santa" ...> tags. ' +
+    'To acknowledge and see full history, call messaging_read_messages with the channel_name. ' +
+    'To reply, call messaging_send_message with the same channel_name.\n\n' +
+    'CHANNELS: Messages live in named channels. Use messaging_send_message to send and ' +
+    'messaging_read_messages to read. Channels are created on first use.\n\n' +
+    'MENTIONS:\n' +
+    '- @agent-name → only that agent gets notified\n' +
+    '- @all → all channel subscribers get notified\n' +
+    '- No mention → message is silent (recipients must read actively)\n\n' +
+    'Use @mentions to get attention. Messages without mentions are for ' +
+    'context/logging — recipients see them when they check the channel.\n\n' +
+    'DISCOVERY: Use messaging_list_agents to see known agents. ' +
+    'Use messaging_list_agents with active_only=true to see who is currently online. ' +
+    'Use messaging_list_members to see who is in a specific channel.';
+
+  const config = readConfig(process.cwd());
+
+  instructions += '\n\n' +
+    'BRAIN: ';
+  if (config?.domain) {
+    instructions += `This repo is domain "${config.domain.identifier}" (${config.domain.description}). `;
+  }
+  instructions +=
+    'Use brain_index to list local brain docs, brain_read to read one. ' +
+    'Use brain_shared_index/brain_shared_read for shared docs in ~/.octo-santa/brain/. ' +
+    'Use brain_find_expert to discover domain experts across repos. ' +
+    'Use brain_claim_domain after messaging_register to become a queryable expert. ' +
+    'Use messaging_direct_message to DM another agent.';
+
+  return instructions;
+}
 
 const mcpServer = new McpServer(
   { name: "octo-santa", version: "0.3.1" },
@@ -13,25 +50,7 @@ const mcpServer = new McpServer(
     capabilities: {
       experimental: { "claude/channel": {} },
     },
-    instructions:
-      'octo-santa messaging module is available. Call messaging_register with a ' +
-      'unique agent name (e.g. your role), then subscribe to or read a channel to ' +
-      'start receiving push notifications. If the name is taken, pick a different one.\n\n' +
-      'Messages from other agents arrive as <channel source="octo-santa" ...> tags. ' +
-      'To acknowledge and see full history, call messaging_read_messages with the channel_name. ' +
-      'To reply, call messaging_send_message with the same channel_name.\n\n' +
-      'CHANNELS: Messages live in named channels. Use messaging_send_message to send and ' +
-      'messaging_read_messages to read. Use messaging_subscribe to listen for push ' +
-      'notifications on a channel without reading existing messages. Channels are created on first use.\n\n' +
-      'MENTIONS:\n' +
-      '- @agent-name → only that agent gets notified\n' +
-      '- @all → all channel subscribers get notified\n' +
-      '- No mention → message is silent (recipients must read actively)\n\n' +
-      'Use @mentions to get attention. Messages without mentions are for ' +
-      'context/logging — recipients see them when they check the channel.\n\n' +
-      'DISCOVERY: Use messaging_list_agents to see known agents. ' +
-      'Use messaging_list_agents with active_only=true to see who is currently online. ' +
-      'Use messaging_list_members to see who is in a specific channel.',
+    instructions: buildInstructions(),
   }
 );
 
@@ -69,15 +88,29 @@ async function main() {
     try {
       await stopPolling?.();
     } finally {
-      if (boundAgentId) unregisterAgent(db, boundAgentId, process.pid);
+      if (boundAgentId) {
+        for (const mod of modules) {
+          mod.onDisconnect?.(db, boundAgentId, process.pid);
+        }
+      }
     }
   };
 
   // Bootstrap nudge — prompt agent to register before any tool call
-  await sendChannelNotification(mcpServer.server,
-    "octo-santa messaging module is available. Call messaging_register with a unique agent name, then read or send on a channel to start receiving push notifications.",
-    { type: "bootstrap" }
-  );
+  const config = readConfig(process.cwd());
+  let bootstrapMsg = "octo-santa messaging module is available. Call messaging_register with a unique agent name, then read or send on a channel to start receiving push notifications.";
+  if (config?.domain) {
+    bootstrapMsg += `\n\nBrain module active — this repo is domain "${config.domain.identifier}" (${config.domain.description}). ` +
+      "After messaging_register, call brain_claim_domain to become a queryable expert.";
+  }
+  if (config?.brain?.dirs) {
+    const brainDocs = scanBrainDocs(process.cwd(), config.brain.dirs);
+    if (brainDocs.length > 0) {
+      const index = brainDocs.map(d => `- [${d.path}](${d.slug}) — ${d.summary}`).join("\n");
+      bootstrapMsg += `\n\nBrain index:\n${index}`;
+    }
+  }
+  await sendChannelNotification(mcpServer.server, bootstrapMsg, { type: "bootstrap" });
 
   log("octo-santa MCP server running");
 }

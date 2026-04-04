@@ -3,7 +3,7 @@ import { describe, it, expect, afterEach } from "bun:test";
 import { existsSync, unlinkSync } from "fs";
 import { createDb, withRetrySync } from "../src/db";
 import { runMigrations } from "../src/migrations";
-import { messagingMigrations, sendMessage, readMessages } from "../src/modules/messaging/tools";
+import { messagingMigrations, sendMessage, readMessages, subscribeToChannel } from "../src/modules/messaging/tools";
 
 const TEST_DB = "/tmp/octo-santa-test-concurrency.sqlite";
 const projectRoot = process.cwd();
@@ -28,7 +28,10 @@ afterEach(() => {
 
 describe("concurrency", () => {
   it("handles concurrent writes without losing messages", async () => {
-    setupDb().close();
+    const setupDbRef = setupDb();
+    // Subscribe verifier before workers run so cursor starts at 0 (sees all messages)
+    subscribeToChannel(setupDbRef, "verifier", "stress-test");
+    setupDbRef.close();
 
     const NUM_AGENTS = 5;
     const MESSAGES_PER_AGENT = 20;
@@ -81,6 +84,7 @@ describe("concurrency", () => {
     // Verify all messages were written
     const db = createDb(TEST_DB);
     runMigrations(db, messagingMigrations);
+    // Cursor was already created at 0 before workers ran — just read
     const allMessages = readMessages(db, "verifier", "stress-test", { limit: 1000 });
     expect(allMessages).toHaveLength(NUM_AGENTS * MESSAGES_PER_AGENT);
 
@@ -133,6 +137,11 @@ describe("concurrency", () => {
     expect(names).toContain("messaging_001_initial_schema");
     expect(names).toContain("messaging_002_mentions_and_pid");
 
+    // Create verifier agent and cursor at 0 to read all messages from the beginning
+    const now = Date.now();
+    db.run("INSERT INTO agents (id, created_at, last_seen_at) VALUES (?, ?, ?) ON CONFLICT DO NOTHING", ["verifier", now, now]);
+    const channel = db.query("SELECT id FROM channels WHERE name = ?").get("init") as { id: number };
+    db.run("INSERT INTO cursors (agent_id, channel_id, last_read_message_id) VALUES (?, ?, 0) ON CONFLICT DO NOTHING", ["verifier", channel.id]);
     const messages = readMessages(db, "verifier", "init", { limit: 100 });
     expect(messages).toHaveLength(NUM_WORKERS);
 

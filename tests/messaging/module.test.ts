@@ -28,6 +28,7 @@ describe("messaging module", () => {
       "messaging_read_messages",
       "messaging_list_agents",
       "messaging_list_members",
+      "messaging_direct_message",
     ];
     expect(registeredTools.sort()).toEqual(expectedTools.sort());
   });

@@ -6,6 +6,7 @@ import {
   messagingMigrations,
   sendMessage,
   readMessages,
+  subscribeToChannel,
 } from "../../src/modules/messaging/tools";
 import type { Message } from "../../src/modules/messaging/types";
 
@@ -32,6 +33,8 @@ afterEach(() => {
 describe("readMessages", () => {
   it("returns all messages for a first-time reader", () => {
     const db = setupDb();
+    // agent-b subscribes before messages are sent (cursor at 0, sees all history)
+    subscribeToChannel(db, "agent-b", "general");
     sendMessage(db, "agent-a", "general", "Hello");
     sendMessage(db, "agent-a", "general", "World");
 
@@ -45,6 +48,7 @@ describe("readMessages", () => {
 
   it("advances cursor — second read returns only new messages", () => {
     const db = setupDb();
+    subscribeToChannel(db, "agent-b", "general");
     sendMessage(db, "agent-a", "general", "First");
     readMessages(db, "agent-b", "general");
 
@@ -58,6 +62,7 @@ describe("readMessages", () => {
 
   it("returns empty array when no new messages", () => {
     const db = setupDb();
+    subscribeToChannel(db, "agent-b", "general");
     sendMessage(db, "agent-a", "general", "Hello");
     readMessages(db, "agent-b", "general");
 
@@ -69,6 +74,8 @@ describe("readMessages", () => {
 
   it("each agent has independent cursors", () => {
     const db = setupDb();
+    subscribeToChannel(db, "agent-b", "general");
+    subscribeToChannel(db, "agent-c", "general");
     sendMessage(db, "agent-a", "general", "Hello");
 
     readMessages(db, "agent-b", "general");
@@ -81,6 +88,7 @@ describe("readMessages", () => {
 
   it("supports limit parameter", () => {
     const db = setupDb();
+    subscribeToChannel(db, "agent-b", "general");
     for (let i = 0; i < 10; i++) {
       sendMessage(db, "agent-a", "general", `Message ${i}`);
     }
@@ -94,6 +102,7 @@ describe("readMessages", () => {
 
   it("paginated reads advance cursor correctly across pages", () => {
     const db = setupDb();
+    subscribeToChannel(db, "agent-b", "general");
     for (let i = 0; i < 6; i++) {
       sendMessage(db, "agent-a", "general", `Message ${i}`);
     }
@@ -119,6 +128,7 @@ describe("readMessages", () => {
 
   it("supports before_id for history queries without advancing cursor", () => {
     const db = setupDb();
+    subscribeToChannel(db, "agent-b", "general");
     sendMessage(db, "agent-a", "general", "Old");
     const mid = sendMessage(db, "agent-a", "general", "Middle");
     sendMessage(db, "agent-a", "general", "New");
@@ -142,6 +152,8 @@ describe("readMessages", () => {
 
   it("sender's cursor is advanced so they don't re-read their own message", () => {
     const db = setupDb();
+    // agent-b subscribes first so they can see all messages from start
+    subscribeToChannel(db, "agent-b", "general");
     sendMessage(db, "agent-a", "general", "Hello from A");
 
     // Agent A should not see their own message when reading
@@ -177,6 +189,7 @@ describe("readMessages", () => {
     sendMessage(db, "agent-b", "general", "From B");
     sendMessage(db, "agent-a", "general", "From A again");
 
+    // agent-a has cursor via sendMessage, so before_id read works
     const history = readMessages(db, "agent-a", "general", { before_id: 999 });
     // Should only see B's message, not A's own
     expect(history).toHaveLength(1);
@@ -195,18 +208,29 @@ describe("readMessages", () => {
 
   it("creates cursor row on first read even if no messages exist", () => {
     const db = setupDb();
-    sendMessage(db, "agent-a", "general", "setup"); // creates channel
+    subscribeToChannel(db, "agent-b", "general");
+    sendMessage(db, "agent-a", "general", "setup"); // creates channel (already exists)
     readMessages(db, "agent-a", "general"); // agent-a reads (sees nothing, own messages filtered)
 
-    // Agent B reads — channel exists but no unread messages for B after B reads all
+    // Agent B reads and reads again
     readMessages(db, "agent-b", "general");
-    // Read again — should still be caught up
     readMessages(db, "agent-b", "general");
 
     const cursor = db.query(
       "SELECT * FROM cursors WHERE agent_id = ? AND channel_id = (SELECT id FROM channels WHERE name = ?)"
     ).get("agent-b", "general");
     expect(cursor).not.toBeNull();
+
+    db.close();
+  });
+
+  it("throws when reading without cursor (access control)", () => {
+    const db = setupDb();
+    // Create channel via sendMessage (agent-a has cursor)
+    sendMessage(db, "agent-a", "secret", "hello");
+
+    // agent-b has no cursor — should throw
+    expect(() => readMessages(db, "agent-b", "secret")).toThrow("Not a member");
 
     db.close();
   });

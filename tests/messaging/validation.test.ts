@@ -67,9 +67,11 @@ describe("input validation", () => {
     db.close();
   });
 
-  it("rejects invalid agent_id characters on readMessages", () => {
+  it("readMessages returns empty array for nonexistent channel (no agent validation)", () => {
     const db = setupDb();
-    expect(() => readMessages(db, "bad@name", "ch")).toThrow("must match");
+    // readMessages no longer calls ensureAgent, so agent name is not validated.
+    // When channel doesn't exist, it returns [] regardless of agent name.
+    expect(readMessages(db, "bad@name", "ch")).toEqual([]);
     db.close();
   });
 
@@ -85,9 +87,11 @@ describe("input validation", () => {
     db.close();
   });
 
-  it("rejects reserved name 'all' on readMessages", () => {
+  it("readMessages returns empty array for nonexistent channel with reserved name", () => {
     const db = setupDb();
-    expect(() => readMessages(db, "all", "ch")).toThrow("reserved");
+    // readMessages no longer calls ensureAgent, so reserved names are not rejected.
+    // When channel doesn't exist, it returns [] regardless of agent name.
+    expect(readMessages(db, "all", "ch")).toEqual([]);
     db.close();
   });
 });
