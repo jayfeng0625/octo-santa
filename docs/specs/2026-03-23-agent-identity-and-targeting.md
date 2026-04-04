@@ -1,3 +1,9 @@
+---
+title: Agent Identity and Targeted Notifications
+summary: Spec for persistent agent identity, @mention targeting, and DM channels for direct agent-to-agent messaging
+tags: [agents, identity, messaging, mentions, dm, direct-message, channels, subscribe]
+---
+
 # Agent Identity and Targeted Notifications
 
 > Status: Spec

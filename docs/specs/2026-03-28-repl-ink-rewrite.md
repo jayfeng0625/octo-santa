@@ -1,3 +1,9 @@
+---
+title: REPL Ink Rewrite
+summary: Rewrite of the human REPL using Ink (React for terminals) with raw mode for multiline input support
+tags: [repl, terminal, multiline, messaging]
+---
+
 # REPL Ink Rewrite
 
 Extract the REPL into `src/repl/` and rewrite the interactive UI with Ink (React for terminals).

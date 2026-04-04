@@ -1,3 +1,9 @@
+---
+title: Getting Started
+summary: Installation, MCP setup, agent connection, brain configuration, and REPL usage
+tags: [getting-started, setup, agents, brain, repl]
+---
+
 # Getting Started with octo-santa
 
 ## Prerequisites

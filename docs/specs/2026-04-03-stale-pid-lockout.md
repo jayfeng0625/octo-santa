@@ -1,3 +1,9 @@
+---
+title: Stale PID Lockout — Notification Delivery Failure
+summary: Bug spec and fix design for agents losing push notifications after process restart due to stale PID in DB
+tags: [agents, messaging, lifecycle, push-notifications, sqlite]
+---
+
 # Stale PID Lockout — Notification Delivery Failure
 
 **Issue:** [#2](https://github.com/jayfeng0625/octo-santa/issues/2)

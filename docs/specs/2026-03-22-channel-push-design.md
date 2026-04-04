@@ -1,3 +1,9 @@
+---
+title: Octo-Santa Channel Push Notifications — Design Spec
+summary: Design for automatic message push to agents using Claude Code Channels, replacing HTTP and stdio polling
+tags: [messaging, channels, push-notifications, polling, subscribe, mcp]
+---
+
 # Octo-Santa Channel Push Notifications — Design Spec
 
 ## Overview

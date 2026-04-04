@@ -1,3 +1,9 @@
+---
+title: Messaging Tools Improvement
+summary: Three-phase remediation of implicit side effects in messaging tools, adding explicit subscribe and channel management
+tags: [messaging, channels, subscribe, agents, mcp, dm, direct-message, mentions]
+---
+
 # Messaging Tools Improvement
 
 Remediation of implicit side effects in messaging tools, plus new tools

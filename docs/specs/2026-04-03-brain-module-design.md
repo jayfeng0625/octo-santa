@@ -1,3 +1,9 @@
+---
+title: Brain Module + Messaging DM Support
+summary: Cross-domain knowledge layer letting agents become queryable domain experts discoverable via DM
+tags: [brain, domain, knowledge, agents, dm, direct-message, messaging, mcp]
+---
+
 # Brain Module + Messaging DM Support
 
 Cross-domain knowledge layer for multi-repo agent collaboration. Agents
