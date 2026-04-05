@@ -39,7 +39,7 @@ bun install
   "mcpServers": {
     "octo-santa": {
       "command": "bun",
-      "args": ["run", "/absolute/path/to/octo-santa/src/mcp.ts"]
+      "args": ["run", "/absolute/path/to/octo-santa/src/main.ts"]
     }
   }
 }
