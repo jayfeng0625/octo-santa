@@ -5,8 +5,7 @@ adapters). The core domain defines interfaces; adapters implement them. Existing
 is preserved with accepted deviations documented in section 5.
 
 **Reference documents:**
-- [North star](../research/hexagonal-arch/north-star.md) — principles, resolved decisions
-- [Architecture overview](architecture.md) — runtime architecture and cross-cutting concerns
+- [Architecture overview](../architecture.md) — runtime architecture and cross-cutting concerns
 
 ---
 

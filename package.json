@@ -1,18 +1,19 @@
 {
   "name": "octo-santa",
   "description": "Local-first agent collaboration framework — messaging, channels, and an interactive REPL, all backed by SQLite",
-  "version": "0.6.0",
-  "module": "src/mcp.ts",
+  "version": "0.6.1",
+  "module": "src/main.ts",
   "type": "module",
   "scripts": {
-    "start": "bun run src/mcp.ts",
+    "start": "bun run src/main.ts",
     "build": "bun run scripts/build.ts",
     "build:mcp": "bun run scripts/build.ts mcp",
     "build:repl": "bun run scripts/build.ts repl",
-    "start:repl": "bun run src/repl/index.ts"
+    "start:repl": "bun run src/bin/repl.ts"
   },
   "devDependencies": {
-    "@types/bun": "latest"
+    "@types/bun": "latest",
+    "archunit": "^2.1.66"
   },
   "peerDependencies": {
     "typescript": "^5"
