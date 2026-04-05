@@ -1,7 +1,7 @@
 import { describe, it, expect, afterEach } from "bun:test";
 import { writeFileSync, mkdirSync } from "fs";
 import { join } from "path";
-import { scanBrainDocs, readBrainDoc } from "../../src/modules/brain/tools";
+import { FsBrainStore } from "../../src/storage/fs-brain-store/store";
 import { createTmpDirTracker } from "../helpers/tmpdir";
 
 const tmpDirs = createTmpDirTracker("index");
@@ -44,7 +44,8 @@ describe("scanBrainDocs", () => {
     const brainDir = join(tmpDir, "brain");
     writeBrainDoc(brainDir, "webhook-schemas.md", WEBHOOK_DOC);
 
-    const docs = scanBrainDocs(tmpDir, ["brain"]);
+    const store = new FsBrainStore(tmpDir, ["brain"]);
+    const docs = store.scanDocs();
     expect(docs).toHaveLength(1);
     expect(docs[0]!.slug).toBe("webhook-schemas");
     expect(docs[0]!.title).toBe("Webhook Schemas");
@@ -53,21 +54,27 @@ describe("scanBrainDocs", () => {
     expect(docs[0]!.path).toContain("webhook-schemas.md");
   });
 
-  it("skips files without frontmatter", () => {
+  it("includes files without frontmatter using derived defaults", () => {
     const tmpDir = makeTmpDir();
     const brainDir = join(tmpDir, "brain");
     writeBrainDoc(brainDir, "no-frontmatter.md", PLAIN_DOC);
     writeBrainDoc(brainDir, "webhook-schemas.md", WEBHOOK_DOC);
 
-    const docs = scanBrainDocs(tmpDir, ["brain"]);
-    expect(docs).toHaveLength(1);
-    expect(docs[0]!.slug).toBe("webhook-schemas");
+    const store = new FsBrainStore(tmpDir, ["brain"]);
+    const docs = store.scanDocs();
+    expect(docs).toHaveLength(2);
+    const plain = docs.find(d => d.slug === "no-frontmatter");
+    expect(plain).toBeDefined();
+    expect(plain!.title).toBe("no-frontmatter");
+    expect(plain!.summary).toBe("");
+    expect(plain!.tags).toEqual([]);
   });
 
   it("handles missing brain dir gracefully (returns empty array)", () => {
     const tmpDir = makeTmpDir();
     // Don't create the brain dir at all
-    const docs = scanBrainDocs(tmpDir, ["brain"]);
+    const store = new FsBrainStore(tmpDir, ["brain"]);
+    const docs = store.scanDocs();
     expect(docs).toEqual([]);
   });
 
@@ -78,7 +85,8 @@ describe("scanBrainDocs", () => {
     writeBrainDoc(brainDir1, "webhook-schemas.md", WEBHOOK_DOC);
     writeBrainDoc(brainDir2, "auth-flows.md", AUTH_DOC);
 
-    const docs = scanBrainDocs(tmpDir, ["brain", "knowledge"]);
+    const store = new FsBrainStore(tmpDir, ["brain", "knowledge"]);
+    const docs = store.scanDocs();
     expect(docs).toHaveLength(2);
     const slugs = docs.map(d => d.slug).sort();
     expect(slugs).toEqual(["auth-flows", "webhook-schemas"]);
@@ -86,35 +94,40 @@ describe("scanBrainDocs", () => {
 
   it("returns empty array when dirs list is empty", () => {
     const tmpDir = makeTmpDir();
-    const docs = scanBrainDocs(tmpDir, []);
+    const store = new FsBrainStore(tmpDir, []);
+    const docs = store.scanDocs();
     expect(docs).toEqual([]);
   });
 
   it("produces normalized path for 'brain' dir", () => {
     const tmpDir = makeTmpDir();
     writeBrainDoc(join(tmpDir, "brain"), "doc.md", `---\ntitle: T\nsummary: S\ntags: []\n---\n`);
-    const docs = scanBrainDocs(tmpDir, ["brain"]);
+    const store = new FsBrainStore(tmpDir, ["brain"]);
+    const docs = store.scanDocs();
     expect(docs[0]!.path).toBe("./brain/doc.md");
   });
 
   it("produces normalized path for './brain' dir", () => {
     const tmpDir = makeTmpDir();
     writeBrainDoc(join(tmpDir, "brain"), "doc.md", `---\ntitle: T\nsummary: S\ntags: []\n---\n`);
-    const docs = scanBrainDocs(tmpDir, ["./brain"]);
+    const store = new FsBrainStore(tmpDir, ["./brain"]);
+    const docs = store.scanDocs();
     expect(docs[0]!.path).toBe("./brain/doc.md");
   });
 
   it("produces normalized path for 'brain/' dir (trailing slash)", () => {
     const tmpDir = makeTmpDir();
     writeBrainDoc(join(tmpDir, "brain"), "doc.md", `---\ntitle: T\nsummary: S\ntags: []\n---\n`);
-    const docs = scanBrainDocs(tmpDir, ["brain/"]);
+    const store = new FsBrainStore(tmpDir, ["brain/"]);
+    const docs = store.scanDocs();
     expect(docs[0]!.path).toBe("./brain/doc.md");
   });
 
   it("produces normalized path for './brain/' dir", () => {
     const tmpDir = makeTmpDir();
     writeBrainDoc(join(tmpDir, "brain"), "doc.md", `---\ntitle: T\nsummary: S\ntags: []\n---\n`);
-    const docs = scanBrainDocs(tmpDir, ["./brain/"]);
+    const store = new FsBrainStore(tmpDir, ["./brain/"]);
+    const docs = store.scanDocs();
     expect(docs[0]!.path).toBe("./brain/doc.md");
   });
 
@@ -124,7 +137,8 @@ describe("scanBrainDocs", () => {
     writeBrainDoc(brainDir, "z-last.md", `---\ntitle: Z Last\nsummary: last\ntags: []\n---\n`);
     writeBrainDoc(brainDir, "a-first.md", `---\ntitle: A First\nsummary: first\ntags: []\n---\n`);
 
-    const docs = scanBrainDocs(tmpDir, ["brain"]);
+    const store = new FsBrainStore(tmpDir, ["brain"]);
+    const docs = store.scanDocs();
     expect(docs).toHaveLength(2);
     expect(docs[0]!.slug).toBe("a-first");
     expect(docs[1]!.slug).toBe("z-last");
@@ -137,7 +151,8 @@ describe("readBrainDoc", () => {
     const brainDir = join(tmpDir, "brain");
     writeBrainDoc(brainDir, "webhook-schemas.md", WEBHOOK_DOC);
 
-    const content = readBrainDoc(tmpDir, ["brain"], "webhook-schemas");
+    const store = new FsBrainStore(tmpDir, ["brain"]);
+    const content = store.readDoc("webhook-schemas");
     expect(content).toBe(WEBHOOK_DOC);
   });
 
@@ -146,7 +161,8 @@ describe("readBrainDoc", () => {
     const brainDir = join(tmpDir, "brain");
     writeBrainDoc(brainDir, "webhook-schemas.md", WEBHOOK_DOC);
 
-    expect(() => readBrainDoc(tmpDir, ["brain"], "nonexistent")).toThrow("not found");
+    const store = new FsBrainStore(tmpDir, ["brain"]);
+    expect(() => store.readDoc("nonexistent")).toThrow("not found");
   });
 
   it("searches across multiple dirs and finds doc in second dir", () => {
@@ -156,7 +172,8 @@ describe("readBrainDoc", () => {
     writeBrainDoc(brainDir1, "webhook-schemas.md", WEBHOOK_DOC);
     writeBrainDoc(brainDir2, "auth-flows.md", AUTH_DOC);
 
-    const content = readBrainDoc(tmpDir, ["brain", "knowledge"], "auth-flows");
+    const store = new FsBrainStore(tmpDir, ["brain", "knowledge"]);
+    const content = store.readDoc("auth-flows");
     expect(content).toBe(AUTH_DOC);
   });
 
@@ -167,12 +184,14 @@ describe("readBrainDoc", () => {
     writeBrainDoc(brainDir1, "shared.md", "first dir content");
     writeBrainDoc(brainDir2, "shared.md", "second dir content");
 
-    const content = readBrainDoc(tmpDir, ["brain", "knowledge"], "shared");
+    const store = new FsBrainStore(tmpDir, ["brain", "knowledge"]);
+    const content = store.readDoc("shared");
     expect(content).toBe("first dir content");
   });
 
   it("throws for empty dirs list", () => {
     const tmpDir = makeTmpDir();
-    expect(() => readBrainDoc(tmpDir, [], "any-slug")).toThrow("not found");
+    const store = new FsBrainStore(tmpDir, []);
+    expect(() => store.readDoc("any-slug")).toThrow("not found");
   });
 });

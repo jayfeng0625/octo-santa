@@ -1,5 +1,5 @@
 import { describe, it, expect } from "bun:test";
-import { validateAgentName, extractMentions } from "../../src/modules/messaging/tools";
+import { validateAgentName, extractMentions } from "../../src/core/utils";
 
 describe("validateAgentName", () => {
   it("accepts valid names", () => {

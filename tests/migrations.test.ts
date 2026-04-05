@@ -1,6 +1,6 @@
 import { describe, it, expect, afterEach } from "bun:test";
-import { createDb } from "../src/db";
-import { runMigrations, type Migration } from "../src/migrations";
+import { createDb } from "../src/storage/sqlite/db";
+import { runMigrations, type Migration } from "../src/storage/sqlite/migrations";
 import { cleanupDb, testDbPath } from "./helpers/db";
 
 const TEST_DB = testDbPath("migrations");

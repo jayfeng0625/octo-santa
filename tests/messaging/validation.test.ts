@@ -1,11 +1,16 @@
 import { describe, it, expect, afterEach } from "bun:test";
-import { messagingMigrations, registerAgent, createChannel, sendMessage, readMessages } from "../../src/modules/messaging/tools";
+import { allMigrations } from "../../src/storage/sqlite/migrations";
+import { createSqliteRepos } from "../../src/storage/sqlite";
+import { MessagingService } from "../../src/core/messaging/service";
 import { cleanupDb, testDbPath, setupTestDb } from "../helpers/db";
 
 const TEST_DB = testDbPath("validation");
 
-function setupDb() {
-  return setupTestDb(TEST_DB, messagingMigrations);
+function setup() {
+  const db = setupTestDb(TEST_DB, allMigrations);
+  const repos = createSqliteRepos(db);
+  const svc = new MessagingService(repos.agents, repos.channels, repos.messages, repos.cursors, process.pid);
+  return { db, svc };
 }
 
 afterEach(() => {
@@ -14,71 +19,71 @@ afterEach(() => {
 
 describe("input validation", () => {
   it("rejects empty agent_id", () => {
-    const db = setupDb();
-    expect(() => registerAgent(db, "")).toThrow();
+    const { db, svc } = setup();
+    expect(() => svc.register("")).toThrow();
     db.close();
   });
 
   it("rejects whitespace-only agent_id", () => {
-    const db = setupDb();
-    expect(() => registerAgent(db, "   ")).toThrow();
+    const { db, svc } = setup();
+    expect(() => svc.register("   ")).toThrow();
     db.close();
   });
 
   it("rejects empty channel name", () => {
-    const db = setupDb();
-    registerAgent(db, "agent-a");
-    expect(() => createChannel(db, "", "agent-a")).toThrow();
+    const { db, svc } = setup();
+    svc.register("agent-a");
+    expect(() => svc.createChannel("agent-a", "")).toThrow();
     db.close();
   });
 
   it("rejects empty message content", () => {
-    const db = setupDb();
-    expect(() => sendMessage(db, "agent-a", "general", "")).toThrow();
+    const { db, svc } = setup();
+    expect(() => svc.send("agent-a", "general", "")).toThrow();
     db.close();
   });
 
   it("rejects whitespace-only message content", () => {
-    const db = setupDb();
-    expect(() => sendMessage(db, "agent-a", "general", "   ")).toThrow();
+    const { db, svc } = setup();
+    expect(() => svc.send("agent-a", "general", "   ")).toThrow();
     db.close();
   });
 
   it("rejects invalid agent_id characters on createChannel", () => {
-    const db = setupDb();
-    expect(() => createChannel(db, "ch", "bad name")).toThrow("must match");
+    const { db, svc } = setup();
+    expect(() => svc.createChannel("bad name", "ch")).toThrow("must match");
     db.close();
   });
 
   it("rejects invalid agent_id characters on sendMessage", () => {
-    const db = setupDb();
-    expect(() => sendMessage(db, "bad.name", "ch", "test")).toThrow("must match");
+    const { db, svc } = setup();
+    expect(() => svc.send("bad.name", "ch", "test")).toThrow("must match");
     db.close();
   });
 
   it("readMessages rejects unregistered agent (requireRegistered validates agent name)", () => {
-    const db = setupDb();
+    const { db, svc } = setup();
     // requireRegistered calls validateAgentName, so invalid names throw before DB check
-    expect(() => readMessages(db, "bad@name", "ch")).toThrow("must match");
+    expect(() => svc.read("bad@name", "ch")).toThrow("must match");
     db.close();
   });
 
   it("rejects reserved name 'all' on createChannel", () => {
-    const db = setupDb();
-    expect(() => createChannel(db, "ch", "all")).toThrow("reserved");
+    const { db, svc } = setup();
+    expect(() => svc.createChannel("all", "ch")).toThrow("reserved");
     db.close();
   });
 
   it("rejects reserved name 'here' on sendMessage", () => {
-    const db = setupDb();
-    expect(() => sendMessage(db, "here", "ch", "test")).toThrow("reserved");
+    const { db, svc } = setup();
+    expect(() => svc.send("here", "ch", "test")).toThrow("reserved");
     db.close();
   });
 
   it("readMessages rejects reserved agent name 'all'", () => {
-    const db = setupDb();
+    const { db, svc } = setup();
     // requireRegistered runs validateAgentName which rejects reserved names
-    expect(() => readMessages(db, "all", "ch")).toThrow("reserved");
+    expect(() => svc.read("all", "ch")).toThrow("reserved");
     db.close();
   });
 });

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "bun:test";
-import { sanitize, formatMessage, agentColor } from "../../src/repl/renderer";
+import { sanitize, formatMessage, agentColor } from "../../src/transports/repl/renderer";
 
 describe("sanitize", () => {
   it("strips ANSI escape sequences", () => {
@@ -76,7 +76,7 @@ describe("formatMessage", () => {
 describe("expandTabs", () => {
   // Access via Renderer instance for testing
   it("expands tab to 4-space stops", async () => {
-    const r = new (await import("../../src/repl/renderer")).Renderer();
+    const r = new (await import("../../src/transports/repl/renderer")).Renderer();
     // @ts-ignore — accessing private for test
     expect(r.expandTabs("a\tb")).toBe("a   b"); // 'a' at col 0, tab to col 4
     // @ts-ignore

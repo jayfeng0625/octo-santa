@@ -1,16 +1,21 @@
 // tests/repl/app.test.ts
 import { describe, it, expect, afterEach } from "bun:test";
-import { messagingMigrations, sendMessage, registerAgent, createChannel } from "../../src/modules/messaging/tools";
-import { InputBuffer } from "../../src/repl/buffer";
-import { KeyParser } from "../../src/repl/keys";
-import { parseCommand, executeCommand, type ReplState } from "../../src/repl/commands";
-import { formatMessage } from "../../src/repl/renderer";
+import { allMigrations } from "../../src/storage/sqlite/migrations";
+import { createSqliteRepos } from "../../src/storage/sqlite";
+import { MessagingService } from "../../src/core/messaging/service";
+import { InputBuffer } from "../../src/transports/repl/buffer";
+import { KeyParser } from "../../src/transports/repl/keys";
+import { parseCommand, executeCommand, type ReplState } from "../../src/transports/repl/commands";
+import { formatMessage } from "../../src/transports/repl/renderer";
 import { cleanupDb, testDbPath, setupTestDb } from "../helpers/db";
 
 const TEST_DB = testDbPath("app");
 
-function setupDb() {
-  return setupTestDb(TEST_DB, messagingMigrations);
+function setup() {
+  const db = setupTestDb(TEST_DB, allMigrations);
+  const repos = createSqliteRepos(db);
+  const svc = new MessagingService(repos.agents, repos.channels, repos.messages, repos.cursors, process.pid);
+  return { db, svc, channelRepo: repos.channels };
 }
 
 afterEach(() => {
@@ -19,10 +24,10 @@ afterEach(() => {
 
 describe("REPL integration", () => {
   it("full send-receive cycle: buffer → keys → send → poll", () => {
-    const db = setupDb();
-    registerAgent(db, "jay");
-    registerAgent(db, "agent-a");
-    createChannel(db, "planning", "jay");
+    const { db, svc } = setup();
+    svc.register("jay");
+    svc.register("agent-a");
+    svc.createChannel("jay", "planning");
     const buffer = new InputBuffer();
     const parser = new KeyParser({ kittyEnabled: false });
 
@@ -35,11 +40,11 @@ describe("REPL integration", () => {
 
     // Submit
     const text = buffer.submit();
-    const msg = sendMessage(db, "jay", "planning", text);
+    const msg = svc.send("jay", "planning", text);
     expect(msg.content).toBe("hello");
 
     // Poll — another agent's message
-    sendMessage(db, "agent-a", "planning", "hey there");
+    svc.send("agent-a", "planning", "hey there");
 
     // Cursor must NOT be set to msg.id — that's the self-echo bug the spec warns about.
     // Set cursor to 0 so the poll picks up all non-self messages.
@@ -91,12 +96,12 @@ describe("REPL integration", () => {
   });
 
   it("/history includes own messages", () => {
-    const db = setupDb();
-    registerAgent(db, "jay");
-    registerAgent(db, "other");
-    createChannel(db, "planning", "jay");
-    sendMessage(db, "jay", "planning", "my own msg");
-    sendMessage(db, "other", "planning", "their msg");
+    const { db, svc, channelRepo } = setup();
+    svc.register("jay");
+    svc.register("other");
+    svc.createChannel("jay", "planning");
+    svc.send("jay", "planning", "my own msg");
+    svc.send("other", "planning", "their msg");
 
     const state: ReplState = {
       activeChannel: "planning",
@@ -105,19 +110,19 @@ describe("REPL integration", () => {
       agentId: "jay",
     };
 
-    const result = executeCommand({ name: "history", args: "10" }, db, state);
+    const result = executeCommand({ name: "history", args: "10" }, svc, channelRepo, state);
     expect(result.messages).toBeDefined();
     expect(result.messages!.some(m => m.content === "my own msg")).toBe(true);
     expect(result.messages!.some(m => m.content === "their msg")).toBe(true);
   });
 
   it("poll excludes self messages", () => {
-    const db = setupDb();
-    registerAgent(db, "jay");
-    registerAgent(db, "agent-a");
-    createChannel(db, "planning", "jay");
-    const m1 = sendMessage(db, "jay", "planning", "my message");
-    sendMessage(db, "agent-a", "planning", "their message");
+    const { db, svc } = setup();
+    svc.register("jay");
+    svc.register("agent-a");
+    svc.createChannel("jay", "planning");
+    const m1 = svc.send("jay", "planning", "my message");
+    svc.send("agent-a", "planning", "their message");
 
     const rows = db.query(
       `SELECT agent_id, content FROM messages m

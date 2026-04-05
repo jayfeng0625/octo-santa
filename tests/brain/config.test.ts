@@ -1,7 +1,7 @@
 import { describe, it, expect, afterEach } from "bun:test";
 import { writeFileSync, mkdirSync } from "fs";
 import { join } from "path";
-import { readConfig, validateBrainDir } from "../../src/modules/brain/tools";
+import { readConfig, validateBrainDir } from "../../src/storage/fs-brain-store/store";
 import { createTmpDirTracker } from "../helpers/tmpdir";
 
 const tmpDirs = createTmpDirTracker("config");

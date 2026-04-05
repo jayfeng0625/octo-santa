@@ -1,18 +1,17 @@
 import { describe, it, expect, afterEach } from "bun:test";
-import {
-  messagingMigrations,
-  registerAgent,
-  createChannel,
-  listChannels,
-} from "../../src/modules/messaging/tools";
+import { allMigrations } from "../../src/storage/sqlite/migrations";
+import { createSqliteRepos } from "../../src/storage/sqlite";
+import { MessagingService } from "../../src/core/messaging/service";
 import { cleanupDb, testDbPath, setupTestDb } from "../helpers/db";
 
 const TEST_DB = testDbPath("channels");
 
-function setupDb() {
-  const db = setupTestDb(TEST_DB, messagingMigrations);
-  registerAgent(db, "octo-santa");
-  return db;
+function setup() {
+  const db = setupTestDb(TEST_DB, allMigrations);
+  const repos = createSqliteRepos(db);
+  const svc = new MessagingService(repos.agents, repos.channels, repos.messages, repos.cursors, process.pid);
+  svc.register("octo-santa");
+  return { db, svc };
 }
 
 afterEach(() => {
@@ -21,8 +20,8 @@ afterEach(() => {
 
 describe("createChannel", () => {
   it("creates a new channel", () => {
-    const db = setupDb();
-    const channel = createChannel(db, "coordination", "octo-santa");
+    const { db, svc } = setup();
+    const channel = svc.createChannel("octo-santa", "coordination");
 
     expect(channel.name).toBe("coordination");
     expect(channel.created_by).toBe("octo-santa");
@@ -32,9 +31,9 @@ describe("createChannel", () => {
   });
 
   it("is idempotent — returns existing channel on duplicate name", () => {
-    const db = setupDb();
-    const first = createChannel(db, "coordination", "octo-santa");
-    const second = createChannel(db, "coordination", "octo-santa");
+    const { db, svc } = setup();
+    const first = svc.createChannel("octo-santa", "coordination");
+    const second = svc.createChannel("octo-santa", "coordination");
 
     expect(second.id).toBe(first.id);
     expect(second.name).toBe(first.name);
@@ -43,17 +42,17 @@ describe("createChannel", () => {
   });
 
   it("throws when creating before registering", () => {
-    const db = setupDb();
+    const { db, svc } = setup();
 
-    expect(() => createChannel(db, "frontend", "unregistered-agent")).toThrow(
+    expect(() => svc.createChannel("unregistered-agent", "frontend")).toThrow(
       `Agent "unregistered-agent" must call messaging_register before using messaging tools`
     );
     db.close();
   });
 
   it("does not auto-subscribe the creator (no cursor created)", () => {
-    const db = setupDb();
-    createChannel(db, "no-cursor-ch", "octo-santa");
+    const { db, svc } = setup();
+    svc.createChannel("octo-santa", "no-cursor-ch");
 
     const channel = db.query("SELECT id FROM channels WHERE name = ?").get("no-cursor-ch") as { id: number };
     const cursor = db.query(
@@ -67,17 +66,17 @@ describe("createChannel", () => {
 
 describe("listChannels", () => {
   it("returns empty list when no channels exist", () => {
-    const db = setupDb();
-    expect(listChannels(db)).toEqual([]);
+    const { db, svc } = setup();
+    expect(svc.listChannels()).toEqual([]);
     db.close();
   });
 
   it("returns all channels", () => {
-    const db = setupDb();
-    createChannel(db, "frontend", "octo-santa");
-    createChannel(db, "backend", "octo-santa");
+    const { db, svc } = setup();
+    svc.createChannel("octo-santa", "frontend");
+    svc.createChannel("octo-santa", "backend");
 
-    const channels = listChannels(db);
+    const channels = svc.listChannels();
     expect(channels).toHaveLength(2);
     expect(channels.map((c) => c.name).sort()).toEqual(["backend", "frontend"]);
 

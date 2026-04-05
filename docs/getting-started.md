@@ -77,7 +77,7 @@ Same format — makes octo-santa available to all projects.
 During development, run from source instead of the build:
 
 ```bash
-claude mcp add octo-santa -- bun run /path/to/octo-santa/src/mcp.ts
+claude mcp add octo-santa -- bun run /path/to/octo-santa/src/main.ts
 ```
 
 ### Configuration Options

@@ -1,7 +1,9 @@
 import { describe, it, expect, afterEach } from "bun:test";
 import { cleanupDb, testDbPath, setupTestDb } from "../helpers/db";
-import messaging from "../../src/modules/messaging";
-import { messagingMigrations } from "../../src/modules/messaging/tools";
+import { allMigrations } from "../../src/storage/sqlite/migrations";
+import { createSqliteRepos } from "../../src/storage/sqlite";
+import { MessagingService } from "../../src/core/messaging/service";
+import { registerMessagingTools } from "../../src/transports/mcp-stdio/adapter";
 
 const TEST_DB = testDbPath("binding");
 
@@ -11,7 +13,9 @@ afterEach(() => {
 
 describe("agent binding enforcement", () => {
   function setup() {
-    const db = setupTestDb(TEST_DB, messagingMigrations);
+    const db = setupTestDb(TEST_DB, allMigrations);
+    const repos = createSqliteRepos(db);
+    const svc = new MessagingService(repos.agents, repos.channels, repos.messages, repos.cursors, process.pid);
 
     const handlers: Record<string, (...args: any[]) => Promise<any>> = {};
     const mockServer = {
@@ -30,7 +34,7 @@ describe("agent binding enforcement", () => {
       };
     }
 
-    messaging.registerTools(mockServer, () => db, onAgentId);
+    registerMessagingTools(mockServer, svc, onAgentId);
     return { db, handlers };
   }
 

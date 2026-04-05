@@ -1,15 +1,19 @@
 // tests/concurrency.test.ts
 import { describe, it, expect, afterEach } from "bun:test";
 import { cleanupDb, testDbPath, setupTestDb } from "./helpers/db";
-import { createDb, withRetrySync } from "../src/db";
-import { runMigrations } from "../src/migrations";
-import { messagingMigrations, registerAgent, createChannel, sendMessage, readMessages, subscribe } from "../src/modules/messaging/tools";
+import { createDb, withRetrySync } from "../src/storage/sqlite/db";
+import { runMigrations, allMigrations } from "../src/storage/sqlite/migrations";
+import { createSqliteRepos } from "../src/storage/sqlite";
+import { MessagingService } from "../src/core/messaging/service";
 
 const TEST_DB = testDbPath("concurrency");
 const projectRoot = process.cwd();
 
-function setupDb() {
-  return setupTestDb(TEST_DB, messagingMigrations);
+function setup() {
+  const db = setupTestDb(TEST_DB, allMigrations);
+  const repos = createSqliteRepos(db);
+  const svc = new MessagingService(repos.agents, repos.channels, repos.messages, repos.cursors, process.pid);
+  return { db, svc };
 }
 
 afterEach(() => {
@@ -18,11 +22,11 @@ afterEach(() => {
 
 describe("concurrency", () => {
   it("handles concurrent writes without losing messages", async () => {
-    const setupDbRef = setupDb();
+    const { db: setupDbRef, svc } = setup();
     // Subscribe verifier before workers run so cursor starts at 0 (sees all messages)
-    registerAgent(setupDbRef, "verifier");
-    createChannel(setupDbRef, "stress-test", "verifier");
-    subscribe(setupDbRef, "verifier", "stress-test");
+    svc.register("verifier");
+    svc.createChannel("verifier", "stress-test");
+    svc.subscribe("verifier", "stress-test");
     setupDbRef.close();
 
     const NUM_AGENTS = 5;
@@ -31,20 +35,23 @@ describe("concurrency", () => {
     // Spawn child processes that each write messages
     // Use absolute paths since workers run from /tmp
     const workerScript = `
-      import { createDb } from "${projectRoot}/src/db";
-      import { runMigrations } from "${projectRoot}/src/migrations";
-      import { messagingMigrations, registerAgent, sendMessage } from "${projectRoot}/src/modules/messaging/tools";
+      import { createDb } from "${projectRoot}/src/storage/sqlite/db";
+      import { runMigrations, allMigrations } from "${projectRoot}/src/storage/sqlite/migrations";
+      import { createSqliteRepos } from "${projectRoot}/src/storage/sqlite";
+      import { MessagingService } from "${projectRoot}/src/core/messaging/service";
 
       const db = createDb("${TEST_DB}");
-      runMigrations(db, messagingMigrations);
+      runMigrations(db, allMigrations);
+      const repos = createSqliteRepos(db);
+      const svc = new MessagingService(repos.agents, repos.channels, repos.messages, repos.cursors, process.pid);
 
       const agentId = process.argv[2];
       const count = parseInt(process.argv[3]);
 
       // Register before sending (channel already created by verifier)
-      registerAgent(db, agentId);
+      svc.register(agentId);
       for (let i = 0; i < count; i++) {
-        sendMessage(db, agentId, "stress-test", \`Message \${i} from \${agentId}\`);
+        svc.send(agentId, "stress-test", \`Message \${i} from \${agentId}\`);
       }
       db.close();
     `;
@@ -77,9 +84,11 @@ describe("concurrency", () => {
 
     // Verify all messages were written
     const db = createDb(TEST_DB);
-    runMigrations(db, messagingMigrations);
+    runMigrations(db, allMigrations);
+    const repos = createSqliteRepos(db);
+    const verifySvc = new MessagingService(repos.agents, repos.channels, repos.messages, repos.cursors, process.pid);
     // Cursor was already created at 0 before workers ran — just read
-    const allMessages = readMessages(db, "verifier", "stress-test", { limit: 1000 });
+    const allMessages = verifySvc.read("verifier", "stress-test", { limit: 1000 });
     expect(allMessages).toHaveLength(NUM_AGENTS * MESSAGES_PER_AGENT);
 
     db.close();
@@ -89,16 +98,19 @@ describe("concurrency", () => {
     cleanupDb(TEST_DB);
 
     const workerScript = `
-      import { createDb } from "${projectRoot}/src/db";
-      import { runMigrations } from "${projectRoot}/src/migrations";
-      import { messagingMigrations, registerAgent, createChannel, sendMessage } from "${projectRoot}/src/modules/messaging/tools";
+      import { createDb } from "${projectRoot}/src/storage/sqlite/db";
+      import { runMigrations, allMigrations } from "${projectRoot}/src/storage/sqlite/migrations";
+      import { createSqliteRepos } from "${projectRoot}/src/storage/sqlite";
+      import { MessagingService } from "${projectRoot}/src/core/messaging/service";
 
       const db = createDb("${TEST_DB}");
-      runMigrations(db, messagingMigrations);
+      runMigrations(db, allMigrations);
+      const repos = createSqliteRepos(db);
+      const svc = new MessagingService(repos.agents, repos.channels, repos.messages, repos.cursors, process.pid);
       const agentId = process.argv[2];
-      registerAgent(db, agentId);
-      createChannel(db, "init", agentId); // idempotent — one winner creates it
-      sendMessage(db, agentId, "init", "ready");
+      svc.register(agentId);
+      svc.createChannel(agentId, "init"); // idempotent — one winner creates it
+      svc.send(agentId, "init", "ready");
       db.close();
     `;
 
@@ -135,10 +147,12 @@ describe("concurrency", () => {
     expect(names).toContain("messaging_002_mentions_and_pid");
 
     // Register verifier with proper PID and create cursor at 0 to read all messages
-    registerAgent(db, "verifier");
+    const repos = createSqliteRepos(db);
+    const verifySvc = new MessagingService(repos.agents, repos.channels, repos.messages, repos.cursors, process.pid);
+    verifySvc.register("verifier");
     const channel = db.query("SELECT id FROM channels WHERE name = ?").get("init") as { id: number };
     db.run("INSERT INTO cursors (agent_id, channel_id, last_read_message_id) VALUES (?, ?, 0) ON CONFLICT DO NOTHING", ["verifier", channel.id]);
-    const messages = readMessages(db, "verifier", "init", { limit: 100 });
+    const messages = verifySvc.read("verifier", "init", { limit: 100 });
     expect(messages).toHaveLength(NUM_WORKERS);
 
     db.close();
@@ -147,14 +161,14 @@ describe("concurrency", () => {
 
 describe("withRetrySync under contention", () => {
   it("recovers when a lock holder releases mid-retry", async () => {
-    const db = setupDb();
+    const { db } = setup();
 
     // withRetrySync uses Bun.sleepSync (fully synchronous), so setTimeout cannot
     // fire while it is retrying. Instead, spawn a subprocess that holds an
     // EXCLUSIVE lock for 300ms then releases it — the main process retries
     // and succeeds once the lock is freed.
     const lockHolderScript = `
-      import { createDb } from "${projectRoot}/src/db";
+      import { createDb } from "${projectRoot}/src/storage/sqlite/db";
       const blocker = createDb("${TEST_DB}");
       blocker.run("BEGIN EXCLUSIVE");
       Bun.sleepSync(300);

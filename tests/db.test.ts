@@ -1,6 +1,6 @@
 import { describe, it, expect, afterEach } from "bun:test";
 import { existsSync } from "fs";
-import { createDb } from "../src/db";
+import { createDb } from "../src/storage/sqlite/db";
 import { cleanupDb, testDbPath } from "./helpers/db";
 
 const TEST_DB = testDbPath("db");
@@ -36,7 +36,7 @@ describe("createDb", () => {
   });
 });
 
-import { withRetrySync } from "../src/db";
+import { withRetrySync } from "../src/storage/sqlite/db";
 
 describe("withRetrySync", () => {
   it("returns the result on success", () => {

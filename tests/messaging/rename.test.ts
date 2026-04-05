@@ -1,18 +1,17 @@
 import { describe, it, expect, afterEach } from "bun:test";
-import {
-  messagingMigrations,
-  registerAgent,
-  createChannel,
-  subscribe,
-  renameChannel,
-} from "../../src/modules/messaging/tools";
-import type { Message } from "../../src/modules/messaging/types";
+import { allMigrations } from "../../src/storage/sqlite/migrations";
+import { createSqliteRepos } from "../../src/storage/sqlite";
+import { MessagingService } from "../../src/core/messaging/service";
+import type { Message } from "../../src/core/messaging/types";
 import { cleanupDb, testDbPath, setupTestDb } from "../helpers/db";
 
 const TEST_DB = testDbPath("rename");
 
-function setupDb() {
-  return setupTestDb(TEST_DB, messagingMigrations);
+function setup() {
+  const db = setupTestDb(TEST_DB, allMigrations);
+  const repos = createSqliteRepos(db);
+  const svc = new MessagingService(repos.agents, repos.channels, repos.messages, repos.cursors, process.pid);
+  return { db, svc };
 }
 
 afterEach(() => {
@@ -21,12 +20,12 @@ afterEach(() => {
 
 describe("renameChannel", () => {
   it("member renames channel — success, name updated", () => {
-    const db = setupDb();
-    registerAgent(db, "alice");
-    createChannel(db, "old-name", "alice");
-    subscribe(db, "alice", "old-name");
+    const { db, svc } = setup();
+    svc.register("alice");
+    svc.createChannel("alice", "old-name");
+    svc.subscribe("alice", "old-name");
 
-    const result = renameChannel(db, "alice", "old-name", "new-name");
+    const result = svc.renameChannel("alice", "old-name", "new-name");
 
     expect(result.name).toBe("new-name");
     expect(result.id).toBeGreaterThan(0);
@@ -44,13 +43,13 @@ describe("renameChannel", () => {
   });
 
   it("non-member rename throws an error", () => {
-    const db = setupDb();
-    registerAgent(db, "alice");
-    registerAgent(db, "bob");
-    createChannel(db, "my-channel", "alice");
-    subscribe(db, "alice", "my-channel");
+    const { db, svc } = setup();
+    svc.register("alice");
+    svc.register("bob");
+    svc.createChannel("alice", "my-channel");
+    svc.subscribe("alice", "my-channel");
 
-    expect(() => renameChannel(db, "bob", "my-channel", "renamed")).toThrow(
+    expect(() => svc.renameChannel("bob", "my-channel", "renamed")).toThrow(
       `Not a member of channel "my-channel"`
     );
 
@@ -58,14 +57,14 @@ describe("renameChannel", () => {
   });
 
   it("new name already exists throws an error", () => {
-    const db = setupDb();
-    registerAgent(db, "alice");
-    createChannel(db, "channel-a", "alice");
-    subscribe(db, "alice", "channel-a");
-    createChannel(db, "channel-b", "alice");
-    subscribe(db, "alice", "channel-b");
+    const { db, svc } = setup();
+    svc.register("alice");
+    svc.createChannel("alice", "channel-a");
+    svc.subscribe("alice", "channel-a");
+    svc.createChannel("alice", "channel-b");
+    svc.subscribe("alice", "channel-b");
 
-    expect(() => renameChannel(db, "alice", "channel-a", "channel-b")).toThrow(
+    expect(() => svc.renameChannel("alice", "channel-a", "channel-b")).toThrow(
       `Channel "channel-b" already exists`
     );
 
@@ -73,10 +72,10 @@ describe("renameChannel", () => {
   });
 
   it("channel not found throws an error", () => {
-    const db = setupDb();
-    registerAgent(db, "alice");
+    const { db, svc } = setup();
+    svc.register("alice");
 
-    expect(() => renameChannel(db, "alice", "nonexistent", "new-name")).toThrow(
+    expect(() => svc.renameChannel("alice", "nonexistent", "new-name")).toThrow(
       `Channel "nonexistent" not found`
     );
 
@@ -84,15 +83,15 @@ describe("renameChannel", () => {
   });
 
   it("unregistered agent throws an error", () => {
-    const db = setupDb();
-    // alice is not registered (no registerAgent call)
+    const { db, svc } = setup();
+    // alice is not registered (no register call)
     // We need to create a channel and cursor via another agent first
-    registerAgent(db, "bob");
-    createChannel(db, "some-channel", "bob");
-    subscribe(db, "bob", "some-channel");
+    svc.register("bob");
+    svc.createChannel("bob", "some-channel");
+    svc.subscribe("bob", "some-channel");
 
     // alice doesn't exist in agents table at all — requireRegistered should throw
-    expect(() => renameChannel(db, "alice", "some-channel", "renamed")).toThrow(
+    expect(() => svc.renameChannel("alice", "some-channel", "renamed")).toThrow(
       `Agent "alice" must call messaging_register before using messaging tools`
     );
 
@@ -100,12 +99,12 @@ describe("renameChannel", () => {
   });
 
   it("rename sends @all notification message to channel members", () => {
-    const db = setupDb();
-    registerAgent(db, "alice");
-    createChannel(db, "old-name", "alice");
-    subscribe(db, "alice", "old-name");
+    const { db, svc } = setup();
+    svc.register("alice");
+    svc.createChannel("alice", "old-name");
+    svc.subscribe("alice", "old-name");
 
-    renameChannel(db, "alice", "old-name", "new-name");
+    svc.renameChannel("alice", "old-name", "new-name");
 
     // Look up the channel by new name
     const channel = db.query("SELECT id FROM channels WHERE name = ?").get("new-name") as { id: number };
@@ -118,12 +117,12 @@ describe("renameChannel", () => {
   });
 
   it("notification message content includes old and new name", () => {
-    const db = setupDb();
-    registerAgent(db, "alice");
-    createChannel(db, "project-alpha", "alice");
-    subscribe(db, "alice", "project-alpha");
+    const { db, svc } = setup();
+    svc.register("alice");
+    svc.createChannel("alice", "project-alpha");
+    svc.subscribe("alice", "project-alpha");
 
-    renameChannel(db, "alice", "project-alpha", "project-beta");
+    svc.renameChannel("alice", "project-alpha", "project-beta");
 
     const channel = db.query("SELECT id FROM channels WHERE name = ?").get("project-beta") as { id: number };
     const messages = db.query("SELECT * FROM messages WHERE channel_id = ?").all(channel.id) as Message[];
@@ -136,12 +135,12 @@ describe("renameChannel", () => {
   });
 
   it("empty new name throws an error", () => {
-    const db = setupDb();
-    registerAgent(db, "alice");
-    createChannel(db, "my-channel", "alice");
-    subscribe(db, "alice", "my-channel");
+    const { db, svc } = setup();
+    svc.register("alice");
+    svc.createChannel("alice", "my-channel");
+    svc.subscribe("alice", "my-channel");
 
-    expect(() => renameChannel(db, "alice", "my-channel", "   ")).toThrow(
+    expect(() => svc.renameChannel("alice", "my-channel", "   ")).toThrow(
       "new channel name must not be empty"
     );
 

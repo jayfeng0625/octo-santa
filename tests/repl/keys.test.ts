@@ -1,5 +1,5 @@
 import { describe, it, expect } from "bun:test";
-import { KeyParser, type Action } from "../../src/repl/keys";
+import { KeyParser, type Action } from "../../src/transports/repl/keys";
 
 describe("KeyParser", () => {
   describe("printable characters", () => {

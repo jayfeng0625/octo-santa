@@ -1,7 +1,7 @@
 import { existsSync, unlinkSync } from "fs";
 import type { Database } from "bun:sqlite";
-import { createDb } from "../../src/db";
-import { runMigrations, type Migration } from "../../src/migrations";
+import { createDb } from "../../src/storage/sqlite/db";
+import { runMigrations, type Migration } from "../../src/storage/sqlite/migrations";
 
 export function cleanupDb(path: string) {
   for (const suffix of ["", "-wal", "-shm"]) {
