@@ -1,0 +1,623 @@
+import { describe, it, expect, afterEach } from "bun:test";
+import { MessagingService } from "../../../src/core/messaging/service";
+import { createSqliteRepos } from "../../../src/storage/sqlite";
+import { createDb } from "../../../src/storage/sqlite/db";
+import { runMigrations, allMigrations } from "../../../src/storage/sqlite/migrations";
+import { cleanupDb } from "../../helpers/db";
+
+const TEST_DB = `/tmp/octo-santa-test-hex-messaging-svc-${process.pid}.sqlite`;
+
+function setup() {
+  cleanupDb(TEST_DB);
+  const db = createDb(TEST_DB);
+  runMigrations(db, allMigrations);
+  const repos = createSqliteRepos(db);
+  const svc = new MessagingService(
+    repos.agents,
+    repos.channels,
+    repos.messages,
+    repos.cursors,
+    process.pid
+  );
+  return { db, repos, svc };
+}
+
+afterEach(() => cleanupDb(TEST_DB));
+
+describe("MessagingService", () => {
+  // ── register + send + read flow ────────────────────────────────
+
+  describe("register + send + read flow", () => {
+    it("registers, creates channel, sends, and reads messages", () => {
+      const { svc } = setup();
+
+      const agent = svc.register("alice");
+      expect(agent.id).toBe("alice");
+      expect(agent.pid).toBe(process.pid);
+
+      const channel = svc.createChannel("alice", "general");
+      expect(channel.name).toBe("general");
+
+      svc.subscribe("alice", "general");
+
+      // Register bob and have bob send a message
+      svc.register("bob");
+      svc.subscribe("bob", "general");
+      const msg = svc.send("bob", "general", "hello @alice");
+      expect(msg.agent_id).toBe("bob");
+      expect(msg.content).toBe("hello @alice");
+
+      // Alice reads — should see bob's message
+      const messages = svc.read("alice", "general");
+      expect(messages.length).toBe(1);
+      expect(messages[0]!.content).toBe("hello @alice");
+      expect(messages[0]!.agent_id).toBe("bob");
+
+      // Second read — no new messages
+      const messages2 = svc.read("alice", "general");
+      expect(messages2.length).toBe(0);
+    });
+  });
+
+  // ── send throws when not registered ────────────────────────────
+
+  describe("send throws when not registered", () => {
+    it("throws if agent has not registered", () => {
+      const { svc } = setup();
+      svc.register("alice");
+      svc.createChannel("alice", "general");
+
+      expect(() => svc.send("bob", "general", "hi")).toThrow(
+        'Agent "bob" must call messaging_register before using messaging tools'
+      );
+    });
+  });
+
+  // ── directMessage ──────────────────────────────────────────────
+
+  describe("directMessage", () => {
+    it("creates DM channel and sends message", () => {
+      const { svc } = setup();
+
+      svc.register("alice");
+      svc.register("bob");
+
+      const msg = svc.directMessage("alice", "bob", "hey bob");
+      expect(msg.agent_id).toBe("alice");
+      expect(msg.content).toBe("hey bob");
+
+      // Channel name should be sorted
+      const channels = svc.listChannels();
+      const dm = channels.find((c) => c.name === "alice,bob");
+      expect(dm).toBeDefined();
+
+      // Bob can read the DM
+      const bobMessages = svc.read("bob", "alice,bob");
+      expect(bobMessages.length).toBe(1);
+      expect(bobMessages[0]!.content).toBe("hey bob");
+    });
+
+    it("rejects self-DM", () => {
+      const { svc } = setup();
+      svc.register("alice");
+
+      expect(() =>
+        svc.directMessage("alice", "alice", "talking to myself")
+      ).toThrow("Cannot DM yourself");
+    });
+
+    it("rejects DM to non-existent agent", () => {
+      const { svc } = setup();
+      svc.register("alice");
+
+      expect(() =>
+        svc.directMessage("alice", "ghost", "hello?")
+      ).toThrow('Agent "ghost" not found');
+    });
+
+    it("rejects empty content", () => {
+      const { svc } = setup();
+      svc.register("alice");
+      svc.register("bob");
+
+      expect(() =>
+        svc.directMessage("alice", "bob", "   ")
+      ).toThrow("message content must not be empty");
+    });
+  });
+
+  // ── subscribe enforces DM access ──────────────────────────────
+
+  describe("subscribe enforces DM access", () => {
+    it("rejects third-party subscription to DM channel", () => {
+      const { svc } = setup();
+
+      svc.register("alice");
+      svc.register("bob");
+      svc.register("eve");
+
+      svc.directMessage("alice", "bob", "secret");
+
+      expect(() => svc.subscribe("eve", "alice,bob")).toThrow(
+        'DM channel "alice,bob" is private to alice and bob'
+      );
+    });
+
+    it("allows DM participant to subscribe", () => {
+      const { svc } = setup();
+
+      svc.register("alice");
+      svc.register("bob");
+
+      svc.directMessage("alice", "bob", "hello");
+
+      // Should not throw — alice is a participant
+      expect(() => svc.subscribe("alice", "alice,bob")).not.toThrow();
+    });
+  });
+
+  // ── listAgents filters active ──────────────────────────────────
+
+  describe("listAgents", () => {
+    it("filters to active agents by default", () => {
+      const { svc } = setup();
+
+      svc.register("alice");
+      svc.register("bob");
+
+      const active = svc.listAgents();
+      expect(active.length).toBe(2);
+      expect(active.map((a) => a.id).sort()).toEqual(["alice", "bob"]);
+    });
+
+    it("includes stale agents when requested", () => {
+      const { svc } = setup();
+
+      svc.register("alice");
+      svc.register("bob");
+      svc.unregister("bob");
+
+      const all = svc.listAgents(true);
+      expect(all.length).toBe(2);
+
+      const active = svc.listAgents();
+      // bob has null PID after unregister, so not active
+      expect(active.length).toBe(1);
+      expect(active[0]!.id).toBe("alice");
+    });
+  });
+
+  // ── renameChannel ──────────────────────────────────────────────
+
+  describe("renameChannel", () => {
+    it("renames a channel and posts announcement", () => {
+      const { svc } = setup();
+
+      svc.register("alice");
+      svc.register("bob");
+      const ch = svc.createChannel("alice", "old-name");
+      svc.subscribe("alice", "old-name");
+      svc.subscribe("bob", "old-name");
+
+      const renamed = svc.renameChannel("alice", "old-name", "new-name");
+      expect(renamed.name).toBe("new-name");
+      expect(renamed.id).toBe(ch.id);
+
+      // The announcement message should be readable by other members
+      // (readForwardAndAdvance excludes the reader's own messages,
+      // so bob reads the announcement posted by alice)
+      const messages = svc.read("bob", "new-name");
+      expect(messages.length).toBe(1);
+      expect(messages[0]!.content).toContain("renamed from");
+    });
+
+    it("rename announcement is visible to the renaming agent", () => {
+      const { svc } = setup();
+
+      svc.register("alice");
+      const ch = svc.createChannel("alice", "old-name");
+      svc.subscribe("alice", "old-name");
+
+      svc.renameChannel("alice", "old-name", "new-name");
+
+      // Alice (the renamer) should also see the announcement since it's
+      // from "_system", not from alice — bypasses self-exclusion
+      const messages = svc.read("alice", "new-name");
+      expect(messages.length).toBe(1);
+      expect(messages[0]!.content).toContain("renamed from");
+      expect(messages[0]!.agent_id).toBe("_system");
+    });
+
+    it("rename announcement appears in getUndelivered for renaming agent", () => {
+      const { svc } = setup();
+
+      svc.register("alice");
+      svc.createChannel("alice", "old-name");
+      svc.subscribe("alice", "old-name");
+      // Read to advance cursor past any existing messages
+      svc.read("alice", "old-name");
+
+      svc.renameChannel("alice", "old-name", "new-name");
+
+      // getUndelivered should include the system announcement for alice
+      // because "_system" != "alice", so self-exclusion doesn't filter it
+      // and @all mention triggers group notification
+      const pending = svc.getUndelivered("alice");
+      expect(pending.length).toBe(1);
+      expect(pending[0]!.messages[0]!.content).toContain("renamed from");
+    });
+
+    it("rejects renaming a DM channel", () => {
+      const { svc } = setup();
+
+      svc.register("alice");
+      svc.register("bob");
+      svc.directMessage("alice", "bob", "hi");
+
+      expect(() =>
+        svc.renameChannel("alice", "alice,bob", "friends")
+      ).toThrow("Cannot rename a DM channel");
+    });
+
+    it("rejects renaming to a DM-style name", () => {
+      const { svc } = setup();
+
+      svc.register("alice");
+      svc.createChannel("alice", "general");
+      svc.subscribe("alice", "general");
+
+      expect(() =>
+        svc.renameChannel("alice", "general", "alice,bob")
+      ).toThrow("Cannot rename a channel to a DM-style name");
+    });
+
+    it("rejects rename by non-member", () => {
+      const { svc } = setup();
+
+      svc.register("alice");
+      svc.register("bob");
+      svc.createChannel("alice", "private");
+      svc.subscribe("alice", "private");
+
+      expect(() =>
+        svc.renameChannel("bob", "private", "public")
+      ).toThrow('Not a member of channel "private"');
+    });
+
+    it("rejects empty new name", () => {
+      const { svc } = setup();
+
+      svc.register("alice");
+      svc.createChannel("alice", "general");
+      svc.subscribe("alice", "general");
+
+      expect(() =>
+        svc.renameChannel("alice", "general", "   ")
+      ).toThrow("new channel name must not be empty");
+    });
+  });
+
+  // ── getUndelivered with DM/group logic ─────────────────────────
+
+  describe("getUndelivered", () => {
+    it("returns DM notifications without mention requirement", () => {
+      const { svc } = setup();
+
+      svc.register("alice");
+      svc.register("bob");
+
+      // Alice DMs Bob — both are subscribed
+      svc.directMessage("alice", "bob", "hey, you there?");
+
+      const notifications = svc.getUndelivered("bob");
+      expect(notifications.length).toBe(1);
+      expect(notifications[0]!.isDm).toBe(true);
+      expect(notifications[0]!.messages.length).toBe(1);
+      expect(notifications[0]!.channelName).toBe("alice,bob");
+    });
+
+    it("filters group channel notifications by mentions", () => {
+      const { svc } = setup();
+
+      svc.register("alice");
+      svc.register("bob");
+      svc.register("charlie");
+
+      svc.createChannel("alice", "general");
+      svc.subscribe("alice", "general");
+      svc.subscribe("bob", "general");
+      svc.subscribe("charlie", "general");
+
+      // Message without mention — bob should NOT be notified
+      svc.send("alice", "general", "just a casual message");
+
+      let notifications = svc.getUndelivered("bob");
+      expect(notifications.length).toBe(0);
+
+      // Message with @bob mention — bob should be notified
+      svc.send("alice", "general", "hey @bob check this out");
+
+      notifications = svc.getUndelivered("bob");
+      expect(notifications.length).toBe(1);
+      expect(notifications[0]!.isDm).toBe(false);
+    });
+
+    it("notifies on @all mention in group channel", () => {
+      const { svc } = setup();
+
+      svc.register("alice");
+      svc.register("bob");
+
+      svc.createChannel("alice", "announcements");
+      svc.subscribe("alice", "announcements");
+      svc.subscribe("bob", "announcements");
+
+      svc.send("alice", "announcements", "attention @all: meeting at 3pm");
+
+      const notifications = svc.getUndelivered("bob");
+      expect(notifications.length).toBe(1);
+    });
+
+    it("respects hwm to avoid re-notification", () => {
+      const { svc } = setup();
+
+      svc.register("alice");
+      svc.register("bob");
+
+      svc.directMessage("alice", "bob", "first message");
+
+      const first = svc.getUndelivered("bob");
+      expect(first.length).toBe(1);
+
+      // Simulate hwm tracking — push the hwm past the message
+      const hwm = new Map<number, number>();
+      const lastMsg = first[0]!.messages[first[0]!.messages.length - 1]!;
+      hwm.set(lastMsg.channel_id, lastMsg.id);
+
+      const second = svc.getUndelivered("bob", hwm);
+      expect(second.length).toBe(0);
+    });
+  });
+
+  // ── readRecent ─────────────────────────────────────────────────
+
+  describe("readRecent", () => {
+    it("returns chronological messages from all authors", () => {
+      const { svc } = setup();
+
+      svc.register("alice");
+      svc.register("bob");
+
+      const ch = svc.createChannel("alice", "general");
+      svc.subscribe("alice", "general");
+      svc.subscribe("bob", "general");
+
+      svc.send("alice", "general", "message 1");
+      svc.send("bob", "general", "message 2");
+      svc.send("alice", "general", "message 3");
+
+      const recent = svc.readRecent(ch.id, 10);
+      expect(recent.length).toBe(3);
+      // Should be in chronological order
+      expect(recent[0]!.content).toBe("message 1");
+      expect(recent[0]!.agent_id).toBe("alice");
+      expect(recent[1]!.content).toBe("message 2");
+      expect(recent[1]!.agent_id).toBe("bob");
+      expect(recent[2]!.content).toBe("message 3");
+      expect(recent[2]!.agent_id).toBe("alice");
+    });
+
+    it("respects limit parameter", () => {
+      const { svc } = setup();
+
+      svc.register("alice");
+      const ch = svc.createChannel("alice", "general");
+      svc.subscribe("alice", "general");
+
+      svc.send("alice", "general", "msg 1");
+      svc.send("alice", "general", "msg 2");
+      svc.send("alice", "general", "msg 3");
+
+      const recent = svc.readRecent(ch.id, 2);
+      expect(recent.length).toBe(2);
+      // Should be the last 2, in chronological order
+      expect(recent[0]!.content).toBe("msg 2");
+      expect(recent[1]!.content).toBe("msg 3");
+    });
+  });
+
+  // ── read edge cases ────────────────────────────────────────────
+
+  describe("read edge cases", () => {
+    it("throws if channel does not exist", () => {
+      const { svc } = setup();
+      svc.register("alice");
+
+      expect(() => svc.read("alice", "nonexistent")).toThrow(
+        'Channel "nonexistent" does not exist'
+      );
+    });
+
+    it("throws if not a member", () => {
+      const { svc } = setup();
+      svc.register("alice");
+      svc.register("bob");
+      svc.createChannel("alice", "private");
+      svc.subscribe("alice", "private");
+
+      expect(() => svc.read("bob", "private")).toThrow(
+        'Not a member of channel "private"'
+      );
+    });
+
+    it("supports history mode with before_id", () => {
+      const { svc } = setup();
+
+      svc.register("alice");
+      svc.register("bob");
+      svc.createChannel("alice", "general");
+      svc.subscribe("alice", "general");
+      svc.subscribe("bob", "general");
+
+      const msg1 = svc.send("bob", "general", "first");
+      const msg2 = svc.send("bob", "general", "second");
+      svc.send("bob", "general", "third");
+
+      // History mode: get messages before msg2's successor
+      const history = svc.read("alice", "general", {
+        before_id: msg2.id + 1,
+        limit: 10,
+      });
+      // Should include messages before msg2+1, excluding alice's own (none)
+      expect(history.length).toBe(2);
+      expect(history[0]!.content).toBe("first");
+      expect(history[1]!.content).toBe("second");
+    });
+  });
+
+  // ── validation ─────────────────────────────────────────────────
+
+  describe("validation", () => {
+    it("rejects reserved agent names", () => {
+      const { svc } = setup();
+
+      expect(() => svc.register("all")).toThrow("reserved for broadcast mentions");
+      expect(() => svc.register("here")).toThrow("reserved for broadcast mentions");
+    });
+
+    it("rejects invalid agent name characters", () => {
+      const { svc } = setup();
+
+      expect(() => svc.register("agent name")).toThrow("must match");
+      expect(() => svc.register("agent@name")).toThrow("must match");
+    });
+
+    it("rejects empty agent name", () => {
+      const { svc } = setup();
+
+      expect(() => svc.register("  ")).toThrow("agent_id must not be empty");
+    });
+
+    it("rejects empty channel name", () => {
+      const { svc } = setup();
+      svc.register("alice");
+
+      expect(() => svc.createChannel("alice", "  ")).toThrow(
+        "channel name must not be empty"
+      );
+    });
+
+    it("rejects empty message content", () => {
+      const { svc } = setup();
+      svc.register("alice");
+      svc.createChannel("alice", "general");
+
+      expect(() => svc.send("alice", "general", "  ")).toThrow(
+        "message content must not be empty"
+      );
+    });
+  });
+
+  // ── send DM access control ─────────────────────────────────────
+
+  describe("send DM access control", () => {
+    it("rejects third-party send to DM channel", () => {
+      const { svc } = setup();
+
+      svc.register("alice");
+      svc.register("bob");
+      svc.register("eve");
+
+      svc.directMessage("alice", "bob", "private stuff");
+
+      expect(() =>
+        svc.send("eve", "alice,bob", "eavesdrop")
+      ).toThrow('DM channel "alice,bob" is private to alice and bob');
+    });
+  });
+
+  // ── pollNewMessages ────────────────────────────────────────────
+
+  describe("pollNewMessages", () => {
+    it("returns messages since a given ID", () => {
+      const { svc } = setup();
+
+      svc.register("alice");
+      svc.register("bob");
+      svc.createChannel("alice", "general");
+      svc.subscribe("alice", "general");
+      svc.subscribe("bob", "general");
+
+      const msg1 = svc.send("alice", "general", "first");
+      svc.send("bob", "general", "second");
+      svc.send("alice", "general", "third");
+
+      // Poll since msg1 for bob — should exclude bob's own messages
+      const newMsgs = svc.pollNewMessages("general", msg1.id, "bob");
+      expect(newMsgs.length).toBe(1);
+      expect(newMsgs[0]!.content).toBe("third");
+    });
+
+    it("returns empty for non-existent channel", () => {
+      const { svc } = setup();
+      const result = svc.pollNewMessages("nonexistent", 0, "alice");
+      expect(result).toEqual([]);
+    });
+  });
+
+  // ── getCursorPosition ──────────────────────────────────────────
+
+  describe("getCursorPosition", () => {
+    it("returns cursor position after reading", () => {
+      const { svc } = setup();
+
+      svc.register("alice");
+      svc.register("bob");
+      const ch = svc.createChannel("alice", "general");
+      svc.subscribe("alice", "general");
+      svc.subscribe("bob", "general");
+
+      const msg = svc.send("bob", "general", "hello");
+
+      // Before reading, cursor is at subscribe position (maxId at time of subscribe)
+      // Alice subscribed before any messages, so her cursor should be 0
+      // But subscribe sets cursor to maxId at subscribe time — messages were sent after
+
+      // After reading, cursor should advance
+      svc.read("alice", "general");
+      const pos = svc.getCursorPosition("alice", ch.id);
+      expect(pos).toBe(msg.id);
+    });
+
+    it("returns 0 for non-existent cursor", () => {
+      const { svc } = setup();
+      const pos = svc.getCursorPosition("nobody", 999);
+      expect(pos).toBe(0);
+    });
+  });
+
+  // ── listMembers ────────────────────────────────────────────────
+
+  describe("listMembers", () => {
+    it("returns members with active status", () => {
+      const { svc } = setup();
+
+      svc.register("alice");
+      svc.register("bob");
+      svc.createChannel("alice", "general");
+      svc.subscribe("alice", "general");
+      svc.subscribe("bob", "general");
+
+      const members = svc.listMembers("general");
+      expect(members.length).toBe(2);
+      expect(members.map((m) => m.agent_id).sort()).toEqual(["alice", "bob"]);
+      expect(members.every((m) => m.active)).toBe(true);
+    });
+
+    it("returns empty for non-existent channel", () => {
+      const { svc } = setup();
+      const members = svc.listMembers("nonexistent");
+      expect(members).toEqual([]);
+    });
+  });
+});
