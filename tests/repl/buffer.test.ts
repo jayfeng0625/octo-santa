@@ -1,5 +1,5 @@
 import { describe, it, expect } from "bun:test";
-import { InputBuffer } from "../../src/repl/buffer";
+import { InputBuffer } from "../../src/transports/repl/buffer";
 
 describe("InputBuffer", () => {
   describe("creation", () => {

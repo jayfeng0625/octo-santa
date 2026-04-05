@@ -1,3 +1,4 @@
+// src/transports/mcp-stdio/helpers.ts
 export function jsonResult(data: unknown) {
   return { content: [{ type: "text" as const, text: JSON.stringify(data) }] };
 }

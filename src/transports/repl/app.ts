@@ -1,13 +1,14 @@
-// src/repl/app.ts
-import type { Database } from "bun:sqlite";
+// src/transports/repl/app.ts
+import type { MessagingService } from "../../core/messaging/service";
+import type { ChannelRepository } from "../../core/ports";
 import { InputBuffer } from "./buffer";
 import { KeyParser, type Action } from "./keys";
 import { Renderer, formatMessage } from "./renderer";
 import { parseCommand, executeCommand, type ReplState } from "./commands";
-import { sendMessage, getChannelByName, getCursor } from "../modules/messaging/tools";
 
 export interface AppOptions {
-  db: Database;
+  svc: MessagingService;
+  channelRepo: ChannelRepository;
   agentId: string;
   channel: string;
   pollIntervalMs: number;
@@ -15,7 +16,7 @@ export interface AppOptions {
 }
 
 export function startApp(opts: AppOptions): () => void {
-  const { db, agentId, channel, pollIntervalMs } = opts;
+  const { svc, channelRepo, agentId, channel, pollIntervalMs } = opts;
 
   const buffer = new InputBuffer();
   const parser = new KeyParser({ kittyEnabled: opts.kittyEnabled });
@@ -29,8 +30,8 @@ export function startApp(opts: AppOptions): () => void {
   };
 
   // Init cursor from DB cursor (preserves unread backlog on reconnect)
-  const ch = getChannelByName(db, channel);
-  state.cursors.set(channel, ch ? getCursor(db, agentId, ch.id) : 0);
+  const ch = channelRepo.findByName(channel);
+  state.cursors.set(channel, ch ? svc.getCursorPosition(agentId, ch.id) : 0);
 
   function getPrompt(): string {
     return `${state.activeChannel}> `;
@@ -83,7 +84,7 @@ export function startApp(opts: AppOptions): () => void {
           const cmd = parseCommand(text);
           if (cmd) {
             try {
-              const result = executeCommand(cmd, db, state);
+              const result = executeCommand(cmd, svc, channelRepo, state);
               if (result.channelChange) {
                 state.activeChannel = result.channelChange;
               }
@@ -118,7 +119,7 @@ export function startApp(opts: AppOptions): () => void {
 
         // Send message
         try {
-          sendMessage(db, agentId, state.activeChannel, text);
+          svc.send(agentId, state.activeChannel, text);
           // Local echo
           const formatted = formatMessage(
             { agent_id: agentId, content: text },
@@ -164,29 +165,18 @@ export function startApp(opts: AppOptions): () => void {
 
   process.stdin.on("data", onData);
 
-  // Poll loop — direct SQL, exclude self messages
-  const stmtNewMessages = db.query(
-    `SELECT m.id, m.agent_id, m.content, ch.name as channel_name
-     FROM messages m
-     JOIN channels ch ON m.channel_id = ch.id
-     WHERE ch.name = ? AND m.id > ? AND m.agent_id != ?
-     ORDER BY m.id ASC
-     LIMIT 50`
-  );
-
+  // Poll loop — uses service instead of raw SQL
   const pollTimer = setInterval(() => {
     for (const channelName of state.joinedChannels) {
       const cursor = state.cursors.get(channelName) ?? 0;
-      const rows = stmtNewMessages.all(channelName, cursor, agentId) as {
-        id: number; agent_id: string; content: string; channel_name: string;
-      }[];
+      const rows = svc.pollNewMessages(channelName, cursor, agentId, 50);
 
       if (rows.length === 0) continue;
 
       for (const row of rows) {
         const formatted = formatMessage(
           { agent_id: row.agent_id, content: row.content },
-          row.channel_name,
+          channelName,
           state.activeChannel,
         );
         renderer.printMessage(formatted, getPrompt(), buffer);

@@ -1,15 +1,6 @@
-import type { Database } from "bun:sqlite";
 import { readFileSync } from "node:fs";
-import {
-  listChannels,
-  listAgents,
-  listChannelMembers,
-  createChannel,
-  subscribe,
-  sendMessage,
-  getChannelByName,
-  getCursor,
-} from "../modules/messaging/tools";
+import type { MessagingService } from "../../core/messaging/service";
+import type { ChannelRepository } from "../../core/ports";
 
 export interface ReplState {
   activeChannel: string;
@@ -49,18 +40,19 @@ export function parseCommand(input: string): ParsedCommand | null {
 
 export function executeCommand(
   cmd: ParsedCommand,
-  db: Database,
+  svc: MessagingService,
+  channelRepo: ChannelRepository,
   state: ReplState,
 ): CommandResult {
   switch (cmd.name) {
     case "channels": {
-      const channels = listChannels(db);
+      const channels = svc.listChannels();
       if (channels.length === 0) return { output: ["No channels"] };
       return { output: channels.map(ch => `  ${ch.name}`) };
     }
 
     case "agents": {
-      const agents = listAgents(db);
+      const agents = svc.listAgents();
       if (agents.length === 0) return { output: ["No agents"] };
       return { output: agents.map(a => `  ${a.id}`) };
     }
@@ -69,14 +61,14 @@ export function executeCommand(
       const channelName = cmd.args;
       if (!channelName) return { output: ["Usage: /join <channel>"] };
       try {
-        subscribe(db, state.agentId, channelName);
+        svc.subscribe(state.agentId, channelName);
       } catch (err) {
         return { output: [(err as Error).message] };
       }
       // Sync in-memory cursor from DB to prevent historical message flood
-      const ch = getChannelByName(db, channelName);
+      const ch = channelRepo.findByName(channelName);
       if (ch) {
-        state.cursors.set(channelName, getCursor(db, state.agentId, ch.id));
+        state.cursors.set(channelName, svc.getCursorPosition(state.agentId, ch.id));
       }
       state.joinedChannels.add(channelName);
       return { output: [`Joined #${channelName}`], channelChange: channelName };
@@ -85,7 +77,7 @@ export function executeCommand(
     case "create": {
       const channelName = cmd.args;
       if (!channelName) return { output: ["Usage: /create <channel>"] };
-      createChannel(db, channelName, state.agentId);
+      svc.createChannel(state.agentId, channelName);
       return { output: [`Created #${channelName}`] };
     }
 
@@ -93,19 +85,13 @@ export function executeCommand(
       let limit = parseInt(cmd.args, 10);
       if (!Number.isFinite(limit) || limit <= 0) limit = 20;
 
-      const channel = getChannelByName(db, state.activeChannel);
+      const channel = channelRepo.findByName(state.activeChannel);
       if (!channel) return { output: ["Channel not found"] };
 
-      const rows = db.query(
-        `SELECT agent_id, content FROM messages
-         WHERE channel_id = ?
-         ORDER BY id DESC
-         LIMIT ?`
-      ).all(channel.id, limit) as { agent_id: string; content: string }[];
+      const rows = svc.readRecent(channel.id, limit);
 
       if (rows.length === 0) return { output: ["No messages"] };
-      rows.reverse();
-      return { output: [], messages: rows };
+      return { output: [], messages: rows.map(r => ({ agent_id: r.agent_id, content: r.content })) };
     }
 
     case "send": {
@@ -114,7 +100,7 @@ export function executeCommand(
       const filePath = match[1]!.trim();
       try {
         const content = readFileSync(filePath, "utf-8");
-        sendMessage(db, state.agentId, state.activeChannel, content);
+        svc.send(state.agentId, state.activeChannel, content);
         return {
           output: [],
           localEcho: { agent_id: state.agentId, content },
@@ -125,7 +111,7 @@ export function executeCommand(
     }
 
     case "members": {
-      const members = listChannelMembers(db, state.activeChannel);
+      const members = svc.listMembers(state.activeChannel);
       if (members.length === 0) return { output: ["No members"] };
       return { output: members.map(m => `  ${m.agent_id} ${m.active ? "(active)" : "(inactive)"}`) };
     }

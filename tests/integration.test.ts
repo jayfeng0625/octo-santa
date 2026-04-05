@@ -1,21 +1,17 @@
 // tests/integration.test.ts
 import { describe, it, expect, afterEach } from "bun:test";
 import { cleanupDb, testDbPath, setupTestDb } from "./helpers/db";
-import {
-  messagingMigrations,
-  registerAgent,
-  createChannel,
-  listChannels,
-  sendMessage,
-  readMessages,
-  subscribe,
-  listAgents,
-} from "../src/modules/messaging/tools";
+import { allMigrations } from "../src/storage/sqlite/migrations";
+import { createSqliteRepos } from "../src/storage/sqlite";
+import { MessagingService } from "../src/core/messaging/service";
 
 const TEST_DB = testDbPath("integration");
 
-function setupDb() {
-  return setupTestDb(TEST_DB, messagingMigrations);
+function setup() {
+  const db = setupTestDb(TEST_DB, allMigrations);
+  const repos = createSqliteRepos(db);
+  const svc = new MessagingService(repos.agents, repos.channels, repos.messages, repos.cursors, process.pid);
+  return { db, svc };
 }
 
 afterEach(() => {
@@ -24,38 +20,38 @@ afterEach(() => {
 
 describe("full messaging flow", () => {
   it("two agents communicate through a channel", () => {
-    const db = setupDb();
+    const { db, svc } = setup();
 
     // Agent A and B both join the channel first
-    registerAgent(db, "frontend-app");
-    registerAgent(db, "backend-api");
-    createChannel(db, "coordination", "frontend-app");
-    subscribe(db, "backend-api", "coordination");
+    svc.register("frontend-app");
+    svc.register("backend-api");
+    svc.createChannel("frontend-app", "coordination");
+    svc.subscribe("backend-api", "coordination");
 
     // Agent A sends
-    sendMessage(db, "frontend-app", "coordination", "Need API endpoint for /users");
-    sendMessage(db, "frontend-app", "coordination", "Expecting JSON with name and email fields");
+    svc.send("frontend-app", "coordination", "Need API endpoint for /users");
+    svc.send("frontend-app", "coordination", "Expecting JSON with name and email fields");
 
     // Agent B reads
-    const incoming = readMessages(db, "backend-api", "coordination");
+    const incoming = svc.read("backend-api", "coordination");
     expect(incoming).toHaveLength(2);
     expect(incoming[0]!.content).toBe("Need API endpoint for /users");
     expect(incoming[0]!.agent_id).toBe("frontend-app");
 
-    sendMessage(db, "backend-api", "coordination", "Done. GET /users returns {name, email}");
+    svc.send("backend-api", "coordination", "Done. GET /users returns {name, email}");
 
     // Agent A reads the reply
-    const reply = readMessages(db, "frontend-app", "coordination");
+    const reply = svc.read("frontend-app", "coordination");
     expect(reply).toHaveLength(1);
     expect(reply[0]!.content).toBe("Done. GET /users returns {name, email}");
     expect(reply[0]!.agent_id).toBe("backend-api");
 
     // Both agents visible
-    const agents = listAgents(db);
+    const agents = svc.listAgents();
     expect(agents).toHaveLength(2);
 
     // Channel visible
-    const channels = listChannels(db);
+    const channels = svc.listChannels();
     expect(channels).toHaveLength(1);
     expect(channels[0]!.name).toBe("coordination");
 
@@ -63,21 +59,21 @@ describe("full messaging flow", () => {
   });
 
   it("agents can use multiple channels independently", () => {
-    const db = setupDb();
+    const { db, svc } = setup();
 
     // agent-b subscribes before messages are sent so cursor starts at 0
-    registerAgent(db, "agent-a");
-    registerAgent(db, "agent-b");
-    createChannel(db, "frontend", "agent-b");
-    createChannel(db, "backend", "agent-b");
-    subscribe(db, "agent-b", "frontend");
-    subscribe(db, "agent-b", "backend");
+    svc.register("agent-a");
+    svc.register("agent-b");
+    svc.createChannel("agent-b", "frontend");
+    svc.createChannel("agent-b", "backend");
+    svc.subscribe("agent-b", "frontend");
+    svc.subscribe("agent-b", "backend");
 
-    sendMessage(db, "agent-a", "frontend", "UI question");
-    sendMessage(db, "agent-a", "backend", "API question");
+    svc.send("agent-a", "frontend", "UI question");
+    svc.send("agent-a", "backend", "API question");
 
-    const frontend = readMessages(db, "agent-b", "frontend");
-    const backend = readMessages(db, "agent-b", "backend");
+    const frontend = svc.read("agent-b", "frontend");
+    const backend = svc.read("agent-b", "backend");
 
     expect(frontend).toHaveLength(1);
     expect(frontend[0]!.content).toBe("UI question");

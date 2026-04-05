@@ -1,12 +1,17 @@
 import { describe, it, expect, afterEach } from "bun:test";
-import { messagingMigrations, registerAgent, createChannel } from "../../src/modules/messaging/tools";
-import { startupRepl } from "../../src/repl/startup";
+import { allMigrations } from "../../src/storage/sqlite/migrations";
+import { createSqliteRepos } from "../../src/storage/sqlite";
+import { MessagingService } from "../../src/core/messaging/service";
+import { startupRepl } from "../../src/transports/repl/startup";
 import { cleanupDb, testDbPath, setupTestDb } from "../helpers/db";
 
 const TEST_DB = testDbPath("startup");
 
-function setupDb() {
-  return setupTestDb(TEST_DB, messagingMigrations);
+function setup() {
+  const db = setupTestDb(TEST_DB, allMigrations);
+  const repos = createSqliteRepos(db);
+  const svc = new MessagingService(repos.agents, repos.channels, repos.messages, repos.cursors, process.pid);
+  return { db, svc };
 }
 
 afterEach(() => {
@@ -15,8 +20,8 @@ afterEach(() => {
 
 describe("startupRepl", () => {
   it("creates a PID-bound registered agent row", () => {
-    const db = setupDb();
-    startupRepl(db, "jay", "general");
+    const { db, svc } = setup();
+    startupRepl(svc, "jay", "general");
 
     const agent = db.query("SELECT * FROM agents WHERE id = ?").get("jay") as {
       id: string;
@@ -30,8 +35,8 @@ describe("startupRepl", () => {
   });
 
   it("creates or finds the named channel", () => {
-    const db = setupDb();
-    startupRepl(db, "jay", "general");
+    const { db, svc } = setup();
+    startupRepl(svc, "jay", "general");
 
     const channel = db.query("SELECT * FROM channels WHERE name = ?").get("general") as {
       id: number;
@@ -43,11 +48,11 @@ describe("startupRepl", () => {
   });
 
   it("creates a cursor at the current max message ID", () => {
-    const db = setupDb();
+    const { db, svc } = setup();
 
     // Pre-seed the channel with some messages from another agent
-    registerAgent(db, "seeder");
-    createChannel(db, "general", "seeder");
+    svc.register("seeder");
+    svc.createChannel("seeder", "general");
     // seeder sends 3 messages — cursor should land at max id
     const ch = db.query("SELECT id FROM channels WHERE name = ?").get("general") as { id: number };
     for (let i = 0; i < 3; i++) {
@@ -59,7 +64,7 @@ describe("startupRepl", () => {
     const maxRow = db.query("SELECT MAX(id) as max_id FROM messages WHERE channel_id = ?").get(ch.id) as { max_id: number };
 
     // Now startup jay — cursor should be at maxId, not 0
-    startupRepl(db, "jay", "general");
+    startupRepl(svc, "jay", "general");
 
     const cursor = db.query(
       `SELECT last_read_message_id FROM cursors
@@ -71,8 +76,8 @@ describe("startupRepl", () => {
   });
 
   it("idempotency: reconnect does NOT overwrite existing cursor (ON CONFLICT DO NOTHING)", () => {
-    const db = setupDb();
-    startupRepl(db, "jay", "general");
+    const { db, svc } = setup();
+    startupRepl(svc, "jay", "general");
 
     // Manually advance the cursor (simulate reading messages)
     const ch = db.query("SELECT id FROM channels WHERE name = ?").get("general") as { id: number };
@@ -88,7 +93,7 @@ describe("startupRepl", () => {
     );
 
     // Simulate reconnect — call startupRepl again
-    startupRepl(db, "jay", "general");
+    startupRepl(svc, "jay", "general");
 
     const cursor = db.query(
       "SELECT last_read_message_id FROM cursors WHERE agent_id = ? AND channel_id = ?",
@@ -99,8 +104,8 @@ describe("startupRepl", () => {
   });
 
   it("startup on fresh channel (no messages) sets cursor to 0", () => {
-    const db = setupDb();
-    startupRepl(db, "jay", "empty-channel");
+    const { db, svc } = setup();
+    startupRepl(svc, "jay", "empty-channel");
 
     const ch = db.query("SELECT id FROM channels WHERE name = ?").get("empty-channel") as { id: number };
     const cursor = db.query(

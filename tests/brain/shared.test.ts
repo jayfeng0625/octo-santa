@@ -1,10 +1,10 @@
-import { describe, it, expect, afterEach } from "bun:test";
-import { mkdirSync, writeFileSync, unlinkSync, existsSync } from "fs";
+import { describe, it, expect, afterAll, afterEach } from "bun:test";
+import { mkdirSync, writeFileSync, unlinkSync, existsSync, rmSync } from "fs";
 import { join } from "path";
-import { homedir } from "os";
-import { scanSharedBrainDocs, readSharedBrainDoc } from "../../src/modules/brain/tools";
+import { FsBrainStore } from "../../src/storage/fs-brain-store/store";
 
-const SHARED_DIR = join(homedir(), ".octo-santa", "brain");
+const TMP_SHARED = `/tmp/octo-santa-test-shared-brain-${process.pid}`;
+const SHARED_DIR = join(TMP_SHARED, "brain");
 const TEST_FILE = join(SHARED_DIR, "test-shared-brain-doc.md");
 
 const TEST_DOC_CONTENT = `---
@@ -17,6 +17,13 @@ tags: [test, shared]
 This is a test document for the shared brain.
 `;
 
+// Inject temp shared brain dir via constructor
+const store = new FsBrainStore("/tmp", undefined, undefined, SHARED_DIR);
+
+afterAll(() => {
+  if (existsSync(TMP_SHARED)) rmSync(TMP_SHARED, { recursive: true });
+});
+
 afterEach(() => {
   if (existsSync(TEST_FILE)) unlinkSync(TEST_FILE);
 });
@@ -26,7 +33,7 @@ describe("scanSharedBrainDocs", () => {
     mkdirSync(SHARED_DIR, { recursive: true });
     writeFileSync(TEST_FILE, TEST_DOC_CONTENT);
 
-    const docs = scanSharedBrainDocs();
+    const docs = store.scanSharedDocs();
     expect(Array.isArray(docs)).toBe(true);
 
     const testDoc = docs.find(d => d.slug === "test-shared-brain-doc");
@@ -41,34 +48,30 @@ describe("scanSharedBrainDocs", () => {
     mkdirSync(SHARED_DIR, { recursive: true });
     writeFileSync(TEST_FILE, TEST_DOC_CONTENT);
 
-    // scanSharedBrainDocs takes no arguments — no config path needed
-    expect(() => scanSharedBrainDocs()).not.toThrow();
-    const docs = scanSharedBrainDocs();
+    expect(() => store.scanSharedDocs()).not.toThrow();
+    const docs = store.scanSharedDocs();
     expect(Array.isArray(docs)).toBe(true);
   });
 
   it("returns empty array when shared dir does not exist", () => {
-    // Only test this if the dir doesn't exist; skip if it does
-    if (!existsSync(SHARED_DIR)) {
-      const docs = scanSharedBrainDocs();
-      expect(docs).toEqual([]);
-    } else {
-      // Dir exists — we can't easily test this case, just verify it returns an array
-      const docs = scanSharedBrainDocs();
-      expect(Array.isArray(docs)).toBe(true);
-    }
+    if (existsSync(SHARED_DIR)) rmSync(SHARED_DIR, { recursive: true });
+    const docs = store.scanSharedDocs();
+    expect(docs).toEqual([]);
   });
 
-  it("skips files without frontmatter in shared dir", () => {
+  it("includes files without frontmatter using derived defaults", () => {
     mkdirSync(SHARED_DIR, { recursive: true });
     const plainFile = join(SHARED_DIR, "test-plain-no-frontmatter.md");
     writeFileSync(plainFile, "# Just a plain file\nNo frontmatter here.\n");
     writeFileSync(TEST_FILE, TEST_DOC_CONTENT);
 
     try {
-      const docs = scanSharedBrainDocs();
+      const docs = store.scanSharedDocs();
       const plainDoc = docs.find(d => d.slug === "test-plain-no-frontmatter");
-      expect(plainDoc).toBeUndefined();
+      expect(plainDoc).toBeDefined();
+      expect(plainDoc!.title).toBe("test-plain-no-frontmatter");
+      expect(plainDoc!.summary).toBe("");
+      expect(plainDoc!.tags).toEqual([]);
     } finally {
       if (existsSync(plainFile)) unlinkSync(plainFile);
     }
@@ -80,19 +83,18 @@ describe("readSharedBrainDoc", () => {
     mkdirSync(SHARED_DIR, { recursive: true });
     writeFileSync(TEST_FILE, TEST_DOC_CONTENT);
 
-    const content = readSharedBrainDoc("test-shared-brain-doc");
+    const content = store.readSharedDoc("test-shared-brain-doc");
     expect(content).toBe(TEST_DOC_CONTENT);
   });
 
   it("throws for nonexistent slug", () => {
-    expect(() => readSharedBrainDoc("nonexistent-slug-that-does-not-exist")).toThrow("not found");
+    expect(() => store.readSharedDoc("nonexistent-slug-that-does-not-exist")).toThrow("not found");
   });
 
   it("works without any .octo-santa/config.json", () => {
     mkdirSync(SHARED_DIR, { recursive: true });
     writeFileSync(TEST_FILE, TEST_DOC_CONTENT);
 
-    // readSharedBrainDoc takes only slug — no config path needed
-    expect(() => readSharedBrainDoc("test-shared-brain-doc")).not.toThrow();
+    expect(() => store.readSharedDoc("test-shared-brain-doc")).not.toThrow();
   });
 });

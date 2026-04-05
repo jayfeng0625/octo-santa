@@ -1,19 +1,21 @@
 import { describe, it, expect, afterEach } from "bun:test";
-import {
-  upsertDomain,
-  claimDomain,
-  findExperts,
-  onBrainDisconnect,
-  brainMigrations,
-} from "../../src/modules/brain/tools";
-import { messagingMigrations, registerAgent } from "../../src/modules/messaging/tools";
-import type { OctoSantaConfig } from "../../src/modules/brain/types";
+import { allMigrations } from "../../src/storage/sqlite/migrations";
+import { createSqliteRepos } from "../../src/storage/sqlite";
+import { MessagingService } from "../../src/core/messaging/service";
+import { BrainService } from "../../src/core/brain/service";
+import { FsBrainStore } from "../../src/storage/fs-brain-store/store";
+import type { OctoSantaConfig } from "../../src/core/brain/types";
 import { cleanupDb, testDbPath, setupTestDb } from "../helpers/db";
 
 const TEST_DB = testDbPath("brain-domain");
 
-function setupDb() {
-  return setupTestDb(TEST_DB, [...messagingMigrations, ...brainMigrations]);
+function setup(config: OctoSantaConfig | null = null) {
+  const db = setupTestDb(TEST_DB, allMigrations);
+  const repos = createSqliteRepos(db);
+  const msgSvc = new MessagingService(repos.agents, repos.channels, repos.messages, repos.cursors, process.pid);
+  const brainStore = new FsBrainStore("/tmp");
+  const brainSvc = new BrainService(brainStore, repos.domains, repos.agents, config, process.pid);
+  return { db, msgSvc, brainSvc, repos };
 }
 
 afterEach(() => {
@@ -33,10 +35,10 @@ const CONFIG_NO_DOMAIN: OctoSantaConfig = {
   brain: { dirs: ["./brain"] },
 };
 
-describe("upsertDomain", () => {
+describe("upsertDomain (registerDomain)", () => {
   it("inserts domain row when config has domain", () => {
-    const db = setupDb();
-    upsertDomain(db, CONFIG_WITH_DOMAIN, "/some/cwd");
+    const { db, brainSvc } = setup(CONFIG_WITH_DOMAIN);
+    brainSvc.registerDomain("/some/cwd");
 
     const row = db.query("SELECT * FROM domains WHERE identifier = ?").get("my-project") as {
       identifier: string;
@@ -55,9 +57,9 @@ describe("upsertDomain", () => {
   });
 
   it("updates CWD on second call with same identifier", () => {
-    const db = setupDb();
-    upsertDomain(db, CONFIG_WITH_DOMAIN, "/original/cwd");
-    upsertDomain(db, CONFIG_WITH_DOMAIN, "/updated/cwd");
+    const { db, brainSvc } = setup(CONFIG_WITH_DOMAIN);
+    brainSvc.registerDomain("/original/cwd");
+    brainSvc.registerDomain("/updated/cwd");
 
     const row = db.query("SELECT cwd FROM domains WHERE identifier = ?").get("my-project") as {
       cwd: string;
@@ -76,8 +78,8 @@ describe("upsertDomain", () => {
   });
 
   it("does not insert when config has no domain", () => {
-    const db = setupDb();
-    upsertDomain(db, CONFIG_NO_DOMAIN, "/some/cwd");
+    const { db, brainSvc } = setup(CONFIG_NO_DOMAIN);
+    brainSvc.registerDomain("/some/cwd");
 
     const count = db.query("SELECT COUNT(*) as count FROM domains").get() as { count: number };
     expect(count.count).toBe(0);
@@ -88,12 +90,12 @@ describe("upsertDomain", () => {
 
 describe("claimDomain", () => {
   it("inserts domain claim for a registered agent", () => {
-    const db = setupDb();
+    const { db, msgSvc, brainSvc } = setup(CONFIG_WITH_DOMAIN);
 
-    // Must upsert domain first (foreign key constraint)
-    upsertDomain(db, CONFIG_WITH_DOMAIN, "/some/cwd");
-    registerAgent(db, "test-agent");
-    claimDomain(db, "test-agent", "/some/cwd", CONFIG_WITH_DOMAIN);
+    // Must register domain first (foreign key constraint)
+    brainSvc.registerDomain("/some/cwd");
+    msgSvc.register("test-agent");
+    brainSvc.claimDomain("test-agent");
 
     const claim = db
       .query("SELECT * FROM domain_claims WHERE agent_id = ?")
@@ -108,11 +110,11 @@ describe("claimDomain", () => {
   });
 
   it("throws if agent has not registered (not in agents table with current PID)", () => {
-    const db = setupDb();
-    upsertDomain(db, CONFIG_WITH_DOMAIN, "/some/cwd");
+    const { db, brainSvc } = setup(CONFIG_WITH_DOMAIN);
+    brainSvc.registerDomain("/some/cwd");
 
-    // Don't call registerAgent — no row exists for this agent+pid combination
-    expect(() => claimDomain(db, "unregistered-agent", "/some/cwd", CONFIG_WITH_DOMAIN)).toThrow(
+    // Don't call register — no row exists for this agent+pid combination
+    expect(() => brainSvc.claimDomain("unregistered-agent")).toThrow(
       "Must call messaging_register"
     );
 
@@ -120,10 +122,10 @@ describe("claimDomain", () => {
   });
 
   it("throws when config has no domain", () => {
-    const db = setupDb();
-    registerAgent(db, "test-agent");
+    const { db, msgSvc, brainSvc } = setup(CONFIG_NO_DOMAIN);
+    msgSvc.register("test-agent");
 
-    expect(() => claimDomain(db, "test-agent", "/some/cwd", CONFIG_NO_DOMAIN)).toThrow(
+    expect(() => brainSvc.claimDomain("test-agent")).toThrow(
       "No domain configured"
     );
 
@@ -131,10 +133,10 @@ describe("claimDomain", () => {
   });
 
   it("throws when config is null", () => {
-    const db = setupDb();
-    registerAgent(db, "test-agent");
+    const { db, msgSvc, brainSvc } = setup(null);
+    msgSvc.register("test-agent");
 
-    expect(() => claimDomain(db, "test-agent", "/some/cwd", null)).toThrow("No domain configured");
+    expect(() => brainSvc.claimDomain("test-agent")).toThrow("No domain configured");
 
     db.close();
   });
@@ -142,13 +144,13 @@ describe("claimDomain", () => {
 
 describe("findExperts", () => {
   it("returns domains with active_sessions for live agents", () => {
-    const db = setupDb();
+    const { db, msgSvc, brainSvc } = setup(CONFIG_WITH_DOMAIN);
 
-    upsertDomain(db, CONFIG_WITH_DOMAIN, "/some/cwd");
-    registerAgent(db, "expert-agent");
-    claimDomain(db, "expert-agent", "/some/cwd", CONFIG_WITH_DOMAIN);
+    brainSvc.registerDomain("/some/cwd");
+    msgSvc.register("expert-agent");
+    brainSvc.claimDomain("expert-agent");
 
-    const experts = findExperts(db);
+    const experts = brainSvc.findExperts();
     expect(experts).toHaveLength(1);
     expect(experts[0]!.identifier).toBe("my-project");
     expect(experts[0]!.tags).toEqual(["typescript", "api"]);
@@ -159,17 +161,17 @@ describe("findExperts", () => {
   });
 
   it("filters dead PIDs from active_sessions", () => {
-    const db = setupDb();
+    const { db, msgSvc, brainSvc } = setup(CONFIG_WITH_DOMAIN);
 
-    upsertDomain(db, CONFIG_WITH_DOMAIN, "/some/cwd");
-    registerAgent(db, "dead-agent");
-    claimDomain(db, "dead-agent", "/some/cwd", CONFIG_WITH_DOMAIN);
+    brainSvc.registerDomain("/some/cwd");
+    msgSvc.register("dead-agent");
+    brainSvc.claimDomain("dead-agent");
 
     // Simulate dead agent by setting pid to 999999 (almost certainly dead)
     db.run("UPDATE agents SET pid = 999999 WHERE id = ?", ["dead-agent"]);
     db.run("UPDATE domain_claims SET pid = 999999 WHERE agent_id = ?", ["dead-agent"]);
 
-    const experts = findExperts(db);
+    const experts = brainSvc.findExperts();
     expect(experts).toHaveLength(1);
     expect(experts[0]!.active_sessions).not.toContain("dead-agent");
     expect(experts[0]!.active_sessions).toHaveLength(0);
@@ -178,11 +180,11 @@ describe("findExperts", () => {
   });
 
   it("returns multiple agents claiming the same domain in active_sessions", () => {
-    const db = setupDb();
+    const { db, msgSvc, brainSvc } = setup(CONFIG_WITH_DOMAIN);
 
-    upsertDomain(db, CONFIG_WITH_DOMAIN, "/some/cwd");
-    registerAgent(db, "agent-one");
-    claimDomain(db, "agent-one", "/some/cwd", CONFIG_WITH_DOMAIN);
+    brainSvc.registerDomain("/some/cwd");
+    msgSvc.register("agent-one");
+    brainSvc.claimDomain("agent-one");
 
     // Register second agent — simulated by inserting directly since we can only
     // register one agent per PID per name; insert with current PID manually
@@ -197,7 +199,7 @@ describe("findExperts", () => {
       ["agent-two", process.pid, "my-project", now]
     );
 
-    const experts = findExperts(db);
+    const experts = brainSvc.findExperts();
     expect(experts).toHaveLength(1);
     expect(experts[0]!.active_sessions).toHaveLength(2);
     expect(experts[0]!.active_sessions).toContain("agent-one");
@@ -207,10 +209,10 @@ describe("findExperts", () => {
   });
 
   it("returns domain with empty active_sessions when no claims exist", () => {
-    const db = setupDb();
-    upsertDomain(db, CONFIG_WITH_DOMAIN, "/some/cwd");
+    const { db, brainSvc } = setup(CONFIG_WITH_DOMAIN);
+    brainSvc.registerDomain("/some/cwd");
 
-    const experts = findExperts(db);
+    const experts = brainSvc.findExperts();
     expect(experts).toHaveLength(1);
     expect(experts[0]!.active_sessions).toHaveLength(0);
 
@@ -218,8 +220,8 @@ describe("findExperts", () => {
   });
 
   it("returns empty array when no domains are registered", () => {
-    const db = setupDb();
-    const experts = findExperts(db);
+    const { db, brainSvc } = setup(CONFIG_WITH_DOMAIN);
+    const experts = brainSvc.findExperts();
     expect(experts).toEqual([]);
     db.close();
   });
@@ -227,11 +229,11 @@ describe("findExperts", () => {
 
 describe("onBrainDisconnect", () => {
   it("deletes the claim for the disconnecting agent", () => {
-    const db = setupDb();
+    const { db, msgSvc, brainSvc } = setup(CONFIG_WITH_DOMAIN);
 
-    upsertDomain(db, CONFIG_WITH_DOMAIN, "/some/cwd");
-    registerAgent(db, "test-agent");
-    claimDomain(db, "test-agent", "/some/cwd", CONFIG_WITH_DOMAIN);
+    brainSvc.registerDomain("/some/cwd");
+    msgSvc.register("test-agent");
+    brainSvc.claimDomain("test-agent");
 
     // Verify claim exists before disconnect
     const beforeCount = db
@@ -239,7 +241,7 @@ describe("onBrainDisconnect", () => {
       .get("test-agent") as { count: number };
     expect(beforeCount.count).toBe(1);
 
-    onBrainDisconnect(db, "test-agent", process.pid);
+    brainSvc.onDisconnect("test-agent", process.pid);
 
     const afterCount = db
       .query("SELECT COUNT(*) as count FROM domain_claims WHERE agent_id = ?")
@@ -250,11 +252,11 @@ describe("onBrainDisconnect", () => {
   });
 
   it("does not affect other agents' claims", () => {
-    const db = setupDb();
+    const { db, msgSvc, brainSvc } = setup(CONFIG_WITH_DOMAIN);
 
-    upsertDomain(db, CONFIG_WITH_DOMAIN, "/some/cwd");
-    registerAgent(db, "agent-to-disconnect");
-    claimDomain(db, "agent-to-disconnect", "/some/cwd", CONFIG_WITH_DOMAIN);
+    brainSvc.registerDomain("/some/cwd");
+    msgSvc.register("agent-to-disconnect");
+    brainSvc.claimDomain("agent-to-disconnect");
 
     // Add another agent's claim directly
     const now = Date.now();
@@ -269,7 +271,7 @@ describe("onBrainDisconnect", () => {
       ["other-agent", 99998, "my-project", now]
     );
 
-    onBrainDisconnect(db, "agent-to-disconnect", process.pid);
+    brainSvc.onDisconnect("agent-to-disconnect", process.pid);
 
     // other-agent's claim should still be present
     const otherCount = db
@@ -281,9 +283,9 @@ describe("onBrainDisconnect", () => {
   });
 
   it("is a no-op when no claim exists for the agent", () => {
-    const db = setupDb();
+    const { db, brainSvc } = setup(CONFIG_WITH_DOMAIN);
 
-    expect(() => onBrainDisconnect(db, "ghost-agent", process.pid)).not.toThrow();
+    expect(() => brainSvc.onDisconnect("ghost-agent", process.pid)).not.toThrow();
 
     db.close();
   });
