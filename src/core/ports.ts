@@ -25,7 +25,6 @@ export interface ChannelRepository {
   addMember(agentId: string, channelId: number, initialCursorId: number): void;
   getMembers(channelId: number): Agent[];
   getMemberCount(channelId: number): number;
-  getMaxMessageId(channelId: number): number;
   renameWithAnnouncement(
     channelId: number,
     newName: string,
@@ -52,11 +51,6 @@ export interface MessageRepository {
     excludeAgent: string
   ): Message[];
   readRecent(channelId: number, limit: number): Message[];
-  countSince(
-    channelId: number,
-    sinceId: number,
-    excludeAgent: string
-  ): number;
   readSince(
     channelId: number,
     sinceId: number,

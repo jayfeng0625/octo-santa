@@ -53,13 +53,6 @@ export class SqliteChannelRepo implements ChannelRepository {
     return row.count;
   }
 
-  getMaxMessageId(channelId: number): number {
-    const row = this.db
-      .query("SELECT MAX(id) as max_id FROM messages WHERE channel_id = ?")
-      .get(channelId) as { max_id: number | null };
-    return row?.max_id ?? 0;
-  }
-
   renameWithAnnouncement(channelId: number, newName: string, agentId: string): Channel {
     const doRename = this.db.transaction(() => {
       // Check new name isn't taken

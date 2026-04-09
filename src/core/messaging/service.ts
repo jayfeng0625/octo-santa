@@ -222,13 +222,6 @@ export class MessagingService {
         hwm?.get(sub.channelId) ?? 0
       );
 
-      const count = this.messages.countSince(
-        sub.channelId,
-        lowerBound,
-        agentId
-      );
-      if (count === 0) continue;
-
       let isDm = false;
       if (isDmChannel(sub.channelName)) {
         const match = /^([\w-]+),([\w-]+)$/.exec(sub.channelName);
@@ -245,9 +238,10 @@ export class MessagingService {
       const unread = this.messages.readSince(
         sub.channelId,
         lowerBound,
-        count,
+        1_000_000,
         agentId
       );
+      if (unread.length === 0) continue;
 
       if (!isDm) {
         let shouldNotify = false;
