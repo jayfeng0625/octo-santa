@@ -47,13 +47,12 @@ describe("startupRepl", () => {
     expect(channel!.name).toBe("general");
   });
 
-  it("creates a cursor at the current max message ID", () => {
+  it("creates a cursor at 0 so new subscriber sees full history", () => {
     const { db, svc } = setup();
 
     // Pre-seed the channel with some messages from another agent
     svc.register("seeder");
     svc.createChannel("seeder", "general");
-    // seeder sends 3 messages — cursor should land at max id
     const ch = db.query("SELECT id FROM channels WHERE name = ?").get("general") as { id: number };
     for (let i = 0; i < 3; i++) {
       db.run(
@@ -61,9 +60,8 @@ describe("startupRepl", () => {
         [ch.id, `msg-${i}`, Date.now()]
       );
     }
-    const maxRow = db.query("SELECT MAX(id) as max_id FROM messages WHERE channel_id = ?").get(ch.id) as { max_id: number };
 
-    // Now startup jay — cursor should be at maxId, not 0
+    // Now startup jay — cursor should be at 0 (bug #7 fix)
     startupRepl(svc, "jay", "general");
 
     const cursor = db.query(
@@ -72,7 +70,7 @@ describe("startupRepl", () => {
     ).get("jay", "general") as { last_read_message_id: number } | null;
 
     expect(cursor).not.toBeNull();
-    expect(cursor!.last_read_message_id).toBe(maxRow.max_id);
+    expect(cursor!.last_read_message_id).toBe(0);
   });
 
   it("idempotency: reconnect does NOT overwrite existing cursor (ON CONFLICT DO NOTHING)", () => {
