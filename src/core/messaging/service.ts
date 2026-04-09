@@ -58,8 +58,7 @@ export class MessagingService {
     assertDmAccess(channelName, agentId);
     const channel = this.channels.findByName(channelName);
     if (!channel) throw new Error(`Channel "${channelName}" does not exist`);
-    const maxId = this.channels.getMaxMessageId(channel.id);
-    this.channels.addMember(agentId, channel.id, maxId);
+    this.channels.addMember(agentId, channel.id, 0);
   }
 
   send(agentId: string, channelName: string, content: string): Message {
@@ -135,9 +134,8 @@ export class MessagingService {
 
     const channel = this.createChannel(agentId, channelName);
 
-    const maxId = this.channels.getMaxMessageId(channel.id);
-    this.channels.addMember(agentId, channel.id, maxId);
-    this.channels.addMember(targetAgentId, channel.id, maxId);
+    this.channels.addMember(agentId, channel.id, 0);
+    this.channels.addMember(targetAgentId, channel.id, 0);
 
     const allAgents = this.agents.listAll();
     const validIds = allAgents.map((a) => a.id);

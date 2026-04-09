@@ -156,6 +156,47 @@ describe("MessagingService", () => {
     });
   });
 
+  // ── bug #7: subscribe cursor initialization ────────────────────
+
+  describe("bug #7: subscribe cursor initialization", () => {
+    it("new subscriber sees pre-existing messages on first read", () => {
+      const { svc } = setup();
+
+      svc.register("alice");
+      svc.register("bob");
+      svc.createChannel("alice", "general");
+      svc.subscribe("alice", "general");
+
+      // Alice sends messages BEFORE bob subscribes
+      svc.send("alice", "general", "msg 1");
+      svc.send("alice", "general", "msg 2");
+      svc.send("alice", "general", "msg 3");
+
+      // Bob subscribes after messages exist
+      svc.subscribe("bob", "general");
+
+      // Bob should see pre-existing messages (cursor = 0, not maxId)
+      const messages = svc.read("bob", "general");
+      expect(messages.length).toBe(3);
+      expect(messages[0]!.content).toBe("msg 1");
+    });
+
+    it("new DM participant sees pre-existing messages", () => {
+      const { svc } = setup();
+
+      svc.register("alice");
+      svc.register("bob");
+
+      // First DM creates channel and sends message
+      svc.directMessage("alice", "bob", "hey bob");
+
+      // Bob reads — should see the initial DM (cursor starts at 0)
+      const messages = svc.read("bob", "alice,bob");
+      expect(messages.length).toBe(1);
+      expect(messages[0]!.content).toBe("hey bob");
+    });
+  });
+
   // ── listAgents filters active ──────────────────────────────────
 
   describe("listAgents", () => {
