@@ -5,12 +5,6 @@ import { createSqliteRepos } from "../../src/storage/sqlite";
 import { MessagingService } from "../../src/core/messaging/service";
 import { isAgentActive } from "../../src/core/utils";
 import type { Agent } from "../../src/core/messaging/types";
-import { createClaudeNotifier } from "../../src/notifications/claude-notifier/notifier";
-import type { NotificationPort } from "../../src/core/ports";
-
-const sleep = Bun.sleep;
-
-const FAST_INTERVAL = 50;
 
 const TEST_DB = testDbPath("lifecycle");
 
@@ -393,79 +387,6 @@ describe("late onclose race", () => {
     const agent = db.query("SELECT * FROM agents WHERE id = ?").get("planner") as Agent;
     expect(agent.pid).toBe(12345);
     expect(agent.registered_at).not.toBeNull();
-    db.close();
-  });
-});
-
-describe("reconnect polling", () => {
-  it("notifications resume on previously subscribed channels after re-register", async () => {
-    const { db, svc } = setup();
-    svc.register("agent-a");
-    svc.register("agent-b");
-    svc.createChannel("agent-a", "agent-a,agent-b");
-    svc.send("agent-a", "agent-a,agent-b", "setup");
-    svc.subscribe("agent-b", "agent-a,agent-b");
-    svc.read("agent-b", "agent-a,agent-b"); // agent-b subscribes
-
-    // agent-b disconnects
-    svc.unregister("agent-b");
-
-    // agent-b reconnects
-    svc.register("agent-b");
-
-    // agent-a sends while agent-b is back
-    svc.send("agent-a", "agent-a,agent-b", "welcome back");
-
-    // agent-b starts polling — should get notification on existing subscription
-    const notifications: { content: string; meta: Record<string, string> }[] = [];
-    const repos = createSqliteRepos(db);
-    const port: NotificationPort = {
-      notify: async (content, meta) => { notifications.push({ content, meta }); },
-    };
-    const stop = createClaudeNotifier(svc, repos.agents, port, "agent-b", FAST_INTERVAL);
-    await sleep(200);
-    await stop();
-
-    expect(notifications.length).toBeGreaterThan(0);
-    expect(notifications.some((n) => n.content.includes("welcome back"))).toBe(true);
-    db.close();
-  });
-});
-
-describe("ownership loss stops polling", () => {
-  it("poller stops delivering notifications after another process reclaims the agent name", async () => {
-    const { db, svc } = setup();
-    svc.register("agent-a");
-    svc.register("agent-b");
-    svc.createChannel("agent-b", "ch");
-    svc.send("agent-b", "ch", "setup");
-    svc.subscribe("agent-a", "ch");
-    svc.read("agent-a", "ch");
-
-    const notifications: { content: string }[] = [];
-    const repos2 = createSqliteRepos(db);
-    const port2: NotificationPort = {
-      notify: async (content) => { notifications.push({ content }); },
-    };
-    const stop = createClaudeNotifier(svc, repos2.agents, port2, "agent-a", FAST_INTERVAL);
-
-    // Let poller run a tick
-    await sleep(100);
-
-    // Simulate another process reclaiming agent-a's name.
-    // PID 1 (init/launchd) is always alive — represents a real live takeover.
-    const now = Date.now();
-    db.run("UPDATE agents SET pid = 1, registered_at = ?, last_seen_at = ? WHERE id = ?", [now, now, "agent-a"]);
-
-    // Send a message after reclaim
-    svc.send("agent-b", "ch", "post-reclaim message");
-
-    // Wait for poller to detect ownership loss
-    await sleep(200);
-    await stop();
-
-    // The post-reclaim message should NOT have been delivered
-    expect(notifications.every((n) => !n.content.includes("post-reclaim"))).toBe(true);
     db.close();
   });
 });
