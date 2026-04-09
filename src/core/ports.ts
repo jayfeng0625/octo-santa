@@ -95,3 +95,14 @@ export interface BrainStore {
 export interface NotificationPort {
   notify(content: string, meta: Record<string, string>): Promise<void>;
 }
+
+export interface NotificationDispatch {
+  dispatch(notification: {
+    channelName: string;
+    sender: string;
+    content: string;
+    messageId: number;
+    isDm: boolean;
+    targetAgents: string[];
+  }): void;
+}
