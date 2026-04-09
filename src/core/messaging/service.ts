@@ -3,13 +3,13 @@ import type {
   ChannelRepository,
   MessageRepository,
   CursorRepository,
+  NotificationDispatch,
 } from "../ports";
 import type {
   Agent,
   Channel,
   Message,
   ReadOptions,
-  PendingNotification,
 } from "./types";
 import {
   validateAgentName,
@@ -25,7 +25,8 @@ export class MessagingService {
     private readonly channels: ChannelRepository,
     private readonly messages: MessageRepository,
     private readonly cursors: CursorRepository,
-    private readonly pid: number
+    private readonly pid: number,
+    private readonly dispatch?: NotificationDispatch
   ) {}
 
   private requireRegistered(agentId: string): void {
@@ -36,6 +37,54 @@ export class MessagingService {
         `Agent "${agentId}" must call messaging_register before using messaging tools`
       );
     }
+  }
+
+  private resolveTargets(
+    channelId: number,
+    channelName: string,
+    mentions: string[],
+    senderId: string
+  ): { targetAgents: string[]; isDm: boolean } {
+    const isDm = this.isDmChannelWithMembers(channelName, channelId);
+
+    if (isDm) {
+      const members = this.channels.getMembers(channelId);
+      const targetAgents = members
+        .map((m) => m.id)
+        .filter((id) => id !== senderId);
+      return { targetAgents, isDm: true };
+    }
+
+    if (mentions.length === 0) {
+      return { targetAgents: [], isDm: false };
+    }
+
+    if (mentions.includes("*")) {
+      const members = this.channels.getMembers(channelId);
+      const targetAgents = members
+        .map((m) => m.id)
+        .filter((id) => id !== senderId);
+      return { targetAgents, isDm: false };
+    }
+
+    const members = this.channels.getMembers(channelId);
+    const memberIds = new Set(members.map((m) => m.id));
+    const targetAgents = mentions.filter(
+      (id) => id !== senderId && memberIds.has(id)
+    );
+    return { targetAgents, isDm: false };
+  }
+
+  private isDmChannelWithMembers(
+    channelName: string,
+    channelId: number
+  ): boolean {
+    if (!isDmChannel(channelName)) return false;
+    const match = /^([\w-]+),([\w-]+)$/.exec(channelName);
+    if (!match) return false;
+    const members = this.channels.getMembers(channelId);
+    const memberIds = new Set(members.map((m) => m.id));
+    return memberIds.has(match[1]!) && memberIds.has(match[2]!);
   }
 
   register(agentId: string): Agent {
@@ -74,12 +123,33 @@ export class MessagingService {
     const allAgents = this.agents.listAll();
     const validIds = allAgents.map((a) => a.id);
     const mentions = extractMentions(content, validIds);
-    return this.messages.insertAndJoinSender(
+    const message = this.messages.insertAndJoinSender(
       channel.id,
       agentId,
       content,
       mentions
     );
+
+    if (this.dispatch) {
+      const { targetAgents, isDm } = this.resolveTargets(
+        channel.id,
+        channelName,
+        mentions,
+        agentId
+      );
+      if (targetAgents.length > 0) {
+        this.dispatch.dispatch({
+          channelName,
+          sender: agentId,
+          content,
+          messageId: message.id,
+          isDm,
+          targetAgents,
+        });
+      }
+    }
+
+    return message;
   }
 
   read(agentId: string, channelName: string, opts?: ReadOptions): Message[] {
@@ -140,12 +210,25 @@ export class MessagingService {
     const allAgents = this.agents.listAll();
     const validIds = allAgents.map((a) => a.id);
     const mentions = extractMentions(content, validIds);
-    return this.messages.insertAndJoinSender(
+    const message = this.messages.insertAndJoinSender(
       channel.id,
       agentId,
       content,
       mentions
     );
+
+    if (this.dispatch) {
+      this.dispatch.dispatch({
+        channelName,
+        sender: agentId,
+        content,
+        messageId: message.id,
+        isDm: true,
+        targetAgents: [targetAgentId],
+      });
+    }
+
+    return message;
   }
 
   renameChannel(
@@ -207,61 +290,5 @@ export class MessagingService {
     const channel = this.channels.findByName(channelName);
     if (!channel) return [];
     return this.messages.readSince(channel.id, sinceId, limit, agentId);
-  }
-
-  getUndelivered(
-    agentId: string,
-    hwm?: Map<number, number>
-  ): PendingNotification[] {
-    const subscribed = this.cursors.listForAgent(agentId);
-    const result: PendingNotification[] = [];
-
-    for (const sub of subscribed) {
-      const lowerBound = Math.max(
-        sub.lastReadMessageId,
-        hwm?.get(sub.channelId) ?? 0
-      );
-
-      let isDm = false;
-      if (isDmChannel(sub.channelName)) {
-        const match = /^([\w-]+),([\w-]+)$/.exec(sub.channelName);
-        if (match) {
-          const members = this.channels.getMembers(sub.channelId);
-          const memberIds = new Set(members.map((m) => m.id));
-          isDm = memberIds.has(match[1]!) && memberIds.has(match[2]!);
-        }
-      }
-
-      // Fetch ALL unread messages — no artificial cap. At our scale (handful
-      // of agents) this is fine. A cap would suppress notifications when the
-      // triggering @mention falls beyond the limit (codex review finding #1).
-      const unread = this.messages.readSince(
-        sub.channelId,
-        lowerBound,
-        1_000_000,
-        agentId
-      );
-      if (unread.length === 0) continue;
-
-      if (!isDm) {
-        let shouldNotify = false;
-        for (const msg of unread) {
-          const mentions: string[] = JSON.parse(msg.mentions);
-          if (mentions.includes("*") || mentions.includes(agentId)) {
-            shouldNotify = true;
-            break;
-          }
-        }
-        if (!shouldNotify) continue;
-      }
-
-      result.push({
-        channelName: sub.channelName,
-        messages: unread,
-        isDm,
-      });
-    }
-
-    return result;
   }
 }
