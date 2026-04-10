@@ -67,12 +67,10 @@ describe("SqliteMessageRepo", () => {
     db.close();
   });
 
-  it("countSince and readSince work correctly", () => {
+  it("readSince returns messages after sinceId excluding agent", () => {
     const { db, messages, channelId } = setup();
     messages.insertAndJoinSender(channelId, "agent-a", "msg-1", []);
     messages.insertAndJoinSender(channelId, "agent-b", "msg-2", []);
-    const count = messages.countSince(channelId, 0, "agent-a");
-    expect(count).toBe(1);
     const read = messages.readSince(channelId, 0, 100, "agent-a");
     expect(read.length).toBe(1);
     expect(read[0]!.content).toBe("msg-2");

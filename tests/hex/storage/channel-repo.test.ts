@@ -63,13 +63,6 @@ describe("SqliteChannelRepo", () => {
     db.close();
   });
 
-  it("getMaxMessageId returns 0 when no messages", () => {
-    const { db, channels } = setup();
-    const ch = channels.create("coordination", "agent-a");
-    expect(channels.getMaxMessageId(ch.id)).toBe(0);
-    db.close();
-  });
-
   it("renameWithAnnouncement renames and inserts system message", () => {
     const { db, channels } = setup();
     const ch = channels.create("old-name", "agent-a");

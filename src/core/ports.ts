@@ -25,7 +25,6 @@ export interface ChannelRepository {
   addMember(agentId: string, channelId: number, initialCursorId: number): void;
   getMembers(channelId: number): Agent[];
   getMemberCount(channelId: number): number;
-  getMaxMessageId(channelId: number): number;
   renameWithAnnouncement(
     channelId: number,
     newName: string,
@@ -52,11 +51,6 @@ export interface MessageRepository {
     excludeAgent: string
   ): Message[];
   readRecent(channelId: number, limit: number): Message[];
-  countSince(
-    channelId: number,
-    sinceId: number,
-    excludeAgent: string
-  ): number;
   readSince(
     channelId: number,
     sinceId: number,
@@ -94,4 +88,15 @@ export interface BrainStore {
 
 export interface NotificationPort {
   notify(content: string, meta: Record<string, string>): Promise<void>;
+}
+
+export interface NotificationDispatch {
+  dispatch(notification: {
+    channelName: string;
+    sender: string;
+    content: string;
+    messageId: number;
+    isDm: boolean;
+    targetAgents: string[];
+  }): void;
 }

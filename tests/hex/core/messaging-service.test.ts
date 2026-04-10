@@ -3,6 +3,7 @@ import { MessagingService } from "../../../src/core/messaging/service";
 import { createSqliteRepos } from "../../../src/storage/sqlite";
 import { createDb } from "../../../src/storage/sqlite/db";
 import { runMigrations, allMigrations } from "../../../src/storage/sqlite/migrations";
+import { createNotificationDispatcher } from "../../../src/notifications/dispatch/dispatcher";
 import { cleanupDb } from "../../helpers/db";
 
 const TEST_DB = `/tmp/octo-santa-test-hex-messaging-svc-${process.pid}.sqlite`;
@@ -12,12 +13,14 @@ function setup() {
   const db = createDb(TEST_DB);
   runMigrations(db, allMigrations);
   const repos = createSqliteRepos(db);
+  const dispatcher = createNotificationDispatcher();
   const svc = new MessagingService(
     repos.agents,
     repos.channels,
     repos.messages,
     repos.cursors,
-    process.pid
+    process.pid,
+    dispatcher
   );
   return { db, repos, svc };
 }
@@ -156,6 +159,47 @@ describe("MessagingService", () => {
     });
   });
 
+  // ── bug #7: subscribe cursor initialization ────────────────────
+
+  describe("bug #7: subscribe cursor initialization", () => {
+    it("new subscriber sees pre-existing messages on first read", () => {
+      const { svc } = setup();
+
+      svc.register("alice");
+      svc.register("bob");
+      svc.createChannel("alice", "general");
+      svc.subscribe("alice", "general");
+
+      // Alice sends messages BEFORE bob subscribes
+      svc.send("alice", "general", "msg 1");
+      svc.send("alice", "general", "msg 2");
+      svc.send("alice", "general", "msg 3");
+
+      // Bob subscribes after messages exist
+      svc.subscribe("bob", "general");
+
+      // Bob should see pre-existing messages (cursor = 0, not maxId)
+      const messages = svc.read("bob", "general");
+      expect(messages.length).toBe(3);
+      expect(messages[0]!.content).toBe("msg 1");
+    });
+
+    it("new DM participant sees pre-existing messages", () => {
+      const { svc } = setup();
+
+      svc.register("alice");
+      svc.register("bob");
+
+      // First DM creates channel and sends message
+      svc.directMessage("alice", "bob", "hey bob");
+
+      // Bob reads — should see the initial DM (cursor starts at 0)
+      const messages = svc.read("bob", "alice,bob");
+      expect(messages.length).toBe(1);
+      expect(messages[0]!.content).toBe("hey bob");
+    });
+  });
+
   // ── listAgents filters active ──────────────────────────────────
 
   describe("listAgents", () => {
@@ -228,25 +272,6 @@ describe("MessagingService", () => {
       expect(messages[0]!.agent_id).toBe("_system");
     });
 
-    it("rename announcement appears in getUndelivered for renaming agent", () => {
-      const { svc } = setup();
-
-      svc.register("alice");
-      svc.createChannel("alice", "old-name");
-      svc.subscribe("alice", "old-name");
-      // Read to advance cursor past any existing messages
-      svc.read("alice", "old-name");
-
-      svc.renameChannel("alice", "old-name", "new-name");
-
-      // getUndelivered should include the system announcement for alice
-      // because "_system" != "alice", so self-exclusion doesn't filter it
-      // and @all mention triggers group notification
-      const pending = svc.getUndelivered("alice");
-      expect(pending.length).toBe(1);
-      expect(pending[0]!.messages[0]!.content).toContain("renamed from");
-    });
-
     it("rejects renaming a DM channel", () => {
       const { svc } = setup();
 
@@ -294,88 +319,6 @@ describe("MessagingService", () => {
       expect(() =>
         svc.renameChannel("alice", "general", "   ")
       ).toThrow("new channel name must not be empty");
-    });
-  });
-
-  // ── getUndelivered with DM/group logic ─────────────────────────
-
-  describe("getUndelivered", () => {
-    it("returns DM notifications without mention requirement", () => {
-      const { svc } = setup();
-
-      svc.register("alice");
-      svc.register("bob");
-
-      // Alice DMs Bob — both are subscribed
-      svc.directMessage("alice", "bob", "hey, you there?");
-
-      const notifications = svc.getUndelivered("bob");
-      expect(notifications.length).toBe(1);
-      expect(notifications[0]!.isDm).toBe(true);
-      expect(notifications[0]!.messages.length).toBe(1);
-      expect(notifications[0]!.channelName).toBe("alice,bob");
-    });
-
-    it("filters group channel notifications by mentions", () => {
-      const { svc } = setup();
-
-      svc.register("alice");
-      svc.register("bob");
-      svc.register("charlie");
-
-      svc.createChannel("alice", "general");
-      svc.subscribe("alice", "general");
-      svc.subscribe("bob", "general");
-      svc.subscribe("charlie", "general");
-
-      // Message without mention — bob should NOT be notified
-      svc.send("alice", "general", "just a casual message");
-
-      let notifications = svc.getUndelivered("bob");
-      expect(notifications.length).toBe(0);
-
-      // Message with @bob mention — bob should be notified
-      svc.send("alice", "general", "hey @bob check this out");
-
-      notifications = svc.getUndelivered("bob");
-      expect(notifications.length).toBe(1);
-      expect(notifications[0]!.isDm).toBe(false);
-    });
-
-    it("notifies on @all mention in group channel", () => {
-      const { svc } = setup();
-
-      svc.register("alice");
-      svc.register("bob");
-
-      svc.createChannel("alice", "announcements");
-      svc.subscribe("alice", "announcements");
-      svc.subscribe("bob", "announcements");
-
-      svc.send("alice", "announcements", "attention @all: meeting at 3pm");
-
-      const notifications = svc.getUndelivered("bob");
-      expect(notifications.length).toBe(1);
-    });
-
-    it("respects hwm to avoid re-notification", () => {
-      const { svc } = setup();
-
-      svc.register("alice");
-      svc.register("bob");
-
-      svc.directMessage("alice", "bob", "first message");
-
-      const first = svc.getUndelivered("bob");
-      expect(first.length).toBe(1);
-
-      // Simulate hwm tracking — push the hwm past the message
-      const hwm = new Map<number, number>();
-      const lastMsg = first[0]!.messages[first[0]!.messages.length - 1]!;
-      hwm.set(lastMsg.channel_id, lastMsg.id);
-
-      const second = svc.getUndelivered("bob", hwm);
-      expect(second.length).toBe(0);
     });
   });
 

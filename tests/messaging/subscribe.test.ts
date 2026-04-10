@@ -16,7 +16,7 @@ function setup() {
 afterEach(() => cleanupDb(TEST_DB));
 
 describe("subscribe", () => {
-  it("creates cursor at max message ID for new subscriber", () => {
+  it("creates cursor at 0 so new subscriber sees full history", () => {
     const { db, svc } = setup();
     svc.register("agent-a");
     svc.createChannel("agent-a", "planning");
@@ -27,9 +27,10 @@ describe("subscribe", () => {
     svc.register("jay");
     svc.subscribe("jay", "planning");
 
-    // Cursor should be at the latest message, so read returns nothing
+    // Cursor starts at 0, so first read returns all pre-existing messages
     const unread = svc.read("jay", "planning");
-    expect(unread).toHaveLength(0);
+    expect(unread).toHaveLength(3);
+    expect(unread[0]!.content).toBe("msg one");
     db.close();
   });
 

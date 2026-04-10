@@ -8,7 +8,7 @@ import { createFsBrainStore, readConfig } from "./storage/fs-brain-store/store";
 import { MessagingService } from "./core/messaging/service";
 import { BrainService } from "./core/brain/service";
 import { startMcpStdio } from "./transports/mcp-stdio/adapter";
-import { createClaudeNotifier } from "./notifications/claude-notifier/notifier";
+import { createNotificationDispatcher } from "./notifications/dispatch/dispatcher";
 import { log } from "./log";
 
 function expandHome(p: string): string {
@@ -32,13 +32,17 @@ async function main() {
   const config = readConfig(cwd);
   const brainStore = createFsBrainStore(cwd, config?.brain);
 
-  // 4. Services
+  // 4. Notification dispatcher
+  const dispatcher = createNotificationDispatcher();
+
+  // 5. Services
   const messaging = new MessagingService(
     repos.agents,
     repos.channels,
     repos.messages,
     repos.cursors,
-    process.pid
+    process.pid,
+    dispatcher
   );
 
   const brain = new BrainService(
@@ -49,23 +53,25 @@ async function main() {
     process.pid
   );
 
-  // 5. Domain registration at startup
+  // 6. Domain registration at startup
   brain.registerDomain(cwd);
 
-  // 6. Compute brain index for bootstrap message
+  // 7. Compute brain index for bootstrap message
   const hasBrain = !!(config?.brain?.dirs || config?.brain?.files);
   const brainIndex = hasBrain ? brainStore.scanDocs() : undefined;
 
-  // 7. Start MCP stdio transport
-  const intervalMs = Number(process.env.OCTO_SANTA_POLL_INTERVAL_MS) || 3000;
+  // 8. Start MCP stdio transport
+  const heartbeatIntervalMs = Number(process.env.OCTO_SANTA_HEARTBEAT_INTERVAL_MS) || 10_000;
 
   await startMcpStdio({
     messaging,
     brain,
     config,
     brainIndex,
-    startNotifier: (agentId, port) =>
-      createClaudeNotifier(messaging, repos.agents, port, agentId, intervalMs),
+    registerNotificationHandler: dispatcher.register.bind(dispatcher),
+    unregisterNotificationHandler: dispatcher.unregister.bind(dispatcher),
+    agents: repos.agents,
+    heartbeatIntervalMs,
     onDisconnect: (agentId, pid) => {
       messaging.unregister(agentId);
       brain.onDisconnect(agentId, pid);
