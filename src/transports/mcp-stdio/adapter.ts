@@ -5,7 +5,7 @@ import { z } from "zod";
 import type { MessagingService } from "../../core/messaging/service";
 import type { BrainService } from "../../core/brain/service";
 import type { OctoSantaConfig, BrainDoc } from "../../core/brain/types";
-import type { NotificationPort } from "../../core/ports";
+import type { NotificationPort, AgentRepository } from "../../core/ports";
 import { log } from "../../log";
 import { jsonResult, withAgent } from "./helpers";
 
@@ -313,10 +313,13 @@ export interface McpStdioOpts {
   brain: BrainService;
   config: OctoSantaConfig | null;
   brainIndex?: BrainDoc[];
-  startNotifier: (
+  registerNotificationHandler: (
     agentId: string,
     port: NotificationPort
-  ) => () => Promise<void>;
+  ) => void;
+  unregisterNotificationHandler: (agentId: string) => void;
+  agents: AgentRepository;
+  heartbeatIntervalMs?: number;
   onDisconnect: (agentId: string, pid: number) => void;
 }
 
@@ -326,7 +329,10 @@ export async function startMcpStdio(opts: McpStdioOpts): Promise<void> {
     brain,
     config,
     brainIndex,
-    startNotifier,
+    registerNotificationHandler,
+    unregisterNotificationHandler,
+    agents,
+    heartbeatIntervalMs = 10_000,
     onDisconnect,
   } = opts;
 
@@ -342,7 +348,7 @@ export async function startMcpStdio(opts: McpStdioOpts): Promise<void> {
     }
   );
 
-  let stopPolling: (() => Promise<void>) | null = null;
+  let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   let boundAgentId: string | null = null;
 
   function onAgentId(agentId: string): { commit: () => void } {
@@ -366,7 +372,15 @@ export async function startMcpStdio(opts: McpStdioOpts): Promise<void> {
               params: { content, meta },
             }),
         };
-        stopPolling = startNotifier(agentId, port);
+        registerNotificationHandler(agentId, port);
+        heartbeatTimer = setInterval(() => {
+          const result = agents.heartbeatOrReclaim(agentId, process.pid);
+          if (result === "lost") {
+            clearInterval(heartbeatTimer!);
+            heartbeatTimer = null;
+          }
+        }, heartbeatIntervalMs);
+        heartbeatTimer.unref();
       },
     };
   }
@@ -379,7 +393,8 @@ export async function startMcpStdio(opts: McpStdioOpts): Promise<void> {
 
   mcpServer.server.onclose = async () => {
     try {
-      await stopPolling?.();
+      if (heartbeatTimer !== null) clearInterval(heartbeatTimer);
+      if (boundAgentId) unregisterNotificationHandler(boundAgentId);
     } finally {
       if (boundAgentId) {
         onDisconnect(boundAgentId, process.pid);

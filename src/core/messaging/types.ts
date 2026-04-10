@@ -32,12 +32,6 @@ export interface ReadOptions {
   before_id?: number;
 }
 
-export interface PendingNotification {
-  channelName: string;
-  messages: Message[];
-  isDm: boolean;
-}
-
 export interface CursorWithChannel {
   channelId: number;
   channelName: string;

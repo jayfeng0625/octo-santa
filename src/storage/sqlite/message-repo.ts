@@ -126,19 +126,6 @@ export class SqliteMessageRepo implements MessageRepository {
   }
 
   /**
-   * COUNT(*) WHERE id > sinceId AND agent_id != excludeAgent
-   */
-  countSince(channelId: number, sinceId: number, excludeAgent: string): number {
-    const row = this.db
-      .query(
-        `SELECT COUNT(*) as count FROM messages
-         WHERE channel_id = ? AND id > ? AND agent_id != ?`
-      )
-      .get(channelId, sinceId, excludeAgent) as { count: number };
-    return row.count;
-  }
-
-  /**
    * SELECT * WHERE id > sinceId AND agent_id != excludeAgent ORDER BY id ASC
    */
   readSince(
