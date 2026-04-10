@@ -319,6 +319,8 @@ export interface McpStdioOpts {
   ) => void;
   unregisterNotificationHandler: (agentId: string) => void;
   agents: AgentRepository;
+  /** Factory invoked once per session when an agent binds. Returns a handle with stop(). */
+  startPoller: (port: NotificationPort, agentId: string) => { stop(): void };
   heartbeatIntervalMs?: number;
   onDisconnect: (agentId: string, pid: number) => void;
 }
@@ -332,6 +334,7 @@ export async function startMcpStdio(opts: McpStdioOpts): Promise<void> {
     registerNotificationHandler,
     unregisterNotificationHandler,
     agents,
+    startPoller,
     heartbeatIntervalMs = 10_000,
     onDisconnect,
   } = opts;
@@ -339,7 +342,7 @@ export async function startMcpStdio(opts: McpStdioOpts): Promise<void> {
   const hasBrain = !!(config?.brain?.dirs || config?.brain?.files);
 
   const mcpServer = new McpServer(
-    { name: "octo-santa", version: "0.3.1" },
+    { name: "octo-santa", version: "0.7.0" },
     {
       capabilities: {
         experimental: { "claude/channel": {} },
@@ -350,6 +353,7 @@ export async function startMcpStdio(opts: McpStdioOpts): Promise<void> {
 
   let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   let boundAgentId: string | null = null;
+  let pollerRef: { stop(): void } | null = null;
 
   function onAgentId(agentId: string): { commit: () => void } {
     if (boundAgentId !== null) {
@@ -373,6 +377,7 @@ export async function startMcpStdio(opts: McpStdioOpts): Promise<void> {
             }),
         };
         registerNotificationHandler(agentId, port);
+        pollerRef = startPoller(port, agentId);
         heartbeatTimer = setInterval(() => {
           const result = agents.heartbeatOrReclaim(agentId, process.pid);
           if (result === "lost") {
@@ -394,6 +399,7 @@ export async function startMcpStdio(opts: McpStdioOpts): Promise<void> {
   mcpServer.server.onclose = async () => {
     try {
       if (heartbeatTimer !== null) clearInterval(heartbeatTimer);
+      pollerRef?.stop();
       if (boundAgentId) unregisterNotificationHandler(boundAgentId);
     } finally {
       if (boundAgentId) {

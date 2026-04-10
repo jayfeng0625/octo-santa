@@ -4,6 +4,8 @@ import { join } from "node:path";
 import { createDb } from "./storage/sqlite/db";
 import { runMigrations, allMigrations } from "./storage/sqlite/migrations";
 import { createSqliteRepos } from "./storage/sqlite";
+import { SqliteNotificationQueryRepo } from "./storage/sqlite/notification-query-repo";
+import { createNotificationPoller } from "./notifications/poller/poller";
 import { createFsBrainStore, readConfig } from "./storage/fs-brain-store/store";
 import { MessagingService } from "./core/messaging/service";
 import { BrainService } from "./core/brain/service";
@@ -27,6 +29,7 @@ async function main() {
 
   // 2. Repositories
   const repos = createSqliteRepos(db);
+  const notificationQueries = new SqliteNotificationQueryRepo(db);
 
   // 3. Config + brain store
   const config = readConfig(cwd);
@@ -71,6 +74,15 @@ async function main() {
     registerNotificationHandler: dispatcher.register.bind(dispatcher),
     unregisterNotificationHandler: dispatcher.unregister.bind(dispatcher),
     agents: repos.agents,
+    startPoller: (port, agentId) => {
+      const poller = createNotificationPoller({
+        queries: notificationQueries,
+        port,
+        agentId,
+      });
+      poller.start();
+      return poller;
+    },
     heartbeatIntervalMs,
     onDisconnect: (agentId, pid) => {
       messaging.unregister(agentId);
