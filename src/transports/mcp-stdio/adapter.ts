@@ -8,6 +8,7 @@ import type { OctoSantaConfig, BrainDoc } from "../../core/brain/types";
 import type { NotificationPort, AgentRepository } from "../../core/ports";
 import { log } from "../../log";
 import { jsonResult, withAgent } from "./helpers";
+import pkg from "../../../package.json";
 
 // --- Instructions builder ---
 
@@ -342,7 +343,7 @@ export async function startMcpStdio(opts: McpStdioOpts): Promise<void> {
   const hasBrain = !!(config?.brain?.dirs || config?.brain?.files);
 
   const mcpServer = new McpServer(
-    { name: "octo-santa", version: "0.7.0" },
+    { name: "octo-santa", version: pkg.version },
     {
       capabilities: {
         experimental: { "claude/channel": {} },
