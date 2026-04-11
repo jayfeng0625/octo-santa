@@ -1,7 +1,7 @@
 # Event-Driven Notification Dispatch — Design Spec
 
 > Date: 2026-04-09
-> Status: Draft
+> Status: Implemented (with addendum — see §8)
 > Authors: os-pm, os-tl
 
 ---
@@ -209,3 +209,46 @@ Eliminated by construction. Push dispatches at send-time based on mentions, not 
 6. Architecture: notification dispatch invoked from core, delivery logic lives in adapter
 7. Read cursor remains the sole position-tracking mechanism in core
 8. Heartbeat runs in MCP transport adapter, not notification layer
+
+## 8. Postscript: What Actually Happened (2026-04-10)
+
+This spec was implemented in commit `1122ada` (PR #9). All success criteria were
+met — in isolation. The event-driven dispatch works correctly for in-process
+delivery.
+
+**The spec missed the cross-process case.** Each Claude Code agent runs in its own
+subprocess. The dispatcher's in-memory `Map<string, NotificationPort>` only contains
+the local process's agent. When Agent A (process 1) sends `@agent-b`, the dispatcher
+in process 1 does `handlers.get("agent-b")` → `undefined` → silently skips. Agent B
+(process 2) never receives a push notification.
+
+The old polling notifier worked cross-process because each process independently
+polled SQLite. This spec eliminated that cross-process bridge without replacement.
+
+**Fix (commit `5deaf63`):** A cross-process SQLite poller was added alongside the
+dispatcher. See [cross-process-notification-poller.md](2026-04-10-cross-process-notification-poller.md)
+for the design. The poller is architecturally better than the old notifier (independent
+HWM, simpler query, adapter-level filtering, no core coupling), but it is polling —
+the thing this spec set out to eliminate.
+
+**Success criteria #3 ("polling notifier loop eliminated") was not durably achieved.**
+The old polling loop was eliminated, but a new (improved) polling loop was required
+within 24 hours. The fundamental constraint: cross-process communication over shared
+SQLite requires reading shared state, which means polling. Event-driven dispatch
+solves same-process delivery but cannot cross the process boundary.
+
+**The dispatcher is currently dead code.** Single agent per process, sender excluded
+from targets — the dispatcher's `handlers.get()` never finds a match. It carries
+optionality for future multi-agent-per-process transports (Phase 3b direct mode).
+If that future doesn't arrive, it's 31 lines that can be deleted.
+
+**What this spec got right:**
+- Removing `getUndelivered()` from core (60 lines of adapter-shaped domain logic, gone)
+- Fixing bugs #7 and #8 by construction (independent HWM, cursor decoupling)
+- Establishing that push reliability is a per-transport adapter concern
+- Moving heartbeat to the transport adapter
+
+**What this spec got wrong:**
+- Assuming event-driven dispatch is sufficient for the N-process deployment model
+- Not accounting for the fact that SQLite is the only IPC bridge between processes
+- Success criteria that claimed polling was eliminated as a durable outcome

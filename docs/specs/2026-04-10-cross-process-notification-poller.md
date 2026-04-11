@@ -197,3 +197,20 @@ Adding HWM coordination between dispatcher and poller would couple independent c
 6. Bug #8 preserved: `read_messages` calls do not affect push delivery
 7. Adapter HWM is independent of read cursor
 8. Existing tests pass unchanged
+
+## 7. Addendum: Port Placement Correction (2026-04-11)
+
+The implementation placed `NotificationQueryPort` in `src/core/ports.ts`. This
+deviated from this spec, which defined it in `src/notifications/ports.ts` (section
+4, table row 1). The deviation occurred because the boundary tests enforce "storage
+must not depend on notifications" — the SQLite implementation needed to import the
+interface, and core was the path of least resistance.
+
+**Correction:** The named interface was removed from core entirely. The poller now
+accepts raw query functions (`getNewMessagesForAgent`, `getMaxMessageId`) injected
+via closures from `main.ts`. `SqliteNotificationQueryRepo` remains in storage as a
+storage-internal class with no core port to implement.
+
+This aligns with the architectural principle that core must be push-first.
+`NotificationDispatch` is the sole notification interface in core — polling is an
+adapter-level concern that should be swappable without touching core.
