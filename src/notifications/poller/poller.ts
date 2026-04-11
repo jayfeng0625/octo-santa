@@ -1,20 +1,28 @@
-import type { NotificationQueryPort, NotificationPort } from "../../core/ports";
+import type { NotificationPort } from "../../core/ports";
+import type { Message } from "../../core/messaging/types";
 import { isDmChannel } from "../../core/utils";
 import { log } from "../../log";
 
+type MessageWithChannel = Message & { channel_name: string };
+
 export function createNotificationPoller(opts: {
-  queries: NotificationQueryPort;
+  getNewMessagesForAgent: (
+    agentId: string,
+    sinceId: number,
+    limit: number
+  ) => MessageWithChannel[];
+  getMaxMessageId: () => number;
   port: NotificationPort;
   agentId: string;
   intervalMs?: number;
 }): { start(): void; stop(): void; _tick(): Promise<void> } {
-  const { queries, port, agentId, intervalMs = 2000 } = opts;
+  const { getNewMessagesForAgent, getMaxMessageId, port, agentId, intervalMs = 2000 } = opts;
   let hwm = 0;
   let timer: ReturnType<typeof setInterval> | null = null;
 
   async function tick(): Promise<void> {
     try {
-      const messages = queries.getNewMessagesForAgent(agentId, hwm, 100);
+      const messages = getNewMessagesForAgent(agentId, hwm, 100);
       for (const msg of messages) {
         const shouldNotify = shouldNotifyMessage(msg.channel_name, msg.mentions);
         if (shouldNotify) {
@@ -51,7 +59,7 @@ export function createNotificationPoller(opts: {
   return {
     start() {
       if (timer !== null) return;
-      hwm = queries.getMaxMessageId();
+      hwm = getMaxMessageId();
       timer = setInterval(() => {
         tick();
       }, intervalMs);

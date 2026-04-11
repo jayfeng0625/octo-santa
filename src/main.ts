@@ -76,7 +76,8 @@ async function main() {
     agents: repos.agents,
     startPoller: (port, agentId) => {
       const poller = createNotificationPoller({
-        queries: notificationQueries,
+        getNewMessagesForAgent: notificationQueries.getNewMessagesForAgent.bind(notificationQueries),
+        getMaxMessageId: notificationQueries.getMaxMessageId.bind(notificationQueries),
         port,
         agentId,
       });

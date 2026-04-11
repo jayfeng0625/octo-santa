@@ -1,3 +1,6 @@
-// Re-export NotificationQueryPort from core so notification adapters can import
-// from this module without knowing the interface lives in core.
-export type { NotificationQueryPort } from "../core/ports";
+// Notification adapter ports are defined inline on factory functions
+// (e.g. createNotificationPoller takes raw query functions, not a named interface).
+// This keeps polling as an adapter concern — no pull-based interfaces in core.
+//
+// This file is intentionally empty. It exists as a placeholder for future
+// notification adapter port definitions if needed.

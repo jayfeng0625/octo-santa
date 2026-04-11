@@ -60,7 +60,8 @@ describe("cross-process poller integration", () => {
     // Set up the poller for agent-b with a mock notification port
     const { port, calls } = makeNotificationPort();
     const poller = createNotificationPoller({
-      queries: notificationQueries,
+      getNewMessagesForAgent: notificationQueries.getNewMessagesForAgent.bind(notificationQueries),
+      getMaxMessageId: notificationQueries.getMaxMessageId.bind(notificationQueries),
       port,
       agentId: "agent-b",
     });
@@ -96,7 +97,8 @@ describe("cross-process poller integration", () => {
 
     const { port, calls } = makeNotificationPort();
     const poller = createNotificationPoller({
-      queries: notificationQueries,
+      getNewMessagesForAgent: notificationQueries.getNewMessagesForAgent.bind(notificationQueries),
+      getMaxMessageId: notificationQueries.getMaxMessageId.bind(notificationQueries),
       port,
       agentId: "agent-b",
     });
@@ -126,7 +128,8 @@ describe("cross-process poller integration", () => {
 
     const { port, calls } = makeNotificationPort();
     const poller = createNotificationPoller({
-      queries: notificationQueries,
+      getNewMessagesForAgent: notificationQueries.getNewMessagesForAgent.bind(notificationQueries),
+      getMaxMessageId: notificationQueries.getMaxMessageId.bind(notificationQueries),
       port,
       agentId: "agent-b",
     });
@@ -156,7 +159,8 @@ describe("cross-process poller integration", () => {
 
     const { port, calls } = makeNotificationPort();
     const poller = createNotificationPoller({
-      queries: notificationQueries,
+      getNewMessagesForAgent: notificationQueries.getNewMessagesForAgent.bind(notificationQueries),
+      getMaxMessageId: notificationQueries.getMaxMessageId.bind(notificationQueries),
       port,
       agentId: "agent-b",
     });
@@ -182,7 +186,8 @@ describe("cross-process poller integration", () => {
 
     const { port, calls } = makeNotificationPort();
     const poller = createNotificationPoller({
-      queries: notificationQueries,
+      getNewMessagesForAgent: notificationQueries.getNewMessagesForAgent.bind(notificationQueries),
+      getMaxMessageId: notificationQueries.getMaxMessageId.bind(notificationQueries),
       port,
       agentId: "agent-b",
     });
@@ -213,7 +218,8 @@ describe("cross-process poller integration", () => {
 
     const { port, calls } = makeNotificationPort();
     const poller = createNotificationPoller({
-      queries: notificationQueries,
+      getNewMessagesForAgent: notificationQueries.getNewMessagesForAgent.bind(notificationQueries),
+      getMaxMessageId: notificationQueries.getMaxMessageId.bind(notificationQueries),
       port,
       agentId: "agent-b",
     });

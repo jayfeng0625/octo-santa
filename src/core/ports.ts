@@ -101,11 +101,3 @@ export interface NotificationDispatch {
   }): void;
 }
 
-export interface NotificationQueryPort {
-  getNewMessagesForAgent(
-    agentId: string,
-    sinceId: number,
-    limit: number
-  ): Array<Message & { channel_name: string }>;
-  getMaxMessageId(): number;
-}

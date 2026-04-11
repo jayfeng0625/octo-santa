@@ -1,16 +1,16 @@
 import { describe, it, expect } from "bun:test";
 import { createNotificationPoller } from "../../../src/notifications/poller/poller";
-import type { NotificationQueryPort, NotificationPort } from "../../../src/core/ports";
+import type { NotificationPort } from "../../../src/core/ports";
 import type { Message } from "../../../src/core/messaging/types";
 
 type MessageWithChannel = Message & { channel_name: string };
 
-function makeQueryPort(
+function makeQueryFns(
   messages: MessageWithChannel[] = [],
   maxId = 0
-): NotificationQueryPort {
+) {
   return {
-    getNewMessagesForAgent(_agentId, sinceId, limit) {
+    getNewMessagesForAgent(_agentId: string, sinceId: number, limit: number) {
       return messages.filter((m) => m.id > sinceId).slice(0, limit);
     },
     getMaxMessageId() {
@@ -48,10 +48,10 @@ function makeMessage(
 describe("createNotificationPoller", () => {
   describe("HWM initialization", () => {
     it("initializes HWM from getMaxMessageId on start", async () => {
-      const queries = makeQueryPort([], 42);
+      const queryFns = makeQueryFns([], 42);
       const { port, calls } = makeNotificationPort();
       const poller = createNotificationPoller({
-        queries,
+        ...queryFns,
         port,
         agentId: "agent-a",
       });
@@ -72,10 +72,10 @@ describe("createNotificationPoller", () => {
         content: "hi there",
       });
 
-      const queries = makeQueryPort([msg], 5);
+      const queryFns = makeQueryFns([msg], 5);
       const { port, calls } = makeNotificationPort();
       const poller = createNotificationPoller({
-        queries,
+        ...queryFns,
         port,
         agentId: "agent-a",
       });
@@ -96,10 +96,10 @@ describe("createNotificationPoller", () => {
       });
 
       // HWM starts at 10 — message at id=10 should be skipped
-      const queries = makeQueryPort([msg], 10);
+      const queryFns = makeQueryFns([msg], 10);
       const { port, calls } = makeNotificationPort();
       const poller = createNotificationPoller({
-        queries,
+        ...queryFns,
         port,
         agentId: "agent-a",
       });
@@ -123,10 +123,10 @@ describe("createNotificationPoller", () => {
         mentions: "[]", // no mentions — but DM always notifies
       });
 
-      const queries = makeQueryPort([msg], 0);
+      const queryFns = makeQueryFns([msg], 0);
       const { port, calls } = makeNotificationPort();
       const poller = createNotificationPoller({
-        queries,
+        ...queryFns,
         port,
         agentId: "agent-a",
       });
@@ -148,10 +148,10 @@ describe("createNotificationPoller", () => {
         mentions: '["agent-a"]',
       });
 
-      const queries = makeQueryPort([msg], 0);
+      const queryFns = makeQueryFns([msg], 0);
       const { port, calls } = makeNotificationPort();
       const poller = createNotificationPoller({
-        queries,
+        ...queryFns,
         port,
         agentId: "agent-a",
       });
@@ -172,10 +172,10 @@ describe("createNotificationPoller", () => {
         mentions: '["*"]',
       });
 
-      const queries = makeQueryPort([msg], 0);
+      const queryFns = makeQueryFns([msg], 0);
       const { port, calls } = makeNotificationPort();
       const poller = createNotificationPoller({
-        queries,
+        ...queryFns,
         port,
         agentId: "agent-a",
       });
@@ -196,10 +196,10 @@ describe("createNotificationPoller", () => {
         mentions: '["agent-c"]',
       });
 
-      const queries = makeQueryPort([msg], 0);
+      const queryFns = makeQueryFns([msg], 0);
       const { port, calls } = makeNotificationPort();
       const poller = createNotificationPoller({
-        queries,
+        ...queryFns,
         port,
         agentId: "agent-a", // agent-a is not mentioned
       });
@@ -220,10 +220,10 @@ describe("createNotificationPoller", () => {
         mentions: "[]",
       });
 
-      const queries = makeQueryPort([msg], 0);
+      const queryFns = makeQueryFns([msg], 0);
       const { port, calls } = makeNotificationPort();
       const poller = createNotificationPoller({
-        queries,
+        ...queryFns,
         port,
         agentId: "agent-a",
       });
@@ -244,10 +244,10 @@ describe("createNotificationPoller", () => {
         mentions: "not-valid-json",
       });
 
-      const queries = makeQueryPort([msg], 0);
+      const queryFns = makeQueryFns([msg], 0);
       const { port, calls } = makeNotificationPort();
       const poller = createNotificationPoller({
-        queries,
+        ...queryFns,
         port,
         agentId: "agent-a",
       });
@@ -286,10 +286,10 @@ describe("createNotificationPoller", () => {
         }),
       ];
 
-      const queries = makeQueryPort(msgs, 0);
+      const queryFns = makeQueryFns(msgs, 0);
       const { port, calls } = makeNotificationPort();
       const poller = createNotificationPoller({
-        queries,
+        ...queryFns,
         port,
         agentId: "agent-a",
       });
@@ -328,18 +328,14 @@ describe("createNotificationPoller", () => {
 
       let allMessages = tick1Messages;
 
-      const queries: NotificationQueryPort = {
-        getNewMessagesForAgent(_agentId, sinceId, limit) {
+      const { port, calls } = makeNotificationPort();
+      const poller = createNotificationPoller({
+        getNewMessagesForAgent(_agentId: string, sinceId: number, limit: number) {
           return allMessages.filter((m) => m.id > sinceId).slice(0, limit);
         },
         getMaxMessageId() {
           return 0;
         },
-      };
-
-      const { port, calls } = makeNotificationPort();
-      const poller = createNotificationPoller({
-        queries,
         port,
         agentId: "agent-a",
       });
@@ -371,10 +367,10 @@ describe("createNotificationPoller", () => {
         mentions: '["agent-a"]',
       });
 
-      const queries = makeQueryPort([msg], 0);
+      const queryFns = makeQueryFns([msg], 0);
       const { port, calls } = makeNotificationPort();
       const poller = createNotificationPoller({
-        queries,
+        ...queryFns,
         port,
         agentId: "agent-a",
       });
@@ -396,7 +392,9 @@ describe("createNotificationPoller", () => {
   describe("start/stop lifecycle", () => {
     it("stop clears the interval and prevents further ticks", async () => {
       let tickCount = 0;
-      const queries: NotificationQueryPort = {
+
+      const { port } = makeNotificationPort();
+      const poller = createNotificationPoller({
         getNewMessagesForAgent() {
           tickCount++;
           return [];
@@ -404,11 +402,6 @@ describe("createNotificationPoller", () => {
         getMaxMessageId() {
           return 0;
         },
-      };
-
-      const { port } = makeNotificationPort();
-      const poller = createNotificationPoller({
-        queries,
         port,
         agentId: "agent-a",
         intervalMs: 10,
@@ -425,7 +418,9 @@ describe("createNotificationPoller", () => {
 
     it("fires on interval after start", async () => {
       let callCount = 0;
-      const queries: NotificationQueryPort = {
+
+      const { port } = makeNotificationPort();
+      const poller = createNotificationPoller({
         getNewMessagesForAgent() {
           callCount++;
           return [];
@@ -433,11 +428,6 @@ describe("createNotificationPoller", () => {
         getMaxMessageId() {
           return 0;
         },
-      };
-
-      const { port } = makeNotificationPort();
-      const poller = createNotificationPoller({
-        queries,
         port,
         agentId: "agent-a",
         intervalMs: 20,
@@ -451,9 +441,9 @@ describe("createNotificationPoller", () => {
     });
 
     it("stop is idempotent — calling stop twice does not throw", () => {
-      const queries = makeQueryPort([], 0);
+      const queryFns = makeQueryFns([], 0);
       const { port } = makeNotificationPort();
-      const poller = createNotificationPoller({ queries, port, agentId: "agent-a" });
+      const poller = createNotificationPoller({ ...queryFns, port, agentId: "agent-a" });
 
       poller.start();
       poller.stop();
@@ -462,7 +452,9 @@ describe("createNotificationPoller", () => {
 
     it("catches and continues on tick errors", async () => {
       let callCount = 0;
-      const queries: NotificationQueryPort = {
+
+      const { port } = makeNotificationPort();
+      const poller = createNotificationPoller({
         getNewMessagesForAgent() {
           callCount++;
           throw new Error("db exploded");
@@ -470,11 +462,6 @@ describe("createNotificationPoller", () => {
         getMaxMessageId() {
           return 0;
         },
-      };
-
-      const { port } = makeNotificationPort();
-      const poller = createNotificationPoller({
-        queries,
         port,
         agentId: "agent-a",
       });
@@ -499,7 +486,7 @@ describe("createNotificationPoller", () => {
         content: "boom",
       });
 
-      const queries = makeQueryPort([msg], 0);
+      const queryFns = makeQueryFns([msg], 0);
       const failingPort: NotificationPort = {
         notify: async () => {
           throw new Error("transport failure");
@@ -507,7 +494,7 @@ describe("createNotificationPoller", () => {
       };
 
       const poller = createNotificationPoller({
-        queries,
+        ...queryFns,
         port: failingPort,
         agentId: "agent-a",
       });

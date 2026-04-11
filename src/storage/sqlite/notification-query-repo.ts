@@ -1,8 +1,13 @@
 import type { Database } from "bun:sqlite";
-import type { NotificationQueryPort } from "../../core/ports";
 import type { Message } from "../../core/messaging/types";
 
-export class SqliteNotificationQueryRepo implements NotificationQueryPort {
+/**
+ * Storage-internal class for cross-process notification queries.
+ * NOT a core port — polling is an adapter concern. This class is wired
+ * via closures in main.ts and its methods are passed as raw functions
+ * to the notification poller.
+ */
+export class SqliteNotificationQueryRepo {
   constructor(private readonly db: Database) {}
 
   /**
