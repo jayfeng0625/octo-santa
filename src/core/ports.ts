@@ -7,15 +7,31 @@ import type {
   HeartbeatResult,
 } from "./messaging/types";
 import type { BrainDoc, DomainWithClaims } from "./brain/types";
+import type { AgentProfile } from "./profiles/types";
 
 // --- Storage ports (core defines, adapters implement) ---
 
 export interface AgentRepository {
   findById(id: string): Agent | null;
-  register(agentId: string, pid: number): Agent;
+  register(agentId: string, pid: number, profileFields?: {
+    baseName: string; persona: string | null; objective: string | null;
+  }): Agent;
   heartbeatOrReclaim(agentId: string, pid: number): HeartbeatResult;
   listAll(): Agent[];
   clearPid(id: string, expectedPid: number): void;
+  findByBaseName(baseName: string): Agent[];
+  registerWithProfile(
+    baseName: string,
+    pid: number,
+    maxInstances: number,
+    profileFields: { persona: string | null; objective: string | null }
+  ): { agent: Agent; registeredName: string; instanceNumber: number | null };
+}
+
+export interface ProfileRepository {
+  getProfile(baseName: string): AgentProfile | null;
+  listProfiles(): AgentProfile[];
+  getBaseNames(): Set<string>;
 }
 
 export interface ChannelRepository {
