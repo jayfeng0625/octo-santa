@@ -146,8 +146,12 @@ export class SqliteAgentRepo implements AgentRepository {
         chosenSlot = 1;
         while (liveSlots.has(chosenSlot)) chosenSlot++;
       } else {
+        const activeList = existing
+          .filter((a) => a.pid !== null && isProcessAlive(a.pid) && Date.now() - a.last_seen_at <= PID_STALE_MS)
+          .map((a) => `${a.id} (pid ${a.pid})`)
+          .join(", ");
         throw new Error(
-          `Agent pool "${baseName}" is at capacity (${maxInstances}/${maxInstances} instances active).`
+          `Agent pool "${baseName}" is at capacity (${maxInstances}/${maxInstances} instances). Active instances: ${activeList}`
         );
       }
 
