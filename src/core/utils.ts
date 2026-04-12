@@ -42,7 +42,8 @@ export function validateAgentName(agentId: string): void {
 
 export function extractMentions(
   content: string,
-  validAgentIds: string[]
+  validAgentIds: string[],
+  profileBaseNames?: Set<string>
 ): string[] {
   const matches = content.matchAll(MENTION_RE);
   const validSet = new Set(validAgentIds);
@@ -54,6 +55,10 @@ export function extractMentions(
     if (name === "all" || name === "here") {
       hasBroadcast = true;
     } else if (validSet.has(name)) {
+      // Direct agent ID — preferred over base name
+      result.add(name);
+    } else if (profileBaseNames?.has(name)) {
+      // Pool base name mention — stored as-is; expanded at dispatch time
       result.add(name);
     }
   }

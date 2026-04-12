@@ -72,7 +72,24 @@ export class MessagingService {
 
     const members = this.channels.getMembers(channelId);
     const memberIds = new Set(members.map((m) => m.id));
-    const targetAgents = mentions.filter(
+    const baseNames = this.profiles?.getBaseNames();
+
+    const expandedTargets = new Set<string>();
+    for (const mention of mentions) {
+      if (baseNames?.has(mention)) {
+        // Expand base-name mention to live instances
+        const instances = this.agents.findByBaseName(mention);
+        for (const inst of instances) {
+          if (isAgentActive(inst)) {
+            expandedTargets.add(inst.id);
+          }
+        }
+      } else {
+        expandedTargets.add(mention);
+      }
+    }
+
+    const targetAgents = [...expandedTargets].filter(
       (id) => id !== senderId && memberIds.has(id)
     );
     return { targetAgents, isDm: false };
@@ -187,7 +204,7 @@ export class MessagingService {
     }
     const allAgents = this.agents.listAll();
     const validIds = allAgents.map((a) => a.id);
-    const mentions = extractMentions(content, validIds);
+    const mentions = extractMentions(content, validIds, this.profiles?.getBaseNames());
     const message = this.messages.insertAndJoinSender(
       channel.id,
       agentId,
@@ -274,7 +291,7 @@ export class MessagingService {
 
     const allAgents = this.agents.listAll();
     const validIds = allAgents.map((a) => a.id);
-    const mentions = extractMentions(content, validIds);
+    const mentions = extractMentions(content, validIds, this.profiles?.getBaseNames());
     const message = this.messages.insertAndJoinSender(
       channel.id,
       agentId,
