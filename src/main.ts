@@ -11,6 +11,7 @@ import { MessagingService } from "./core/messaging/service";
 import { BrainService } from "./core/brain/service";
 import { startMcpStdio } from "./transports/mcp-stdio/adapter";
 import { createNotificationDispatcher } from "./notifications/dispatch/dispatcher";
+import { YamlProfileStore } from "./storage/yaml-profiles/store";
 import { log } from "./log";
 
 function expandHome(p: string): string {
@@ -38,6 +39,12 @@ async function main() {
   // 4. Notification dispatcher
   const dispatcher = createNotificationDispatcher();
 
+  // 4b. Profile store
+  const profilesDir = expandHome(
+    process.env.OCTO_SANTA_PROFILES_DIR ?? "~/.octo-santa/profiles"
+  );
+  const profiles = new YamlProfileStore(profilesDir);
+
   // 5. Services
   const messaging = new MessagingService(
     repos.agents,
@@ -45,7 +52,8 @@ async function main() {
     repos.messages,
     repos.cursors,
     process.pid,
-    dispatcher
+    dispatcher,
+    profiles
   );
 
   const brain = new BrainService(

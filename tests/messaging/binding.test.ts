@@ -4,6 +4,8 @@ import { allMigrations } from "../../src/storage/sqlite/migrations";
 import { createSqliteRepos } from "../../src/storage/sqlite";
 import { MessagingService } from "../../src/core/messaging/service";
 import { registerMessagingTools } from "../../src/transports/mcp-stdio/adapter";
+import type { ProfileRepository } from "../../src/core/ports";
+import type { AgentProfile } from "../../src/core/profiles/types";
 
 const TEST_DB = testDbPath("binding");
 
@@ -11,33 +13,55 @@ afterEach(() => {
   cleanupDb(TEST_DB);
 });
 
-describe("agent binding enforcement", () => {
-  function setup() {
-    const db = setupTestDb(TEST_DB, allMigrations);
-    const repos = createSqliteRepos(db);
-    const svc = new MessagingService(repos.agents, repos.channels, repos.messages, repos.cursors, process.pid);
+// ── In-memory ProfileRepository for tests ────────────────────────────────────
 
-    const handlers: Record<string, (...args: any[]) => Promise<any>> = {};
-    const mockServer = {
-      registerTool: (name: string, _config: unknown, cb: (...args: any[]) => Promise<any>) => {
-        handlers[name] = cb;
-      },
-    } as any;
+class InMemoryProfileRepo implements ProfileRepository {
+  private profiles = new Map<string, AgentProfile>();
 
-    let bound: string | null = null;
-    function onAgentId(agentId: string): { commit: () => void } {
-      if (bound !== null && bound !== agentId) {
-        throw new Error(`Session already bound to agent "${bound}", cannot use "${agentId}"`);
-      }
-      return {
-        commit: () => { bound = agentId; },
-      };
-    }
-
-    registerMessagingTools(mockServer, svc, onAgentId);
-    return { db, handlers };
+  add(profile: AgentProfile): void {
+    this.profiles.set(profile.name, profile);
   }
 
+  getProfile(baseName: string): AgentProfile | null {
+    return this.profiles.get(baseName) ?? null;
+  }
+
+  listProfiles(): AgentProfile[] {
+    return [...this.profiles.values()];
+  }
+
+  getBaseNames(): Set<string> {
+    return new Set(this.profiles.keys());
+  }
+}
+
+function setup(profileRepo?: ProfileRepository) {
+  const db = setupTestDb(TEST_DB, allMigrations);
+  const repos = createSqliteRepos(db);
+  const svc = new MessagingService(repos.agents, repos.channels, repos.messages, repos.cursors, process.pid, undefined, profileRepo);
+
+  const handlers: Record<string, (...args: any[]) => Promise<any>> = {};
+  const mockServer = {
+    registerTool: (name: string, _config: unknown, cb: (...args: any[]) => Promise<any>) => {
+      handlers[name] = cb;
+    },
+  } as any;
+
+  let bound: string | null = null;
+  function onAgentId(agentId: string): { commit: (resolvedName?: string) => void } {
+    if (bound !== null && bound !== agentId) {
+      throw new Error(`Session already bound to agent "${bound}", cannot use "${agentId}"`);
+    }
+    return {
+      commit: (resolvedName?: string) => { bound = resolvedName ?? agentId; },
+    };
+  }
+
+  registerMessagingTools(mockServer, svc, onAgentId);
+  return { db, handlers };
+}
+
+describe("agent binding enforcement", () => {
   it("rejects mismatched agent_id on send WITHOUT persisting the message", async () => {
     const { db, handlers } = setup();
     await handlers.messaging_register!({ agent_id: "agent-a" });
@@ -177,6 +201,55 @@ describe("agent binding enforcement", () => {
     const agents = JSON.parse(result.content[0].text);
     expect(agents.length).toBe(1);
     expect(agents[0].id).toBe("agent-a");
+    db.close();
+  });
+});
+
+describe("profile-based name resolution in transport binding", () => {
+  it("register base name with pool profile → bound to resolvedName (os-dev-1)", async () => {
+    const profileRepo = new InMemoryProfileRepo();
+    profileRepo.add({
+      name: "os-dev",
+      persona: "Senior developer",
+      objective: "Write clean code",
+      maxInstances: 3,
+      autoJoinChannels: [],
+    });
+
+    const { db, handlers } = setup(profileRepo);
+    const raw = await handlers.messaging_register!({ agent_id: "os-dev" });
+    const result = JSON.parse(raw.content[0].text);
+
+    expect(result.registeredName).toBe("os-dev-1");
+    expect(result.baseName).toBe("os-dev");
+    expect(result.instanceNumber).toBe(1);
+
+    db.close();
+  });
+
+  it("subsequent call with base name rejected after binding to pool slot", async () => {
+    const profileRepo = new InMemoryProfileRepo();
+    profileRepo.add({
+      name: "os-dev",
+      persona: null,
+      objective: null,
+      maxInstances: 3,
+      autoJoinChannels: [],
+    });
+
+    const { db, handlers } = setup(profileRepo);
+    await handlers.messaging_register!({ agent_id: "os-dev" });
+
+    // After binding to "os-dev-1", calling with base name "os-dev" should be rejected
+    let threw = false;
+    try {
+      await handlers.messaging_register!({ agent_id: "os-dev" });
+    } catch (err) {
+      threw = true;
+      expect(String(err)).toContain("os-dev-1");
+    }
+    expect(threw).toBe(true);
+
     db.close();
   });
 });

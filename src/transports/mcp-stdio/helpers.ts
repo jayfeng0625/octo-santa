@@ -4,7 +4,7 @@ export function jsonResult(data: unknown) {
 }
 
 export function withAgent<T>(
-  onAgentId: ((agentId: string) => { commit: () => void }) | undefined,
+  onAgentId: ((agentId: string) => { commit: (resolvedName?: string) => void }) | undefined,
   agentId: string,
   fn: () => T
 ): T {
