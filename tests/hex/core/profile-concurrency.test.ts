@@ -11,6 +11,12 @@ import { tmpdir } from "node:os";
 import { cleanupDb } from "../../helpers/db";
 import { createDb } from "../../../src/storage/sqlite/db";
 import { runMigrations, allMigrations } from "../../../src/storage/sqlite/migrations";
+import { createSqliteRepos } from "../../../src/storage/sqlite";
+import { MessagingService } from "../../../src/core/messaging/service";
+import { YamlProfileStore } from "../../../src/storage/yaml-profiles/store";
+import { SqliteNotificationQueryRepo } from "../../../src/storage/sqlite/notification-query-repo";
+import { createNotificationPoller } from "../../../src/notifications/poller/poller";
+import type { NotificationPort } from "../../../src/core/ports";
 
 const projectRoot = process.cwd();
 
@@ -209,5 +215,96 @@ describe("cross-process profile registration concurrency", () => {
 
     expect(rows).toHaveLength(3);
     expect(rows.map((r) => r.id)).toEqual(["os-dev-1", "os-dev-2", "os-dev-3"]);
+  });
+
+  it("(c) cross-process: pool base-name mention triggers poller notification", async () => {
+    const profileDir = makeTempProfileDir();
+    writeProfileYaml(profileDir, "os-dev", 3);
+
+    // Set up DB and register os-dev → os-dev-1, create + subscribe to channel
+    const db = createDb(TEST_DB);
+    runMigrations(db, allMigrations);
+    const repos = createSqliteRepos(db);
+    const profiles = new YamlProfileStore(profileDir);
+    const svc = new MessagingService(
+      repos.agents,
+      repos.channels,
+      repos.messages,
+      repos.cursors,
+      process.pid,
+      undefined,
+      profiles
+    );
+
+    const result = svc.register("os-dev");
+    expect(result.registeredName).toBe("os-dev-1");
+
+    svc.createChannel("os-dev-1", "work");
+    svc.subscribe("os-dev-1", "work");
+    db.close();
+
+    // Spawn worker: registers as "sender", subscribes to "work", sends @os-dev mention.
+    // Must pass the YamlProfileStore so extractMentions recognises "os-dev" as a pool base name.
+    const workerScript = `
+import { createDb } from "${projectRoot}/src/storage/sqlite/db";
+import { runMigrations, allMigrations } from "${projectRoot}/src/storage/sqlite/migrations";
+import { createSqliteRepos } from "${projectRoot}/src/storage/sqlite";
+import { MessagingService } from "${projectRoot}/src/core/messaging/service";
+import { YamlProfileStore } from "${projectRoot}/src/storage/yaml-profiles/store";
+
+const db = createDb("${TEST_DB}");
+runMigrations(db, allMigrations);
+const repos = createSqliteRepos(db);
+const profiles = new YamlProfileStore("${profileDir}");
+const svc = new MessagingService(repos.agents, repos.channels, repos.messages, repos.cursors, process.pid, undefined, profiles);
+
+svc.register("sender");
+svc.subscribe("sender", "work");
+svc.send("sender", "work", "Hey @os-dev please review");
+db.close();
+`;
+
+    const tmpWorker = "/tmp/octo-santa-poller-mention-worker.ts";
+    await Bun.write(tmpWorker, workerScript);
+    const proc = Bun.spawn(["bun", "run", tmpWorker], {
+      cwd: projectRoot,
+      stderr: "pipe",
+    });
+    const exitCode = await proc.exited;
+    if (exitCode !== 0) {
+      const stderr = await new Response(proc.stderr).text();
+      throw new Error(`Worker failed: ${stderr}`);
+    }
+
+    // Open a fresh DB connection for the poller
+    const db2 = createDb(TEST_DB);
+    const notificationQueries = new SqliteNotificationQueryRepo(db2);
+
+    const notifications: Array<{ content: string; meta: Record<string, string> }> = [];
+    const port: NotificationPort = {
+      notify: async (content, meta) => {
+        notifications.push({ content, meta });
+      },
+    };
+
+    const poller = createNotificationPoller({
+      getNewMessagesForAgent: notificationQueries.getNewMessagesForAgent.bind(notificationQueries),
+      getMaxMessageId: notificationQueries.getMaxMessageId.bind(notificationQueries),
+      port,
+      agentId: "os-dev-1",
+      baseName: "os-dev", // Pool base-name match — this is what we're testing
+    });
+
+    // Manually tick; hwm starts at 0 so all messages since beginning are picked up
+    await poller._tick();
+
+    db2.close();
+
+    // The worker's @os-dev message should have triggered a notification
+    expect(notifications.length).toBeGreaterThan(0);
+    const mentionNotification = notifications.find((n) => n.content.includes("@os-dev"));
+    expect(mentionNotification).toBeDefined();
+    expect(mentionNotification!.meta.sender).toBe("sender");
+    expect(mentionNotification!.meta.channel_name).toBe("work");
   });
 });
