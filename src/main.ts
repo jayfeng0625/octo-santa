@@ -82,12 +82,13 @@ async function main() {
     registerNotificationHandler: dispatcher.register.bind(dispatcher),
     unregisterNotificationHandler: dispatcher.unregister.bind(dispatcher),
     agents: repos.agents,
-    startPoller: (port, agentId) => {
+    startPoller: (port, agentId, baseName) => {
       const poller = createNotificationPoller({
         getNewMessagesForAgent: notificationQueries.getNewMessagesForAgent.bind(notificationQueries),
         getMaxMessageId: notificationQueries.getMaxMessageId.bind(notificationQueries),
         port,
         agentId,
+        baseName,
       });
       poller.start();
       return poller;

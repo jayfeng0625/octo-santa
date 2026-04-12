@@ -332,7 +332,7 @@ export interface McpStdioOpts {
   unregisterNotificationHandler: (agentId: string) => void;
   agents: AgentRepository;
   /** Factory invoked once per session when an agent binds. Returns a handle with stop(). */
-  startPoller: (port: NotificationPort, agentId: string) => { stop(): void };
+  startPoller: (port: NotificationPort, agentId: string, baseName?: string) => { stop(): void };
   heartbeatIntervalMs?: number;
   onDisconnect: (agentId: string, pid: number) => void;
 }
@@ -391,7 +391,7 @@ export async function startMcpStdio(opts: McpStdioOpts): Promise<void> {
             }),
         };
         registerNotificationHandler(effectiveId, port);
-        pollerRef = startPoller(port, effectiveId);
+        pollerRef = startPoller(port, effectiveId, boundProfile?.baseName);
         heartbeatTimer = setInterval(() => {
           const result = agents.heartbeatOrReclaim(effectiveId, process.pid);
           if (result === "lost") {
