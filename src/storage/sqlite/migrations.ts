@@ -134,6 +134,15 @@ const messagingMigrations: Migration[] = [
       ALTER TABLE messages ADD COLUMN mentions TEXT NOT NULL DEFAULT '[]';
     `,
   },
+  {
+    name: "messaging_003_agent_profiles",
+    up: `
+      ALTER TABLE agents ADD COLUMN base_name TEXT;
+      ALTER TABLE agents ADD COLUMN persona TEXT;
+      ALTER TABLE agents ADD COLUMN objective TEXT;
+      CREATE INDEX idx_agents_base_name ON agents(base_name);
+    `,
+  },
 ];
 
 const brainMigrations: Migration[] = [
