@@ -161,20 +161,10 @@ describe("YamlProfileStore", () => {
     expect(() => new YamlProfileStore(dir)).toThrow(/maxInstances/i);
   });
 
-  it("rejects duplicate profile names across files", () => {
+  it("loads a single profile into store", () => {
+    // Note: duplicate name detection exists as a defensive guard but is structurally
+    // unreachable — filename-must-match-name + filesystem unique filenames prevents it.
     writeFileSync(join(dir, "alpha.yaml"), `name: alpha\n`);
-    // Second file also has name: alpha (but different filename)
-    // This requires a different filename with same name inside — since filename must match name,
-    // duplicate detection only triggers if two files somehow have the same base name.
-    // Actually this is impossible since filesystem enforces unique filenames.
-    // Let's test by constructing a scenario: two files with the same name field via the mismatch scenario
-    // won't work. The only way to get duplicate names is if two yaml files have the same basename,
-    // which can't happen on a filesystem. So this test verifies the duplicate detection is in place
-    // for programmatic construction cases.
-    // We'll skip this specific impossible case and note the test is structural coverage only.
-    // The real duplicate check would fire if two profiles somehow had the same name after validation.
-    // Since filename-must-match-name means filenames must differ → names must differ,
-    // duplicates are structurally impossible but the code should still guard against them.
     const store = new YamlProfileStore(dir);
     expect(store.getBaseNames().size).toBe(1);
   });
