@@ -274,9 +274,13 @@ describe("SqliteAgentRepo - registerWithProfile", () => {
 
   it("reclaim: dead slot gets reassigned to new PID", () => {
     const { db, repo } = setup();
-    // Register two workers
+    const now = Date.now();
+    // Seed two workers: slot 1 owned by current PID, slot 2 owned by PID 1 (init, always alive)
     repo.registerWithProfile("worker", process.pid, 3, { persona: null, objective: null });
-    repo.registerWithProfile("worker", process.pid + 1, 3, { persona: null, objective: null });
+    db.run(
+      `INSERT INTO agents (id, created_at, last_seen_at, pid, registered_at, base_name, persona, objective)
+       VALUES ('worker-2', 1, ${now}, 1, 1, 'worker', NULL, NULL)`
+    );
     // Kill slot 1 by setting dead pid
     db.run("UPDATE agents SET pid = 999999, last_seen_at = 0 WHERE id = ?", ["worker-1"]);
     // New process should reclaim slot 1 (lowest dead slot)
@@ -322,6 +326,20 @@ describe("SqliteAgentRepo - registerWithProfile", () => {
     expect(second.registeredName).toBe("unique-bot");
     expect(second.instanceNumber).toBeNull();
     expect(second.agent.id).toBe(first.agent.id);
+    db.close();
+  });
+
+  it("singleton collision: throws when a live agent with different PID owns the slot", () => {
+    const { db, repo } = setup();
+    const now = Date.now();
+    // Seed singleton owned by PID 1 (init, always alive)
+    db.run(
+      `INSERT INTO agents (id, created_at, last_seen_at, pid, registered_at, base_name, persona, objective)
+       VALUES ('unique-bot', 1, ${now}, 1, 1, 'unique-bot', 'Bot', NULL)`
+    );
+    expect(() =>
+      repo.registerWithProfile("unique-bot", process.pid, 1, { persona: "Bot", objective: null })
+    ).toThrow(/already active/i);
     db.close();
   });
 });

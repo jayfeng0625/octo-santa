@@ -208,11 +208,12 @@ export class SqliteAgentRepo implements AgentRepository {
   }
 
   clearPid(id: string, expectedPid: number): void {
-    withRetrySync(() => {
+    const doClear = this.db.transaction(() => {
       this.db
         .query("UPDATE agents SET pid = NULL, registered_at = NULL WHERE id = ? AND pid = ?")
         .run(id, expectedPid);
     });
+    withRetrySync(() => doClear.exclusive());
   }
 }
 
