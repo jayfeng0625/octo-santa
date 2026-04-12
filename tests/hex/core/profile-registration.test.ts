@@ -132,28 +132,21 @@ describe("pool profile registration", () => {
     expect(result.profile!.maxInstances).toBe(3);
   });
 
-  it("assigns sequential slot numbers to pool members", () => {
+  it("same-PID re-registration is idempotent for singleton", () => {
     const profileRepo = new InMemoryProfileRepo();
     profileRepo.add({
-      name: "worker",
-      persona: null,
-      objective: "Process tasks",
-      maxInstances: 3,
+      name: "os-pm",
+      persona: "Product manager",
+      objective: null,
+      maxInstances: 1,
       autoJoinChannels: [],
     });
 
-    cleanupDb(TEST_DB);
-    const db = createDb(TEST_DB);
-    runMigrations(db, allMigrations);
-    const repos = createSqliteRepos(db);
-
-    // First instance at pid 1 (simulate different process — alive to block slot)
-    // We can't easily simulate multi-pid in unit tests, so just test the naming pattern
-    // by registering from same pid (idempotent), then verify the slot
-    const svc1 = new MessagingService(repos.agents, repos.channels, repos.messages, repos.cursors, process.pid, undefined, profileRepo);
-    const r1 = svc1.register("worker");
-    expect(r1.instanceNumber).toBe(1);
-    expect(r1.registeredName).toBe("worker-1");
+    const { svc } = setup(profileRepo);
+    const first = svc.register("os-pm");
+    const second = svc.register("os-pm");
+    expect(second.registeredName).toBe(first.registeredName);
+    expect(second.registeredName).toBe("os-pm");
   });
 
   it("same-PID re-registration is idempotent for pool", () => {
