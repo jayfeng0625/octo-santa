@@ -4,6 +4,7 @@ import type {
   MessageRepository,
   CursorRepository,
   NotificationDispatch,
+  ProfileRepository,
 } from "../ports";
 import type {
   Agent,
@@ -11,6 +12,7 @@ import type {
   Message,
   ReadOptions,
 } from "./types";
+import type { RegisterResult, AutoJoinResult } from "../profiles/types";
 import {
   validateAgentName,
   assertDmAccess,
@@ -26,7 +28,8 @@ export class MessagingService {
     private readonly messages: MessageRepository,
     private readonly cursors: CursorRepository,
     private readonly pid: number,
-    private readonly dispatch?: NotificationDispatch
+    private readonly dispatch?: NotificationDispatch,
+    private readonly profiles?: ProfileRepository
   ) {}
 
   private requireRegistered(agentId: string): void {
@@ -87,9 +90,71 @@ export class MessagingService {
     return memberIds.has(match[1]!) && memberIds.has(match[2]!);
   }
 
-  register(agentId: string): Agent {
+  register(agentId: string): RegisterResult {
     validateAgentName(agentId);
-    return this.agents.register(agentId, this.pid);
+
+    // (1) Exact profile match → delegate to agents.registerWithProfile()
+    const profile = this.profiles?.getProfile(agentId) ?? null;
+    if (profile) {
+      const { agent, registeredName, instanceNumber } = this.agents.registerWithProfile(
+        profile.name,
+        this.pid,
+        profile.maxInstances,
+        { persona: profile.persona, objective: profile.objective }
+      );
+      const autoJoined = this.performAutoJoin(registeredName, profile.autoJoinChannels);
+      return {
+        ...agent,
+        registeredName,
+        baseName: profile.name,
+        instanceNumber,
+        profile: {
+          persona: profile.persona,
+          objective: profile.objective,
+          maxInstances: profile.maxInstances,
+        },
+        autoJoined,
+      };
+    }
+
+    // (2) Suffixed namespace reservation: name matches {base}-\d+ for existing profile → reject
+    if (this.profiles) {
+      const match = /^(.+)-(\d+)$/.exec(agentId);
+      if (match) {
+        const baseName = match[1]!;
+        const existingProfile = this.profiles.getProfile(baseName);
+        if (existingProfile) {
+          throw new Error(
+            `Name "${agentId}" is reserved by pool profile "${baseName}". Register as "${baseName}" to join the pool.`
+          );
+        }
+      }
+    }
+
+    // (3) No match → current behavior
+    const agent = this.agents.register(agentId, this.pid);
+    return {
+      ...agent,
+      registeredName: agentId,
+      baseName: null,
+      instanceNumber: null,
+      profile: null,
+      autoJoined: null,
+    };
+  }
+
+  private performAutoJoin(agentId: string, channels: string[]): AutoJoinResult {
+    const succeeded: string[] = [];
+    const failed: Array<{ channel: string; reason: string }> = [];
+    for (const channelName of channels) {
+      try {
+        this.subscribe(agentId, channelName);
+        succeeded.push(channelName);
+      } catch (err) {
+        failed.push({ channel: channelName, reason: String(err) });
+      }
+    }
+    return { succeeded, failed };
   }
 
   unregister(agentId: string): void {
