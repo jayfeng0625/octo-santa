@@ -4,6 +4,7 @@ export interface AgentProfile {
   name: string;          // base name
   persona: string | null;
   objective: string | null;
+  instructions: string | null;
   maxInstances: number;  // >= 1
   autoJoinChannels: string[];
 }
@@ -20,6 +21,7 @@ export interface RegisterResult extends Agent {
   profile: {
     persona: string | null;
     objective: string | null;
+    instructions: string | null;
     maxInstances: number;
   } | null;
   autoJoined: AutoJoinResult | null;

@@ -16,6 +16,7 @@ const KNOWN_FIELDS = new Set([
   "name",
   "persona",
   "objective",
+  "instructions",
   "maxInstances",
   "autoJoinChannels",
 ]);
@@ -78,6 +79,18 @@ function parseProfile(filePath: string, content: string): AgentProfile {
     objective = rawObjective;
   }
 
+  // --- instructions ---
+  const rawInstructions = raw["instructions"];
+  let instructions: string | null = null;
+  if (rawInstructions !== undefined && rawInstructions !== null) {
+    if (typeof rawInstructions !== "string") {
+      throw new Error(
+        `Profile "${name}": instructions must be a string or null/undefined, got ${typeof rawInstructions}`
+      );
+    }
+    instructions = rawInstructions;
+  }
+
   // --- maxInstances ---
   const rawMax = raw["maxInstances"];
   let maxInstances = 1;
@@ -109,7 +122,7 @@ function parseProfile(filePath: string, content: string): AgentProfile {
     autoJoinChannels = rawChannels as string[];
   }
 
-  return { name, persona, objective, maxInstances, autoJoinChannels };
+  return { name, persona, objective, instructions, maxInstances, autoJoinChannels };
 }
 
 function checkPoolNameCollisions(profiles: AgentProfile[]): void {

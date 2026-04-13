@@ -38,6 +38,7 @@ describe("isAgentActive", () => {
       base_name: null,
       persona: null,
       objective: null,
+      instructions: null,
     };
     expect(isAgentActive(agent)).toBe(false);
   });
@@ -52,6 +53,7 @@ describe("isAgentActive", () => {
       base_name: null,
       persona: null,
       objective: null,
+      instructions: null,
     };
     expect(isAgentActive(agent)).toBe(false);
   });
@@ -66,6 +68,7 @@ describe("isAgentActive", () => {
       base_name: null,
       persona: null,
       objective: null,
+      instructions: null,
     };
     expect(isAgentActive(agent)).toBe(false);
   });

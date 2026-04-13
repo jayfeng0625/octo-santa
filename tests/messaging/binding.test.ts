@@ -212,6 +212,7 @@ describe("profile-based name resolution in transport binding", () => {
       name: "os-dev",
       persona: "Senior developer",
       objective: "Write clean code",
+      instructions: null,
       maxInstances: 3,
       autoJoinChannels: [],
     });
@@ -233,6 +234,7 @@ describe("profile-based name resolution in transport binding", () => {
       name: "os-dev",
       persona: null,
       objective: null,
+      instructions: null,
       maxInstances: 3,
       autoJoinChannels: [],
     });

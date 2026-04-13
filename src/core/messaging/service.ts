@@ -117,7 +117,7 @@ export class MessagingService {
         profile.name,
         this.pid,
         profile.maxInstances,
-        { persona: profile.persona, objective: profile.objective }
+        { persona: profile.persona, objective: profile.objective, instructions: profile.instructions }
       );
       const autoJoined = this.performAutoJoin(registeredName, profile.autoJoinChannels);
       return {
@@ -128,6 +128,7 @@ export class MessagingService {
         profile: {
           persona: profile.persona,
           objective: profile.objective,
+          instructions: profile.instructions,
           maxInstances: profile.maxInstances,
         },
         autoJoined,
@@ -353,6 +354,30 @@ export class MessagingService {
       agent_id: agent.id,
       active: isAgentActive(agent),
     }));
+  }
+
+  getInstructions(agentId: string): {
+    universal: string | null;
+    profile: { persona: string | null; objective: string | null; instructions: string | null } | null;
+  } {
+    this.requireRegistered(agentId);
+    const agent = this.agents.findById(agentId);
+    if (!agent) return { universal: null, profile: null };
+
+    // Read from persisted DB data, not live YAML — instructions are
+    // snapshotted at registration time and should not change mid-session.
+    if (!agent.base_name) {
+      return { universal: null, profile: null };
+    }
+
+    return {
+      universal: null, // Populated by the transport layer (adapter owns the text)
+      profile: {
+        persona: agent.persona,
+        objective: agent.objective,
+        instructions: agent.instructions,
+      },
+    };
   }
 
   readRecent(channelId: number, limit: number): Message[] {

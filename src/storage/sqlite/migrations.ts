@@ -143,6 +143,12 @@ const messagingMigrations: Migration[] = [
       CREATE INDEX idx_agents_base_name ON agents(base_name);
     `,
   },
+  {
+    name: "messaging_004_agent_instructions",
+    up: `
+      ALTER TABLE agents ADD COLUMN instructions TEXT;
+    `,
+  },
 ];
 
 const brainMigrations: Migration[] = [
