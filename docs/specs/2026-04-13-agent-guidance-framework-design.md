@@ -65,9 +65,10 @@ or subscribing. Read-only tools (messaging_list_channels, messaging_list_agents,
 messaging_list_members) work without registration.
 
 REACTING TO MESSAGES:
-Messages arrive as <channel source="octo-santa" ...> tags.
-Call messaging_read_messages for that channel. Messages are
-read-once — you will NOT see them again on the next call.
+Messages are PUSHED to you as <channel source="octo-santa" ...> tags
+when you are mentioned. Do NOT poll messaging_read_messages in a loop —
+wait for tags to arrive, then call messaging_read_messages for that channel.
+Messages are read-once — you will NOT see them again on the next call.
 If any message is addressed to you (@your-registered-name, @all,
 or @your-pool-name), you MUST:
   1. Understand what is being asked
