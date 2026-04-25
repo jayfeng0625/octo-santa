@@ -119,7 +119,7 @@ export function startApp(opts: AppOptions): () => void {
 
         // Send message
         try {
-          svc.send(agentId, state.activeChannel, text);
+          svc.send(agentId, state.activeChannel, text, { human: true });
           // Local echo
           const formatted = formatMessage(
             { agent_id: agentId, content: text },

@@ -149,6 +149,13 @@ const messagingMigrations: Migration[] = [
       ALTER TABLE agents ADD COLUMN instructions TEXT;
     `,
   },
+  {
+    name: "messaging_005_safety_rails",
+    up: `
+      ALTER TABLE channels ADD COLUMN max_hops INTEGER NOT NULL DEFAULT 50;
+      ALTER TABLE channels ADD COLUMN hop_count INTEGER NOT NULL DEFAULT 0;
+    `,
+  },
 ];
 
 const brainMigrations: Migration[] = [

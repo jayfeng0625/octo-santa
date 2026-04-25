@@ -116,6 +116,19 @@ describe("REPL integration", () => {
     expect(result.messages!.some(m => m.content === "their msg")).toBe(true);
   });
 
+  it("plain message send uses human flag - resets hop count on hop-limited channel", () => {
+    const { db, svc } = setup();
+    svc.register("jay");
+    // Create channel with maxHops=1: first non-human send uses the 1 hop (hop_count 0->1).
+    // A second non-human send would fail (hop_count 1 >= max_hops 1).
+    // app.ts passes { human: true }, which resets hop_count to 0, allowing the send.
+    svc.createChannel("jay", "planning", 1);
+    svc.send("jay", "planning", "first agent msg"); // exhausts the 1 hop
+    // Simulates what app.ts does — passes { human: true }
+    const msg = svc.send("jay", "planning", "human typed message", { human: true });
+    expect(msg.content).toBe("human typed message");
+  });
+
   it("poll excludes self messages", () => {
     const { db, svc } = setup();
     svc.register("jay");

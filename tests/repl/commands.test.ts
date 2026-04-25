@@ -43,6 +43,14 @@ describe("parseCommand", () => {
   it("returns null for empty input", () => {
     expect(parseCommand("")).toBeNull();
   });
+
+  it("parses /continue as a known command with no args", () => {
+    expect(parseCommand("/continue")).toEqual({ name: "continue", args: "" });
+  });
+
+  it("parses /continue 8 with args", () => {
+    expect(parseCommand("/continue 8")).toEqual({ name: "continue", args: "8" });
+  });
 });
 
 describe("executeCommand", () => {
@@ -85,7 +93,7 @@ describe("executeCommand", () => {
   it("/history defaults to 20 for invalid N", () => {
     const { db, svc, channelRepo } = setup();
     svc.register("user");
-    svc.createChannel("user", "test-ch");
+    svc.createChannel("user", "test-ch", 100);
     // Insert 25 messages so the limit is exercised
     for (let i = 0; i < 25; i++) svc.send("user", "test-ch", `msg-${i}`);
     const state = { activeChannel: "test-ch", joinedChannels: new Set(["test-ch"]), cursors: new Map(), agentId: "user" };
@@ -155,7 +163,7 @@ describe("executeCommand", () => {
   it("/history 0 falls back to 20", () => {
     const { db, svc, channelRepo } = setup();
     svc.register("user");
-    svc.createChannel("user", "test-ch");
+    svc.createChannel("user", "test-ch", 100);
     for (let i = 0; i < 25; i++) svc.send("user", "test-ch", `msg-${i}`);
     const state = { activeChannel: "test-ch", joinedChannels: new Set(["test-ch"]), cursors: new Map(), agentId: "user" };
     const result = executeCommand({ name: "history", args: "0" }, svc, channelRepo, state);
@@ -165,7 +173,7 @@ describe("executeCommand", () => {
   it("/history -1 falls back to 20", () => {
     const { db, svc, channelRepo } = setup();
     svc.register("user");
-    svc.createChannel("user", "test-ch");
+    svc.createChannel("user", "test-ch", 100);
     for (let i = 0; i < 25; i++) svc.send("user", "test-ch", `msg-${i}`);
     const state = { activeChannel: "test-ch", joinedChannels: new Set(["test-ch"]), cursors: new Map(), agentId: "user" };
     const result = executeCommand({ name: "history", args: "-1" }, svc, channelRepo, state);
@@ -177,5 +185,65 @@ describe("executeCommand", () => {
     const state = { activeChannel: "ch", joinedChannels: new Set(["ch"]), cursors: new Map(), agentId: "user" };
     const result = executeCommand({ name: "help", args: "" }, svc, channelRepo, state);
     expect(result.output.length).toBeGreaterThan(0);
+  });
+
+  it("/help includes /continue entry", () => {
+    const { db, svc, channelRepo } = setup();
+    const state = { activeChannel: "ch", joinedChannels: new Set(["ch"]), cursors: new Map(), agentId: "user" };
+    const result = executeCommand({ name: "help", args: "" }, svc, channelRepo, state);
+    expect(result.output.some(l => l.includes("/continue"))).toBe(true);
+  });
+
+  it("/continue with no args uses default amount of 4", () => {
+    const { db, svc, channelRepo } = setup();
+    svc.register("user");
+    svc.createChannel("user", "test-ch", 10);
+    const state = { activeChannel: "test-ch", joinedChannels: new Set(["test-ch"]), cursors: new Map(), agentId: "user" };
+    const result = executeCommand({ name: "continue", args: "" }, svc, channelRepo, state);
+    expect(result.output[0]).toContain("+4");
+    expect(result.output[0]).toContain("test-ch");
+  });
+
+  it("/continue 8 passes amount 8", () => {
+    const { db, svc, channelRepo } = setup();
+    svc.register("user");
+    svc.createChannel("user", "test-ch", 10);
+    const state = { activeChannel: "test-ch", joinedChannels: new Set(["test-ch"]), cursors: new Map(), agentId: "user" };
+    const result = executeCommand({ name: "continue", args: "8" }, svc, channelRepo, state);
+    expect(result.output[0]).toContain("+8");
+  });
+
+  it("/continue with invalid arg defaults to 4", () => {
+    const { db, svc, channelRepo } = setup();
+    svc.register("user");
+    svc.createChannel("user", "test-ch", 10);
+    const state = { activeChannel: "test-ch", joinedChannels: new Set(["test-ch"]), cursors: new Map(), agentId: "user" };
+    const result = executeCommand({ name: "continue", args: "abc" }, svc, channelRepo, state);
+    expect(result.output[0]).toContain("+4");
+  });
+
+  it("/continue 0 defaults to 4", () => {
+    const { db, svc, channelRepo } = setup();
+    svc.register("user");
+    svc.createChannel("user", "test-ch", 10);
+    const state = { activeChannel: "test-ch", joinedChannels: new Set(["test-ch"]), cursors: new Map(), agentId: "user" };
+    const result = executeCommand({ name: "continue", args: "0" }, svc, channelRepo, state);
+    expect(result.output[0]).toContain("+4");
+  });
+
+  it("/send -f sends with human flag, allowing send on hop-limited channel", () => {
+    const { db, svc, channelRepo } = setup();
+    svc.register("user");
+    // Create channel with maxHops=1: first non-human send succeeds (hop 0->1),
+    // second would fail. Human flag resets hop count.
+    svc.createChannel("user", "test-ch", 1);
+    svc.send("user", "test-ch", "first agent msg"); // exhausts the 1 hop
+    const tmpFile = "/tmp/octo-santa-test-send-f-human.txt";
+    writeFileSync(tmpFile, "human file content");
+    const state = { activeChannel: "test-ch", joinedChannels: new Set(["test-ch"]), cursors: new Map(), agentId: "user" };
+    // Human flag should reset hop count, so this send succeeds despite exhausted hops
+    const result = executeCommand({ name: "send", args: `-f ${tmpFile}` }, svc, channelRepo, state);
+    expect(result.localEcho?.content).toBe("human file content");
+    unlinkSync(tmpFile);
   });
 });

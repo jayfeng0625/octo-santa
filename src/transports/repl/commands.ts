@@ -24,7 +24,7 @@ export interface CommandResult {
 
 export const KNOWN_COMMANDS = new Set([
   "channels", "agents", "join", "create", "history",
-  "send", "members", "help", "quit",
+  "send", "members", "help", "quit", "continue",
 ]);
 
 export function parseCommand(input: string): ParsedCommand | null {
@@ -100,7 +100,7 @@ export function executeCommand(
       const filePath = match[1]!.trim();
       try {
         const content = readFileSync(filePath, "utf-8");
-        svc.send(state.agentId, state.activeChannel, content);
+        svc.send(state.agentId, state.activeChannel, content, { human: true });
         return {
           output: [],
           localEcho: { agent_id: state.agentId, content },
@@ -116,6 +116,13 @@ export function executeCommand(
       return { output: members.map(m => `  ${m.agent_id} ${m.active ? "(active)" : "(inactive)"}`) };
     }
 
+    case "continue": {
+      let amount = parseInt(cmd.args, 10);
+      if (!Number.isFinite(amount) || amount <= 0) amount = 4;
+      const result = svc.continueChannel(state.agentId, state.activeChannel, amount);
+      return { output: [`Bumped ${state.activeChannel}: hop count ${result.hopCount}/${result.maxHops} (+${result.bumped})`] };
+    }
+
     case "help":
       return {
         output: [
@@ -127,6 +134,7 @@ export function executeCommand(
           "  /history [N]     — Show last N messages (default 20)",
           "  /send -f <path>  — Send file contents",
           "  /members         — List channel members",
+          "  /continue [N]    -- Resume hop-limited channel (+N hops, default 4)",
           "  /help            — Show this help",
           "  /quit            — Exit",
         ],
