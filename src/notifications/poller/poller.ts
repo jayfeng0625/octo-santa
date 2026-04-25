@@ -14,9 +14,10 @@ export function createNotificationPoller(opts: {
   getMaxMessageId: () => number;
   port: NotificationPort;
   agentId: string;
+  baseName?: string;
   intervalMs?: number;
 }): { start(): void; stop(): void; _tick(): Promise<void> } {
-  const { getNewMessagesForAgent, getMaxMessageId, port, agentId, intervalMs = 2000 } = opts;
+  const { getNewMessagesForAgent, getMaxMessageId, port, agentId, baseName, intervalMs = 2000 } = opts;
   let hwm = 0;
   let timer: ReturnType<typeof setInterval> | null = null;
 
@@ -50,7 +51,7 @@ export function createNotificationPoller(opts: {
     }
     try {
       const mentions: string[] = JSON.parse(mentionsJson);
-      return mentions.includes(agentId) || mentions.includes("*");
+      return mentions.includes(agentId) || (baseName != null && mentions.includes(baseName)) || mentions.includes("*");
     } catch {
       return false;
     }

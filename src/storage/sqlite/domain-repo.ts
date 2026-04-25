@@ -48,7 +48,7 @@ export class SqliteDomainRepo implements DomainRepository {
       claims: claims.filter((c) => c.domain_identifier === d.identifier).map((c) => ({
         agent_id: c.agent_id,
         pid: c.pid,
-        agent: { id: c.id, created_at: c.created_at, last_seen_at: c.last_seen_at, pid: c.agent_pid, registered_at: c.registered_at } as Agent,
+        agent: { id: c.id, created_at: c.created_at, last_seen_at: c.last_seen_at, pid: c.agent_pid, registered_at: c.registered_at, base_name: null, persona: null, objective: null, instructions: null } as Agent,
       })),
     }));
   }

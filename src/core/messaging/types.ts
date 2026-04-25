@@ -4,6 +4,11 @@ export interface Agent {
   last_seen_at: number;
   pid: number | null;
   registered_at: number | null;
+  // New nullable fields (added for persistent agent profiles)
+  base_name: string | null;
+  persona: string | null;
+  objective: string | null;
+  instructions: string | null;
 }
 
 export interface Channel {

@@ -4,13 +4,37 @@ import { createSqliteRepos } from "../../src/storage/sqlite";
 import { MessagingService } from "../../src/core/messaging/service";
 import { startupRepl } from "../../src/transports/repl/startup";
 import { cleanupDb, testDbPath, setupTestDb } from "../helpers/db";
+import type { ProfileRepository } from "../../src/core/ports";
+import type { AgentProfile } from "../../src/core/profiles/types";
 
 const TEST_DB = testDbPath("startup");
 
-function setup() {
+// ── In-memory ProfileRepository for tests ────────────────────────────────────
+
+class InMemoryProfileRepo implements ProfileRepository {
+  private profiles = new Map<string, AgentProfile>();
+
+  add(profile: AgentProfile): void {
+    this.profiles.set(profile.name, profile);
+  }
+
+  getProfile(baseName: string): AgentProfile | null {
+    return this.profiles.get(baseName) ?? null;
+  }
+
+  listProfiles(): AgentProfile[] {
+    return [...this.profiles.values()];
+  }
+
+  getBaseNames(): Set<string> {
+    return new Set(this.profiles.keys());
+  }
+}
+
+function setup(profileRepo?: ProfileRepository) {
   const db = setupTestDb(TEST_DB, allMigrations);
   const repos = createSqliteRepos(db);
-  const svc = new MessagingService(repos.agents, repos.channels, repos.messages, repos.cursors, process.pid);
+  const svc = new MessagingService(repos.agents, repos.channels, repos.messages, repos.cursors, process.pid, undefined, profileRepo);
   return { db, svc };
 }
 
@@ -112,5 +136,42 @@ describe("startupRepl", () => {
 
     expect(cursor).not.toBeNull();
     expect(cursor!.last_read_message_id).toBe(0);
+  });
+
+  it("returns the resolved name from registration (no profile → same as input)", () => {
+    const { db, svc } = setup();
+    const resolved = startupRepl(svc, "jay", "general");
+    expect(resolved).toBe("jay");
+    db.close();
+  });
+
+  it("returns the pool slot name when a profile resolves to a pool slot", () => {
+    const profileRepo = new InMemoryProfileRepo();
+    profileRepo.add({
+      name: "os-dev",
+      persona: "Senior developer",
+      objective: "Write clean code",
+      instructions: null,
+      maxInstances: 3,
+      autoJoinChannels: [],
+    });
+
+    const { db, svc } = setup(profileRepo);
+    const resolved = startupRepl(svc, "os-dev", "general");
+    expect(resolved).toBe("os-dev-1");
+
+    // Agent row should be under os-dev-1
+    const agent = db.query("SELECT * FROM agents WHERE id = ?").get("os-dev-1") as { id: string; pid: number } | null;
+    expect(agent).not.toBeNull();
+    expect(agent!.pid).toBe(process.pid);
+
+    // Channel membership is under os-dev-1
+    const cursor = db.query(
+      `SELECT last_read_message_id FROM cursors
+       WHERE agent_id = ? AND channel_id = (SELECT id FROM channels WHERE name = ?)`
+    ).get("os-dev-1", "general") as { last_read_message_id: number } | null;
+    expect(cursor).not.toBeNull();
+
+    db.close();
   });
 });

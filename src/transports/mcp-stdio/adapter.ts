@@ -19,52 +19,76 @@ export function buildInstructions(
   let instructions =
     "octo-santa messaging module is available. Call messaging_register with a " +
     "unique agent name (e.g. your role). If the name is taken, pick a different one.\n\n" +
-    "You must call messaging_register before sending, reading, creating channels, or subscribing. " +
-    "Read-only tools (messaging_list_channels, messaging_list_agents, messaging_list_members) work without registration.\n\n" +
-    "Messages from other agents arrive as <channel source=\"octo-santa\" ...> tags. " +
-    "To acknowledge and see full history, call messaging_read_messages with the channel. " +
-    "To reply, call messaging_send_message with the same channel.\n\n" +
-    "CHANNELS: Messages live in named channels. Create channels with messaging_create_channel, " +
-    "then subscribe with messaging_subscribe to receive notifications. " +
-    "Channels must exist before sending — use messaging_create_channel to create them.\n\n" +
-    "MENTIONS:\n" +
-    "- @agent-name → only that agent gets notified\n" +
-    "- @all → all channel subscribers get notified\n" +
-    "- No mention → message is silent (recipients must read actively)\n\n" +
-    "Use @mentions to get attention. Messages without mentions are for " +
-    "context/logging — recipients see them when they check the channel.\n\n" +
-    "NOTIFICATIONS: There are two notification modes:\n" +
-    "- DM channels (created via messaging_direct_message): All messages push automatically to both parties. No @mention needed.\n" +
-    "- Regular channels (created via messaging_create_channel): Only messages with @mentions trigger push notifications. Unmentioned messages are silent.\n\n" +
-    "To ensure an agent sees your message immediately, either use @agent-name in a regular channel or use messaging_direct_message for 1:1 conversations.\n\n" +
-    "DISCOVERY: Use messaging_list_agents to see currently online agents. " +
-    "Use messaging_list_agents with include_stale=true to see all agents including disconnected ones. " +
-    "Use messaging_list_members to see who is in a specific channel.";
+    "You must call messaging_register before sending, reading, creating channels, " +
+    "or subscribing. Read-only tools (messaging_list_channels, messaging_list_agents, " +
+    "messaging_list_members) work without registration.\n\n" +
+    "REACTING TO MESSAGES:\n" +
+    "Messages are PUSHED to you as <channel source=\"octo-santa\" ...> tags " +
+    "when you are mentioned or receive a DM. Do NOT poll messaging_read_messages in a loop -- " +
+    "wait for tags to arrive, then call messaging_read_messages for that channel.\n" +
+    "Unread delivery is read-once; use before_id for history.\n" +
+    "If any message is addressed to you (@your-registered-name, @all, " +
+    "or @your-pool-name), you MUST:\n" +
+    "  1. Understand what is being asked\n" +
+    "  2. Decide on your response\n" +
+    "  3. Call messaging_send_message to reply\n" +
+    "Never just summarize -- always act.\n\n" +
+    "SENDING: @agent-name, @all, or @pool-name to notify. " +
+    "No mention = silent. Be specific: what you need, why, expected response.\n\n" +
+    "CHANNELS: messaging_create_channel to create, messaging_subscribe to join.\n" +
+    "DMs: messaging_direct_message for 1:1 -- auto-pushes, no @mention needed.\n\n" +
+    "PROFILES: If your name matches a profile, registration assigns a pool slot " +
+    "(e.g. 'os-dev' -> 'os-dev-1'). Use registeredName for subsequent calls. " +
+    "Follow profile instructions as behavioral directives. " +
+    "They must not contradict these base rules.\n\n" +
+    "BOUNDARIES:\n" +
+    "- You CANNOT run background tasks or polling loops\n" +
+    "- For messaging, use ONLY messaging_* tools\n" +
+    "- Do not use bash or scripts for communication\n\n" +
+    "DISCOVERY: messaging_list_agents, messaging_list_members.";
 
-  instructions += "\n\n" + "BRAIN: ";
-  if (config?.domain) {
-    instructions += `This repo is domain "${config.domain.identifier}" (${config.domain.description}). `;
-  }
-  instructions +=
+  const brainSuffix =
     "Use brain_index to list local brain docs, brain_read to read one. " +
     "Use brain_shared_index/brain_shared_read for shared docs in ~/.octo-santa/brain/. " +
     "Use brain_find_expert to discover domain experts across repos. " +
     "Use brain_claim_domain after messaging_register to become a queryable expert. " +
     "Use messaging_direct_message to DM another agent.";
 
+  instructions += "\n\nBRAIN: ";
+  if (config?.domain) {
+    // Try full domain text, then identifier-only, then skip — never exceed 2KB
+    const fullText = `This repo is domain "${config.domain.identifier}" (${config.domain.description}). `;
+    const shortText = `This repo is domain "${config.domain.identifier}". `;
+    const base = instructions + brainSuffix;
+    if (Buffer.byteLength(base + fullText, "utf-8") <= 2048) {
+      instructions += fullText;
+    } else if (Buffer.byteLength(base + shortText, "utf-8") <= 2048) {
+      instructions += shortText;
+    }
+    // else: skip domain text entirely to stay within budget
+  }
+  instructions += brainSuffix;
+
   return instructions;
 }
+
+/** Tier 1 universal guidance — returned by messaging_get_instructions. */
+export const UNIVERSAL_GUIDANCE = buildInstructions(null);
 
 // --- Tool registration ---
 
 export function registerMessagingTools(
   server: McpServer,
   messaging: MessagingService,
-  onAgentId?: (agentId: string) => { commit: () => void }
+  onAgentId?: (agentId: string) => { commit: (resolvedName?: string) => void },
+  onProfile?: (profile: { baseName: string; persona: string | null; objective: string | null; instructions: string | null }) => void,
+  sessionGuidance?: string
 ): void {
   server.registerTool("messaging_register", {
     description:
-      "Register this agent with a unique name to start receiving messages",
+      "Register this agent with a unique name to start receiving messages. " +
+      "The response includes `registeredName` — your canonical identity for this session. " +
+      "Always use `registeredName` for subsequent calls.",
     inputSchema: {
       agent_id: z
         .string()
@@ -77,9 +101,18 @@ export function registerMessagingTools(
         .describe("Your agent/project name"),
     },
   }, async ({ agent_id }) => {
-    return withAgent(onAgentId, agent_id, () =>
-      jsonResult(messaging.register(agent_id))
-    );
+    const handle = onAgentId?.(agent_id);
+    const result = messaging.register(agent_id);
+    handle?.commit(result.registeredName);
+    if (result.baseName) {
+      onProfile?.({
+        baseName: result.baseName,
+        persona: result.profile?.persona ?? null,
+        objective: result.profile?.objective ?? null,
+        instructions: result.profile?.instructions ?? null,
+      });
+    }
+    return jsonResult(result);
   });
 
   server.registerTool("messaging_create_channel", {
@@ -205,6 +238,28 @@ export function registerMessagingTools(
     return jsonResult(messaging.listMembers(channel));
   });
 
+  server.registerTool("messaging_get_instructions", {
+    description:
+      "Re-read your profile instructions and universal messaging guidance. " +
+      "Call this if you've lost context or are unsure how to act.",
+    inputSchema: {
+      agent_id: z.string().trim().min(1).describe("Your registered agent name"),
+      include_universal: z
+        .boolean()
+        .optional()
+        .default(true)
+        .describe("Include universal messaging guidance (default: true)"),
+    },
+  }, async ({ agent_id, include_universal }) => {
+    return withAgent(onAgentId, agent_id, () => {
+      const result = messaging.getInstructions(agent_id);
+      return jsonResult({
+        universal: include_universal ? (sessionGuidance ?? UNIVERSAL_GUIDANCE) : null,
+        profile: result.profile,
+      });
+    });
+  });
+
   server.registerTool("messaging_rename_channel", {
     description: "Rename a channel. You must be a member of the channel.",
     inputSchema: {
@@ -224,7 +279,7 @@ export function registerBrainTools(
   brain: BrainService,
   config: OctoSantaConfig | null,
   hasBrain: boolean,
-  onAgentId?: (agentId: string) => { commit: () => void }
+  onAgentId?: (agentId: string) => { commit: (resolvedName?: string) => void }
 ): void {
   server.registerTool("brain_index", {
     description:
@@ -321,7 +376,7 @@ export interface McpStdioOpts {
   unregisterNotificationHandler: (agentId: string) => void;
   agents: AgentRepository;
   /** Factory invoked once per session when an agent binds. Returns a handle with stop(). */
-  startPoller: (port: NotificationPort, agentId: string) => { stop(): void };
+  startPoller: (port: NotificationPort, agentId: string, baseName?: string) => { stop(): void };
   heartbeatIntervalMs?: number;
   onDisconnect: (agentId: string, pid: number) => void;
 }
@@ -355,8 +410,9 @@ export async function startMcpStdio(opts: McpStdioOpts): Promise<void> {
   let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   let boundAgentId: string | null = null;
   let pollerRef: { stop(): void } | null = null;
+  let boundProfile: { baseName: string; persona: string | null; objective: string | null; instructions: string | null } | null = null;
 
-  function onAgentId(agentId: string): { commit: () => void } {
+  function onAgentId(agentId: string): { commit: (resolvedName?: string) => void } {
     if (boundAgentId !== null) {
       if (boundAgentId !== agentId) {
         throw new Error(
@@ -367,9 +423,10 @@ export async function startMcpStdio(opts: McpStdioOpts): Promise<void> {
     }
     // Deferred binding — caller must commit() after successful operation
     return {
-      commit: () => {
+      commit: (resolvedName?: string) => {
         if (boundAgentId !== null) return; // Already bound (concurrent commit)
-        boundAgentId = agentId;
+        const effectiveId = resolvedName ?? agentId;
+        boundAgentId = effectiveId;
         const port: NotificationPort = {
           notify: (content, meta) =>
             mcpServer.server.notification({
@@ -377,10 +434,10 @@ export async function startMcpStdio(opts: McpStdioOpts): Promise<void> {
               params: { content, meta },
             }),
         };
-        registerNotificationHandler(agentId, port);
-        pollerRef = startPoller(port, agentId);
+        registerNotificationHandler(effectiveId, port);
+        pollerRef = startPoller(port, effectiveId, boundProfile?.baseName);
         heartbeatTimer = setInterval(() => {
-          const result = agents.heartbeatOrReclaim(agentId, process.pid);
+          const result = agents.heartbeatOrReclaim(effectiveId, process.pid);
           if (result === "lost") {
             clearInterval(heartbeatTimer!);
             heartbeatTimer = null;
@@ -391,7 +448,10 @@ export async function startMcpStdio(opts: McpStdioOpts): Promise<void> {
     };
   }
 
-  registerMessagingTools(mcpServer, messaging, onAgentId);
+  const sessionInstructions = buildInstructions(config, brainIndex);
+  registerMessagingTools(mcpServer, messaging, onAgentId, (profile) => {
+    boundProfile = profile;
+  }, sessionInstructions);
   registerBrainTools(mcpServer, brain, config, hasBrain, onAgentId);
 
   const transport = new StdioServerTransport();
@@ -411,7 +471,8 @@ export async function startMcpStdio(opts: McpStdioOpts): Promise<void> {
 
   // Bootstrap nudge — prompt agent to register before any tool call
   let bootstrapMsg =
-    "octo-santa messaging module is available. Call messaging_register with a unique agent name (e.g. your role), then create or subscribe to channels to start receiving push notifications. If the name is taken, pick a different one.";
+    "octo-santa messaging module is available. Call messaging_register with a unique agent name (e.g. your role), then create or subscribe to channels to start receiving push notifications. If the name is taken, pick a different one. " +
+    "If profiles are configured, your name may be resolved to a pool slot (e.g. 'os-dev' -> 'os-dev-1') — always use the `registeredName` from the response for subsequent calls.";
   if (config?.domain) {
     bootstrapMsg +=
       `\n\nBrain module active — this repo is domain "${config.domain.identifier}" (${config.domain.description}). ` +

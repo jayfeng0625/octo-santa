@@ -5,6 +5,7 @@ import { createSqliteRepos } from "../storage/sqlite";
 import { MessagingService } from "../core/messaging/service";
 import { startApp } from "../transports/repl/app";
 import { startupRepl } from "../transports/repl/startup";
+import { YamlProfileStore } from "../storage/yaml-profiles/store";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
@@ -31,13 +32,15 @@ const dbPath = expandHome(process.env.OCTO_SANTA_DB ?? join(homedir(), ".octo-sa
 const db = createDb(dbPath);
 runMigrations(db, allMigrations);
 const repos = createSqliteRepos(db);
-const svc = new MessagingService(repos.agents, repos.channels, repos.messages, repos.cursors, process.pid);
+const profilesDir = expandHome(process.env.OCTO_SANTA_PROFILES_DIR ?? "~/.octo-santa/profiles");
+const profiles = new YamlProfileStore(profilesDir);
+const svc = new MessagingService(repos.agents, repos.channels, repos.messages, repos.cursors, process.pid, undefined, profiles);
 
-startupRepl(svc, agentId, channel);
+const resolvedName = startupRepl(svc, agentId, channel);
 
 const pollIntervalMs = Number(process.env.OCTO_SANTA_POLL_INTERVAL_MS) || 1000;
 const kittyTerminals = new Set(["ghostty", "WezTerm", "iTerm2", "kitty"]);
 const termProgram = process.env.TERM_PROGRAM ?? "";
 const kittyEnabled = kittyTerminals.has(termProgram) || process.env.OCTO_SANTA_KITTY === "1";
 
-startApp({ svc, channelRepo: repos.channels, agentId, channel, pollIntervalMs, kittyEnabled });
+startApp({ svc, channelRepo: repos.channels, agentId: resolvedName, channel, pollIntervalMs, kittyEnabled });
