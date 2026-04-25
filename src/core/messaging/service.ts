@@ -12,6 +12,8 @@ import type {
   Message,
   ReadOptions,
   UnreadResult,
+  SendOptions,
+  ContinueResult,
 } from "./types";
 import type { RegisterResult, AutoJoinResult } from "../profiles/types";
 import {
@@ -180,10 +182,13 @@ export class MessagingService {
     this.agents.clearPid(agentId, this.pid);
   }
 
-  createChannel(agentId: string, name: string): Channel {
+  createChannel(agentId: string, name: string, maxHops?: number): Channel {
     if (!name.trim()) throw new Error("channel name must not be empty");
+    if (maxHops !== undefined && maxHops < 1) {
+      throw new Error("maxHops must be at least 1");
+    }
     this.requireRegistered(agentId);
-    return this.channels.create(name, agentId);
+    return this.channels.create(name, agentId, maxHops);
   }
 
   subscribe(agentId: string, channelName: string): void {
@@ -194,7 +199,7 @@ export class MessagingService {
     this.channels.addMember(agentId, channel.id, 0);
   }
 
-  send(agentId: string, channelName: string, content: string): Message {
+  send(agentId: string, channelName: string, content: string, options?: SendOptions): Message {
     if (!content.trim()) throw new Error("message content must not be empty");
     this.requireRegistered(agentId);
     assertDmAccess(channelName, agentId);
@@ -207,6 +212,26 @@ export class MessagingService {
     const allAgents = this.agents.listAll();
     const validIds = allAgents.map((a) => a.id);
     const mentions = extractMentions(content, validIds, this.profiles?.getBaseNames());
+    if (mentions.includes(agentId)) throw new Error("Cannot @mention yourself in a message");
+
+    // Hop counter logic
+    if (options?.human) {
+      this.channels.resetHopCount(channel.id);
+    } else {
+      const hop = this.channels.checkAndIncrementHop(channel.id);
+      if (!hop.allowed) {
+        if (!this.hasRecentHopNotice(channel.id)) {
+          this.sendSystemNotice(
+            channel,
+            `hop limit reached (${hop.hopCount}/${hop.maxHops}) in #${channelName} -- message from @${agentId} blocked. Waiting for human input.`
+          );
+        }
+        throw new Error(
+          `Hop limit reached (${hop.hopCount}/${hop.maxHops}) in #${channelName}. Message dropped. Only a human can /continue.`
+        );
+      }
+    }
+
     const message = this.messages.insertAndJoinSender(
       channel.id,
       agentId,
@@ -310,6 +335,22 @@ export class MessagingService {
     const allAgents = this.agents.listAll();
     const validIds = allAgents.map((a) => a.id);
     const mentions = extractMentions(content, validIds, this.profiles?.getBaseNames());
+    if (mentions.includes(agentId)) throw new Error("Cannot @mention yourself in a message");
+
+    // Hop counter logic for DMs (always agent, no human option)
+    const hopResult = this.channels.checkAndIncrementHop(channel.id);
+    if (!hopResult.allowed) {
+      if (!this.hasRecentHopNotice(channel.id)) {
+        this.sendSystemNotice(
+          channel,
+          `hop limit reached (${hopResult.hopCount}/${hopResult.maxHops}) in #${channelName} -- message from @${agentId} blocked. Waiting for human input.`
+        );
+      }
+      throw new Error(
+        `Hop limit reached (${hopResult.hopCount}/${hopResult.maxHops}) in #${channelName}. Message dropped. Only a human can /continue.`
+      );
+    }
+
     const message = this.messages.insertAndJoinSender(
       channel.id,
       agentId,
@@ -329,6 +370,56 @@ export class MessagingService {
     }
 
     return message;
+  }
+
+  /**
+   * Best-effort dedup for hop-limit `_system` notices.
+   *
+   * **Race window accepted by design.** This read sits OUTSIDE the
+   * checkAndIncrementHop transaction, so under concurrent multi-agent load
+   * (N processes hitting the limit simultaneously) up to N duplicate notices
+   * may be emitted. That is the intended trade-off:
+   *
+   *   (a) The dedup-inside-txn alternative would serialize the increment hot
+   *       path. Hop checks happen on every send; serializing them under load
+   *       is a correctness win for dedup but a throughput cliff for messaging.
+   *   (b) Downstream consumers (REPL display, future Slack mirror, audit log)
+   *       must already tolerate duplicate messages from at-least-once delivery
+   *       semantics — duplicate hop notices are a strict subset of that
+   *       tolerance requirement.
+   *   (c) Noise is bounded: max(duplicates) === count(concurrent listening
+   *       processes hitting the limit at the same instant). Once the limit is
+   *       hit, subsequent sends are blocked and stop emitting notices, so the
+   *       fan-out self-resolves within one increment cycle.
+   *
+   * If the empirical fan-out is ever observed > ~3 duplicates in production,
+   * revisit by either (i) moving dedup into the increment transaction, or
+   * (ii) adding an INSERT … WHERE NOT EXISTS guard at the storage layer.
+   */
+  private hasRecentHopNotice(channelId: number): boolean {
+    const recent = this.messages.readRecent(channelId, 1);
+    return recent.length > 0
+      && recent[0]!.agent_id === '_system'
+      && recent[0]!.content.startsWith('hop limit reached');
+  }
+
+  private sendSystemNotice(channel: Channel, content: string): void {
+    const message = this.messages.insertAndJoinSender(channel.id, '_system', content, ['*']);
+
+    if (this.dispatch) {
+      const members = this.channels.getMembers(channel.id);
+      const targetAgents = members.map((m) => m.id).filter((id) => id !== '_system');
+      if (targetAgents.length > 0) {
+        this.dispatch.dispatch({
+          channelName: channel.name,
+          sender: '_system',
+          content,
+          messageId: message.id,
+          isDm: isDmChannel(channel.name),
+          targetAgents,
+        });
+      }
+    }
   }
 
   renameChannel(
@@ -395,6 +486,37 @@ export class MessagingService {
         instructions: agent.instructions,
       },
     };
+  }
+
+  /**
+   * Bump a channel's hop allowance to resume after a hop-limit block.
+   *
+   * **Human-only / transport-restricted.** This method MUST only be invoked
+   * from a transport that enforces the human-source invariant by construction.
+   * The REPL `/continue` command is the canonical surface; the future `ocs
+   * continue` CLI subcommand will be the second.
+   *
+   * Do NOT expose this method via any MCP tool, RPC endpoint, HTTP handler, or
+   * other agent-callable interface. Agents bypassing this restriction would
+   * defeat the safety-rails design — they could indefinitely extend their own
+   * hop budget. The original `messaging_continue` MCP tool was removed for
+   * exactly this reason; see `tests/hex/transports/no-messaging-continue-tool.test.ts`
+   * and `tests/hex/core/continue-channel-transport-boundary.test.ts` for the
+   * regression guards.
+   *
+   * Enforcement is by transport boundary, not by code-level role check. Adding
+   * a check here is impractical — the core has no concept of "human" beyond the
+   * `SendOptions.human` flag, which is itself transport-set. The contract is:
+   * if you wire a new transport, you are responsible for ensuring this method
+   * is invoked only from a human-driven code path.
+   */
+  continueChannel(agentId: string, channelName: string, amount: number = 4): ContinueResult {
+    this.requireRegistered(agentId);
+    if (amount < 1) throw new Error("amount must be at least 1");
+    const channel = this.channels.findByName(channelName);
+    if (!channel) throw new Error(`Channel "${channelName}" not found`);
+    const result = this.channels.bumpHopAllowance(channel.id, amount);
+    return { channel: channelName, hopCount: result.hopCount, maxHops: result.maxHops, bumped: amount };
   }
 
   readRecent(channelId: number, limit: number): Message[] {

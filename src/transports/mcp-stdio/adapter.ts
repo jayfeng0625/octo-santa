@@ -69,6 +69,27 @@ export function buildInstructions(
   }
   instructions += brainSuffix;
 
+  // NON-PUSH CLIENTS block is appended AFTER the brain section intentionally.
+  // Claude Code truncates server instructions at 2KB. End-of-doc placement means
+  // that if truncation clips anything, it clips this tail — which Claude Code
+  // (a push-tag client) does not need. Non-push clients (Codex, Gemini CLI,
+  // OpenCode, most local-model clients) have no 2KB limit and receive the
+  // full block. Phase 0c will restructure this and reclaim budget.
+  instructions +=
+    "\n\nNON-PUSH CLIENTS: This section overrides the BOUNDARIES prohibition on " +
+    "polling loops — for messaging_listen only. If your MCP client does not " +
+    "deliver server notifications as pushed tags (Claude Code does; Codex, " +
+    "Gemini CLI, OpenCode, and most local-model clients do not), poll instead. " +
+    "After messaging_register and messaging_subscribe, loop:\n" +
+    "  result = messaging_listen(timeout_ms: 30000)\n" +
+    "  for each ch in result.channels: process ch.messages   # messages arrive inline\n" +
+    "  re-enter loop\n" +
+    "messaging_listen blocks until new messages arrive or the timeout elapses " +
+    "(default 10000 ms, max 30000 ms) and returns {channels, timed_out}. " +
+    "Each channel entry includes its messages inline -- no follow-up " +
+    "messaging_read_messages needed in the steady-state loop. " +
+    "Keep the loop running for the life of the agent.";
+
   return instructions;
 }
 
@@ -122,10 +143,11 @@ export function registerMessagingTools(
     inputSchema: {
       agent_id: z.string().trim().min(1).describe("Your agent/project name"),
       name: z.string().trim().min(1).describe("Channel name"),
+      max_hops: z.number().int().min(1).max(50).optional().describe("Max consecutive agent messages before channel blocks (default 50; set lower for stricter loop guard, max 50)"),
     },
-  }, async ({ agent_id, name }) => {
+  }, async ({ agent_id, name, max_hops }) => {
     return withAgent(onAgentId, agent_id, () => {
-      const channel = messaging.createChannel(agent_id, name);
+      const channel = messaging.createChannel(agent_id, name, max_hops);
       return jsonResult(channel);
     });
   });
@@ -156,7 +178,7 @@ export function registerMessagingTools(
 
   server.registerTool("messaging_send_message", {
     description:
-      "Send a message to an existing channel. Requires prior messaging_register. Use @agent-name to notify specific agents, or @all to notify everyone. Messages without mentions are silent — recipients see them only when they check the channel.",
+      "Send a message to an existing channel. Requires prior messaging_register. Use @agent-name to notify specific agents, or @all to notify everyone. Messages without mentions are silent -- recipients see them only when they check the channel. Messages are subject to per-channel hop limits; blocked messages are dropped with a system notice.",
     inputSchema: {
       agent_id: z.string().trim().min(1).describe("Your agent/project name"),
       channel: z.string().trim().min(1).describe("Channel name"),
@@ -275,7 +297,7 @@ export function registerMessagingTools(
   });
 
   server.registerTool("messaging_listen", {
-    description: "Block and wait for new messages across all subscribed channels. Returns when messages arrive or timeout is reached. Use this for agent polling loops instead of repeatedly calling messaging_read_messages.",
+    description: "Block and wait for new messages across all subscribed channels. Returns `{channels, timed_out}` where each channel entry includes its messages inline — no follow-up messaging_read_messages needed in the steady-state poll loop. Use this for agent polling loops instead of repeatedly calling messaging_read_messages.",
     inputSchema: {
       agent_id: z.string().trim().min(1).describe("Your registered agent name"),
       timeout_ms: z.number().int().optional().describe("Max wait time in ms (default 10000, max 30000)"),

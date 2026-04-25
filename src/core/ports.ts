@@ -5,6 +5,7 @@ import type {
   Message,
   CursorWithChannel,
   HeartbeatResult,
+  HopCheckResult,
 } from "./messaging/types";
 import type { BrainDoc, DomainWithClaims } from "./brain/types";
 import type { AgentProfile } from "./profiles/types";
@@ -36,7 +37,7 @@ export interface ProfileRepository {
 
 export interface ChannelRepository {
   findByName(name: string): Channel | null;
-  create(name: string, createdBy: string): Channel;
+  create(name: string, createdBy: string, maxHops?: number): Channel;
   list(): Channel[];
   addMember(agentId: string, channelId: number, initialCursorId: number): void;
   getMembers(channelId: number): Agent[];
@@ -46,6 +47,9 @@ export interface ChannelRepository {
     newName: string,
     agentId: string
   ): Channel;
+  checkAndIncrementHop(channelId: number): HopCheckResult;
+  resetHopCount(channelId: number): void;
+  bumpHopAllowance(channelId: number, amount: number): HopCheckResult;
 }
 
 export interface MessageRepository {

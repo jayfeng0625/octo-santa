@@ -1,6 +1,6 @@
 import type { Database } from "bun:sqlite";
 import type { ChannelRepository } from "../../core/ports";
-import type { Agent, Channel } from "../../core/messaging/types";
+import type { Agent, Channel, HopCheckResult } from "../../core/messaging/types";
 import { withRetrySync } from "./db";
 
 export class SqliteChannelRepo implements ChannelRepository {
@@ -10,13 +10,21 @@ export class SqliteChannelRepo implements ChannelRepository {
     return (this.db.query("SELECT * FROM channels WHERE name = ?").get(name) as Channel) ?? null;
   }
 
-  create(name: string, createdBy: string): Channel {
+  create(name: string, createdBy: string, maxHops?: number): Channel {
     return withRetrySync(() => {
-      this.db.run(
-        `INSERT INTO channels (name, created_by, created_at) VALUES (?, ?, ?)
-         ON CONFLICT(name) DO NOTHING`,
-        [name, createdBy, Date.now()]
-      );
+      if (maxHops !== undefined) {
+        this.db.run(
+          `INSERT INTO channels (name, created_by, created_at, max_hops) VALUES (?, ?, ?, ?)
+           ON CONFLICT(name) DO NOTHING`,
+          [name, createdBy, Date.now(), maxHops]
+        );
+      } else {
+        this.db.run(
+          `INSERT INTO channels (name, created_by, created_at) VALUES (?, ?, ?)
+           ON CONFLICT(name) DO NOTHING`,
+          [name, createdBy, Date.now()]
+        );
+      }
       return this.findByName(name) as Channel;
     });
   }
@@ -51,6 +59,33 @@ export class SqliteChannelRepo implements ChannelRepository {
       .query("SELECT COUNT(*) as count FROM cursors WHERE channel_id = ?")
       .get(channelId) as { count: number };
     return row.count;
+  }
+
+  checkAndIncrementHop(channelId: number): HopCheckResult {
+    const doCheck = this.db.transaction(() => {
+      const row = this.db.query("SELECT hop_count, max_hops FROM channels WHERE id = ?").get(channelId) as { hop_count: number; max_hops: number };
+      if (row.hop_count < row.max_hops) {
+        this.db.run("UPDATE channels SET hop_count = hop_count + 1 WHERE id = ?", [channelId]);
+        return { allowed: true, hopCount: row.hop_count + 1, maxHops: row.max_hops };
+      }
+      return { allowed: false, hopCount: row.hop_count, maxHops: row.max_hops };
+    });
+    return withRetrySync(() => doCheck.immediate());
+  }
+
+  resetHopCount(channelId: number): void {
+    withRetrySync(() => {
+      this.db.run("UPDATE channels SET hop_count = 0 WHERE id = ?", [channelId]);
+    });
+  }
+
+  bumpHopAllowance(channelId: number, amount: number): HopCheckResult {
+    const doBump = this.db.transaction(() => {
+      this.db.run("UPDATE channels SET hop_count = MAX(0, hop_count - ?) WHERE id = ?", [amount, channelId]);
+      const row = this.db.query("SELECT hop_count, max_hops FROM channels WHERE id = ?").get(channelId) as { hop_count: number; max_hops: number };
+      return { allowed: row.hop_count < row.max_hops, hopCount: row.hop_count, maxHops: row.max_hops };
+    });
+    return withRetrySync(() => doBump.immediate());
   }
 
   renameWithAnnouncement(channelId: number, newName: string, agentId: string): Channel {
