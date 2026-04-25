@@ -44,3 +44,9 @@ export interface CursorWithChannel {
 }
 
 export type HeartbeatResult = "ok" | "lost";
+
+export interface UnreadResult {
+  channel: string;
+  messages: Message[];
+  is_dm: boolean;
+}
