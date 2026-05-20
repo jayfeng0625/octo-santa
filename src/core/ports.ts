@@ -14,7 +14,7 @@ import type { AgentProfile } from "./profiles/types";
 export interface AgentRepository {
   findById(id: string): Agent | null;
   register(agentId: string, pid: number, profileFields?: {
-    baseName: string; persona: string | null; objective: string | null;
+    baseName: string; persona: string | null; objective: string | null; instructions: string | null;
   }): Agent;
   heartbeatOrReclaim(agentId: string, pid: number): HeartbeatResult;
   listAll(): Agent[];
@@ -24,7 +24,7 @@ export interface AgentRepository {
     baseName: string,
     pid: number,
     maxInstances: number,
-    profileFields: { persona: string | null; objective: string | null }
+    profileFields: { persona: string | null; objective: string | null; instructions: string | null }
   ): { agent: Agent; registeredName: string; instanceNumber: number | null };
 }
 

@@ -212,6 +212,7 @@ describe("profile-based name resolution in transport binding", () => {
       name: "os-dev",
       persona: "Senior developer",
       objective: "Write clean code",
+      instructions: null,
       maxInstances: 3,
       autoJoinChannels: [],
     });
@@ -233,6 +234,7 @@ describe("profile-based name resolution in transport binding", () => {
       name: "os-dev",
       persona: null,
       objective: null,
+      instructions: null,
       maxInstances: 3,
       autoJoinChannels: [],
     });
@@ -247,6 +249,84 @@ describe("profile-based name resolution in transport binding", () => {
     } catch (err) {
       threw = true;
       expect(String(err)).toContain("os-dev-1");
+    }
+    expect(threw).toBe(true);
+
+    db.close();
+  });
+});
+
+describe("messaging_get_instructions tool", () => {
+  it("returns universal guidance and profile instructions for profiled agent", async () => {
+    const profileRepo = new InMemoryProfileRepo();
+    profileRepo.add({
+      name: "os-pm",
+      persona: "Product manager",
+      objective: "Drive roadmap",
+      instructions: "Evaluate proposals against priorities.",
+      maxInstances: 1,
+      autoJoinChannels: [],
+    });
+    const { db, handlers } = setup(profileRepo);
+
+    await handlers.messaging_register!({ agent_id: "os-pm" });
+    const result = await handlers.messaging_get_instructions!({ agent_id: "os-pm", include_universal: true });
+    const parsed = JSON.parse(result.content[0].text);
+
+    expect(parsed.universal).not.toBeNull();
+    expect(parsed.universal.length).toBeGreaterThan(100);
+    expect(parsed.profile).not.toBeNull();
+    expect(parsed.profile.instructions).toBe("Evaluate proposals against priorities.");
+    expect(parsed.profile.persona).toBe("Product manager");
+
+    db.close();
+  });
+
+  it("returns null universal when include_universal is false", async () => {
+    const profileRepo = new InMemoryProfileRepo();
+    profileRepo.add({
+      name: "os-pm",
+      persona: "PM",
+      objective: null,
+      instructions: "Test instructions",
+      maxInstances: 1,
+      autoJoinChannels: [],
+    });
+    const { db, handlers } = setup(profileRepo);
+
+    await handlers.messaging_register!({ agent_id: "os-pm" });
+    const result = await handlers.messaging_get_instructions!({ agent_id: "os-pm", include_universal: false });
+    const parsed = JSON.parse(result.content[0].text);
+
+    expect(parsed.universal).toBeNull();
+    expect(parsed.profile).not.toBeNull();
+    expect(parsed.profile.instructions).toBe("Test instructions");
+
+    db.close();
+  });
+
+  it("returns null profile for unprofiled agent", async () => {
+    const { db, handlers } = setup();
+
+    await handlers.messaging_register!({ agent_id: "random-bot" });
+    const result = await handlers.messaging_get_instructions!({ agent_id: "random-bot", include_universal: true });
+    const parsed = JSON.parse(result.content[0].text);
+
+    expect(parsed.universal).not.toBeNull();
+    expect(parsed.profile).toBeNull();
+
+    db.close();
+  });
+
+  it("rejects mismatched agent_id via withAgent binding", async () => {
+    const { db, handlers } = setup();
+
+    await handlers.messaging_register!({ agent_id: "agent-a" });
+    let threw = false;
+    try {
+      await handlers.messaging_get_instructions!({ agent_id: "agent-b", include_universal: true });
+    } catch {
+      threw = true;
     }
     expect(threw).toBe(true);
 

@@ -25,35 +25,37 @@ export class SqliteAgentRepo implements AgentRepository {
   private _upsertAgent(
     agentId: string,
     pid: number,
-    profileFields?: { baseName: string; persona: string | null; objective: string | null }
+    profileFields?: { baseName: string; persona: string | null; objective: string | null; instructions: string | null }
   ): void {
     const now = Date.now();
     if (profileFields) {
       this.db
         .query(
-          `INSERT INTO agents (id, created_at, last_seen_at, pid, registered_at, base_name, persona, objective)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+          `INSERT INTO agents (id, created_at, last_seen_at, pid, registered_at, base_name, persona, objective, instructions)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
            ON CONFLICT(id) DO UPDATE SET
              last_seen_at = excluded.last_seen_at,
              pid = excluded.pid,
              registered_at = excluded.registered_at,
              base_name = excluded.base_name,
              persona = excluded.persona,
-             objective = excluded.objective`
+             objective = excluded.objective,
+             instructions = excluded.instructions`
         )
-        .run(agentId, now, now, pid, now, profileFields.baseName, profileFields.persona, profileFields.objective);
+        .run(agentId, now, now, pid, now, profileFields.baseName, profileFields.persona, profileFields.objective, profileFields.instructions);
     } else {
       this.db
         .query(
-          `INSERT INTO agents (id, created_at, last_seen_at, pid, registered_at, base_name, persona, objective)
-           VALUES (?, ?, ?, ?, ?, NULL, NULL, NULL)
+          `INSERT INTO agents (id, created_at, last_seen_at, pid, registered_at, base_name, persona, objective, instructions)
+           VALUES (?, ?, ?, ?, ?, NULL, NULL, NULL, NULL)
            ON CONFLICT(id) DO UPDATE SET
              last_seen_at = excluded.last_seen_at,
              pid = excluded.pid,
              registered_at = excluded.registered_at,
              base_name = excluded.base_name,
              persona = excluded.persona,
-             objective = excluded.objective`
+             objective = excluded.objective,
+             instructions = excluded.instructions`
         )
         .run(agentId, now, now, pid, now);
     }
@@ -62,7 +64,7 @@ export class SqliteAgentRepo implements AgentRepository {
   register(
     agentId: string,
     pid: number,
-    profileFields?: { baseName: string; persona: string | null; objective: string | null }
+    profileFields?: { baseName: string; persona: string | null; objective: string | null; instructions: string | null }
   ): Agent {
     const doRegister = this.db.transaction(() => {
       const existing = this.findById(agentId);
@@ -86,7 +88,7 @@ export class SqliteAgentRepo implements AgentRepository {
     baseName: string,
     pid: number,
     maxInstances: number,
-    profileFields: { persona: string | null; objective: string | null }
+    profileFields: { persona: string | null; objective: string | null; instructions: string | null }
   ): { agent: Agent; registeredName: string; instanceNumber: number | null } {
     const doRegister = this.db.transaction(() => {
       const existing = this.findByBaseName(baseName);

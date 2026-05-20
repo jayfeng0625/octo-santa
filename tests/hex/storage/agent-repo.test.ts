@@ -55,6 +55,7 @@ describe("SqliteAgentRepo", () => {
       baseName: "researcher",
       persona: "You are a diligent researcher.",
       objective: "Gather and summarize information.",
+      instructions: null,
     });
     expect(agent.id).toBe("researcher-1");
     expect(agent.base_name).toBe("researcher");
@@ -79,6 +80,7 @@ describe("SqliteAgentRepo", () => {
       baseName: "agent-x",
       persona: "Old persona",
       objective: "Old objective",
+      instructions: null,
     });
     // Re-register without profile — should clear profile fields
     db.run("UPDATE agents SET pid = 999999 WHERE id = ?", ["agent-x"]);
@@ -135,6 +137,7 @@ describe("SqliteAgentRepo", () => {
       baseName: "agent-a",
       persona: "Persona A",
       objective: "Objective A",
+      instructions: null,
     });
     const all = repo.listAll();
     expect(all.length).toBe(2);
@@ -177,6 +180,7 @@ describe("SqliteAgentRepo - registerWithProfile", () => {
     const result = repo.registerWithProfile("researcher", process.pid, 1, {
       persona: "Researcher persona",
       objective: "Research things",
+      instructions: null,
     });
     expect(result.registeredName).toBe("researcher");
     expect(result.instanceNumber).toBeNull();
@@ -192,6 +196,7 @@ describe("SqliteAgentRepo - registerWithProfile", () => {
     const result = repo.registerWithProfile("worker", process.pid, 3, {
       persona: null,
       objective: null,
+      instructions: null,
     });
     expect(result.registeredName).toBe("worker-1");
     expect(result.instanceNumber).toBe(1);
@@ -210,6 +215,7 @@ describe("SqliteAgentRepo - registerWithProfile", () => {
     const result = repo.registerWithProfile("worker", process.pid, 3, {
       persona: null,
       objective: null,
+      instructions: null,
     });
     // Slot 1 is dead → reclaimed
     expect(result.registeredName).toBe("worker-1");
@@ -230,6 +236,7 @@ describe("SqliteAgentRepo - registerWithProfile", () => {
     const result = repo.registerWithProfile("worker", process.pid, 3, {
       persona: null,
       objective: null,
+      instructions: null,
     });
     expect(result.registeredName).toBe("worker-2");
     expect(result.instanceNumber).toBe(2);
@@ -251,6 +258,7 @@ describe("SqliteAgentRepo - registerWithProfile", () => {
     const result = repo.registerWithProfile("worker", process.pid, 5, {
       persona: null,
       objective: null,
+      instructions: null,
     });
     expect(result.registeredName).toBe("worker-3");
     expect(result.instanceNumber).toBe(3);
@@ -262,10 +270,12 @@ describe("SqliteAgentRepo - registerWithProfile", () => {
     const first = repo.registerWithProfile("worker", process.pid, 3, {
       persona: null,
       objective: null,
+      instructions: null,
     });
     const second = repo.registerWithProfile("worker", process.pid, 3, {
       persona: null,
       objective: null,
+      instructions: null,
     });
     expect(second.registeredName).toBe(first.registeredName);
     expect(second.instanceNumber).toBe(first.instanceNumber);
@@ -276,7 +286,7 @@ describe("SqliteAgentRepo - registerWithProfile", () => {
     const { db, repo } = setup();
     const now = Date.now();
     // Seed two workers: slot 1 owned by current PID, slot 2 owned by PID 1 (init, always alive)
-    repo.registerWithProfile("worker", process.pid, 3, { persona: null, objective: null });
+    repo.registerWithProfile("worker", process.pid, 3, { persona: null, objective: null, instructions: null });
     db.run(
       `INSERT INTO agents (id, created_at, last_seen_at, pid, registered_at, base_name, persona, objective)
        VALUES ('worker-2', 1, ${now}, 1, 1, 'worker', NULL, NULL)`
@@ -287,6 +297,7 @@ describe("SqliteAgentRepo - registerWithProfile", () => {
     const result = repo.registerWithProfile("worker", process.pid + 100, 3, {
       persona: null,
       objective: null,
+      instructions: null,
     });
     expect(result.registeredName).toBe("worker-1");
     expect(result.instanceNumber).toBe(1);
@@ -308,7 +319,7 @@ describe("SqliteAgentRepo - registerWithProfile", () => {
     );
     // Both slots are alive — a third process should fail
     expect(() =>
-      repo.registerWithProfile("worker", process.pid, 2, { persona: null, objective: null })
+      repo.registerWithProfile("worker", process.pid, 2, { persona: null, objective: null, instructions: null })
     ).toThrow(/capacity/i);
     db.close();
   });
@@ -318,10 +329,12 @@ describe("SqliteAgentRepo - registerWithProfile", () => {
     const first = repo.registerWithProfile("unique-bot", process.pid, 1, {
       persona: "Bot persona",
       objective: null,
+      instructions: null,
     });
     const second = repo.registerWithProfile("unique-bot", process.pid, 1, {
       persona: "Bot persona",
       objective: null,
+      instructions: null,
     });
     expect(second.registeredName).toBe("unique-bot");
     expect(second.instanceNumber).toBeNull();
@@ -338,7 +351,7 @@ describe("SqliteAgentRepo - registerWithProfile", () => {
        VALUES ('unique-bot', 1, ${now}, 1, 1, 'unique-bot', 'Bot', NULL)`
     );
     expect(() =>
-      repo.registerWithProfile("unique-bot", process.pid, 1, { persona: "Bot", objective: null })
+      repo.registerWithProfile("unique-bot", process.pid, 1, { persona: "Bot", objective: null, instructions: null })
     ).toThrow(/already active/i);
     db.close();
   });

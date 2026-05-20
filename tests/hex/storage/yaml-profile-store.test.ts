@@ -65,6 +65,13 @@ describe("YamlProfileStore", () => {
     expect(profile!.autoJoinChannels).toEqual([]);
   });
 
+  it("defaults instructions to null when not specified", () => {
+    writeFileSync(join(dir, "simple.yaml"), `name: simple\n`);
+    const store = new YamlProfileStore(dir);
+    const profile = store.getProfile("simple");
+    expect(profile!.instructions).toBeNull();
+  });
+
   it("accepts null for persona explicitly", () => {
     writeFileSync(join(dir, "simple.yaml"), `name: simple\npersona: null\n`);
     const store = new YamlProfileStore(dir);
@@ -75,6 +82,34 @@ describe("YamlProfileStore", () => {
     writeFileSync(join(dir, "simple.yaml"), `name: simple\nobjective: null\n`);
     const store = new YamlProfileStore(dir);
     expect(store.getProfile("simple")!.objective).toBeNull();
+  });
+
+  it("loads instructions from profile YAML", () => {
+    writeFileSync(
+      join(dir, "os-pm.yaml"),
+      `name: os-pm\ninstructions: "When you receive a proposal, evaluate it against priorities."\n`
+    );
+    const store = new YamlProfileStore(dir);
+    const profile = store.getProfile("os-pm");
+    expect(profile!.instructions).toBe(
+      "When you receive a proposal, evaluate it against priorities."
+    );
+  });
+
+  it("accepts null for instructions explicitly", () => {
+    writeFileSync(join(dir, "simple.yaml"), `name: simple\ninstructions: null\n`);
+    const store = new YamlProfileStore(dir);
+    expect(store.getProfile("simple")!.instructions).toBeNull();
+  });
+
+  it("rejects non-string instructions (number)", () => {
+    writeFileSync(join(dir, "bad.yaml"), `name: bad\ninstructions: 42\n`);
+    expect(() => new YamlProfileStore(dir)).toThrow(/instructions/i);
+  });
+
+  it("rejects non-string instructions (boolean)", () => {
+    writeFileSync(join(dir, "bad.yaml"), `name: bad\ninstructions: true\n`);
+    expect(() => new YamlProfileStore(dir)).toThrow(/instructions/i);
   });
 
   // --- listProfiles and getBaseNames ---

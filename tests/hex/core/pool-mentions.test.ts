@@ -105,6 +105,7 @@ describe("pool-wide mention expansion", () => {
       name: "os-dev",
       persona: null,
       objective: null,
+      instructions: null,
       maxInstances: 3,
       autoJoinChannels: [],
     });
@@ -153,6 +154,7 @@ describe("pool-wide mention expansion", () => {
       name: "os-dev",
       persona: null,
       objective: null,
+      instructions: null,
       maxInstances: 3,
       autoJoinChannels: [],
     });
@@ -184,6 +186,7 @@ describe("pool-wide mention expansion", () => {
       name: "os-dev",
       persona: null,
       objective: null,
+      instructions: null,
       maxInstances: 3,
       autoJoinChannels: [],
     });
@@ -218,6 +221,7 @@ describe("pool-wide mention expansion", () => {
       name: "os-dev",
       persona: null,
       objective: null,
+      instructions: null,
       maxInstances: 3,
       autoJoinChannels: [],
     });
@@ -243,6 +247,7 @@ describe("pool-wide mention expansion", () => {
       name: "os-dev",
       persona: null,
       objective: null,
+      instructions: null,
       maxInstances: 3,
       autoJoinChannels: [],
     });

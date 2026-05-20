@@ -151,6 +151,7 @@ describe("startupRepl", () => {
       name: "os-dev",
       persona: "Senior developer",
       objective: "Write clean code",
+      instructions: null,
       maxInstances: 3,
       autoJoinChannels: [],
     });

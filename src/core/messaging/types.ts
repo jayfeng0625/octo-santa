@@ -8,6 +8,7 @@ export interface Agent {
   base_name: string | null;
   persona: string | null;
   objective: string | null;
+  instructions: string | null;
 }
 
 export interface Channel {

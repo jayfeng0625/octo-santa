@@ -61,6 +61,7 @@ describe("singleton profile registration", () => {
       name: "os-dev",
       persona: "Senior developer",
       objective: "Write clean code",
+      instructions: null,
       maxInstances: 1,
       autoJoinChannels: [],
     });
@@ -91,6 +92,7 @@ describe("singleton profile registration", () => {
       name: "os-dev",
       persona: "Senior developer",
       objective: "Write clean code",
+      instructions: null,
       maxInstances: 1,
       autoJoinChannels: [],
     });
@@ -119,6 +121,7 @@ describe("pool profile registration", () => {
       name: "worker",
       persona: null,
       objective: "Process tasks",
+      instructions: null,
       maxInstances: 3,
       autoJoinChannels: [],
     });
@@ -138,6 +141,7 @@ describe("pool profile registration", () => {
       name: "os-pm",
       persona: "Product manager",
       objective: null,
+      instructions: null,
       maxInstances: 1,
       autoJoinChannels: [],
     });
@@ -155,6 +159,7 @@ describe("pool profile registration", () => {
       name: "worker",
       persona: null,
       objective: "Process tasks",
+      instructions: null,
       maxInstances: 3,
       autoJoinChannels: [],
     });
@@ -174,6 +179,7 @@ describe("pool profile registration", () => {
       name: "worker",
       persona: null,
       objective: "Process tasks",
+      instructions: null,
       maxInstances: 2,
       autoJoinChannels: [],
     });
@@ -254,6 +260,7 @@ describe("suffixed namespace reservation", () => {
       name: "os-dev",
       persona: null,
       objective: null,
+      instructions: null,
       maxInstances: 3,
       autoJoinChannels: [],
     });
@@ -271,6 +278,7 @@ describe("suffixed namespace reservation", () => {
       name: "worker",
       persona: null,
       objective: null,
+      instructions: null,
       maxInstances: 5,
       autoJoinChannels: [],
     });
@@ -308,6 +316,7 @@ describe("suffixed namespace reservation", () => {
       name: "os-dev",
       persona: null,
       objective: null,
+      instructions: null,
       maxInstances: 3,
       autoJoinChannels: [],
     });
@@ -328,6 +337,7 @@ describe("auto-join channels", () => {
       name: "os-dev",
       persona: null,
       objective: null,
+      instructions: null,
       maxInstances: 1,
       autoJoinChannels: ["general", "dev"],
     });
@@ -362,6 +372,7 @@ describe("auto-join channels", () => {
       name: "os-dev",
       persona: null,
       objective: null,
+      instructions: null,
       maxInstances: 1,
       autoJoinChannels: ["nonexistent-channel"],
     });
@@ -380,6 +391,7 @@ describe("auto-join channels", () => {
       name: "os-dev",
       persona: null,
       objective: null,
+      instructions: null,
       maxInstances: 1,
       autoJoinChannels: ["general", "missing-channel"],
     });
@@ -407,6 +419,7 @@ describe("auto-join channels", () => {
       name: "worker",
       persona: null,
       objective: null,
+      instructions: null,
       maxInstances: 3,
       autoJoinChannels: ["tasks"],
     });
@@ -441,6 +454,7 @@ describe("RegisterResult type shape", () => {
       name: "os-dev",
       persona: "dev",
       objective: "code",
+      instructions: null,
       maxInstances: 1,
       autoJoinChannels: [],
     });
