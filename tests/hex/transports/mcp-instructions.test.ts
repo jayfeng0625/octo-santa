@@ -2,26 +2,54 @@ import { describe, it, expect } from "bun:test";
 import { buildInstructions, UNIVERSAL_GUIDANCE } from "../../../src/transports/mcp-stdio/adapter";
 
 describe("buildInstructions", () => {
-  // Claude Code truncates server instructions at 2KB (2048 bytes).
-  // The BRAIN section adds ~50 bytes with domain. If the base text exceeds budget,
-  // trim SENDING and DISCOVERY first -- REACTING TO MESSAGES and BOUNDARIES
-  // are highest priority for weak models.
+  // Claude Code truncates server instructions at 2KB (2048 bytes). Everything
+  // up through the BRAIN section must fit inside that window. The NON-PUSH
+  // CLIENTS block is appended AFTER BRAIN intentionally: end-of-doc placement
+  // means Claude Code's truncation clips the tail the push-client doesn't
+  // need, while non-push clients (Codex, Gemini CLI, OpenCode) have no 2KB
+  // limit and receive the full text. The 2900-byte ceiling below accommodates
+  // the sacrificial tail. Phase 0c will restructure the whole block and
+  // reclaim budget.
 
-  it("stays under 2KB without brain config", () => {
+  it("pre-NON-PUSH section stays under 2KB without brain config", () => {
     const text = buildInstructions(null);
-    const bytes = Buffer.byteLength(text, "utf-8");
-    console.log(`buildInstructions(null): ${bytes} bytes`);
+    const preTail = text.split("\n\nNON-PUSH CLIENTS:")[0]!;
+    const bytes = Buffer.byteLength(preTail, "utf-8");
+    console.log(`buildInstructions(null) pre-NON-PUSH: ${bytes} bytes`);
     expect(bytes).toBeLessThan(2048);
   });
 
-  it("stays under 2KB with brain config", () => {
+  it("pre-NON-PUSH section stays under 2KB with brain config", () => {
     const text = buildInstructions({
       domain: { identifier: "test-domain", tags: ["test"], description: "A test domain" },
       brain: { dirs: ["docs"], files: [] },
     });
-    const bytes = Buffer.byteLength(text, "utf-8");
-    console.log(`buildInstructions(with brain): ${bytes} bytes`);
+    const preTail = text.split("\n\nNON-PUSH CLIENTS:")[0]!;
+    const bytes = Buffer.byteLength(preTail, "utf-8");
+    console.log(`buildInstructions(with brain) pre-NON-PUSH: ${bytes} bytes`);
     expect(bytes).toBeLessThan(2048);
+  });
+
+  it("full instructions stay under the non-push ceiling", () => {
+    const none = Buffer.byteLength(buildInstructions(null), "utf-8");
+    const withBrain = Buffer.byteLength(
+      buildInstructions({
+        domain: { identifier: "test-domain", tags: ["test"], description: "A test domain" },
+        brain: { dirs: ["docs"], files: [] },
+      }),
+      "utf-8"
+    );
+    console.log(`full: none=${none}, withBrain=${withBrain}`);
+    expect(none).toBeLessThan(2900);
+    expect(withBrain).toBeLessThan(2900);
+  });
+
+  it("includes NON-PUSH CLIENTS section at end of document", () => {
+    const text = buildInstructions(null);
+    expect(text).toContain("NON-PUSH CLIENTS:");
+    expect(text).toContain("messaging_listen(timeout_ms");
+    expect(text).toContain("messages arrive inline");
+    expect(text.indexOf("NON-PUSH CLIENTS:")).toBeGreaterThan(text.indexOf("BRAIN:"));
   });
 
   it("includes REACTING TO MESSAGES section with anti-polling guidance", () => {

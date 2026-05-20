@@ -16,6 +16,25 @@ export interface Channel {
   name: string;
   created_by: string;
   created_at: number;
+  max_hops: number;
+  hop_count: number;
+}
+
+export interface HopCheckResult {
+  allowed: boolean;
+  hopCount: number;
+  maxHops: number;
+}
+
+export interface SendOptions {
+  human?: boolean;
+}
+
+export interface ContinueResult {
+  channel: string;
+  hopCount: number;
+  maxHops: number;
+  bumped: number;
 }
 
 export interface Message {

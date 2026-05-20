@@ -136,12 +136,12 @@ describe("cross-process poller integration", () => {
 
     poller.start();
 
-    // agent-b sends a message that mentions themselves
-    svc.send("agent-b", "general", "@agent-b this is a self-message");
+    // agent-b sends a message mentioning agent-a (not itself)
+    svc.send("agent-b", "general", "@agent-a this is agent-b speaking");
 
     await poller._tick();
 
-    // agent-b should NOT be notified about their own messages
+    // agent-b should NOT be notified about their own messages (sender is excluded)
     expect(calls.length).toBe(0);
 
     poller.stop();

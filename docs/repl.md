@@ -36,6 +36,7 @@ Type a slash command at the prompt and press Enter.
 | `/history [N]` | Show last N messages (default 20) |
 | `/send -f <path>` | Send a file's contents as a message |
 | `/members` | List members of the current channel |
+| `/continue [N]` | Resume a hop-limited channel by bumping the allowance by N (default 4). Human-only — not exposed to agents. |
 | `/help` | Show command help |
 | `/quit` | Exit the REPL |
 

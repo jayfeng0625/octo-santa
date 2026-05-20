@@ -75,4 +75,106 @@ describe("SqliteChannelRepo", () => {
     expect(msgs[0]!.mentions).toBe('["*"]');
     db.close();
   });
+
+  it("create with default maxHops returns channel with max_hops = 50", () => {
+    const { db, channels } = setup();
+    const ch = channels.create("test-channel", "agent-a");
+    expect(ch.max_hops).toBe(50);
+    expect(ch.hop_count).toBe(0);
+    db.close();
+  });
+
+  it("create with custom maxHops stores the provided value", () => {
+    const { db, channels } = setup();
+    const ch = channels.create("test-channel", "agent-a", 10);
+    expect(ch.max_hops).toBe(10);
+    expect(ch.hop_count).toBe(0);
+    db.close();
+  });
+
+  it("checkAndIncrementHop - allowed at 0/4", () => {
+    const { db, channels } = setup();
+    const ch = channels.create("hop-channel", "agent-a", 4);
+    const result = channels.checkAndIncrementHop(ch.id);
+    expect(result.allowed).toBe(true);
+    expect(result.hopCount).toBe(1);
+    expect(result.maxHops).toBe(4);
+    db.close();
+  });
+
+  it("checkAndIncrementHop - allowed at 3/4", () => {
+    const { db, channels } = setup();
+    const ch = channels.create("hop-channel", "agent-a", 4);
+    // Manually set hop_count to 3
+    db.run("UPDATE channels SET hop_count = 3 WHERE id = ?", [ch.id]);
+    const result = channels.checkAndIncrementHop(ch.id);
+    expect(result.allowed).toBe(true);
+    expect(result.hopCount).toBe(4);
+    expect(result.maxHops).toBe(4);
+    db.close();
+  });
+
+  it("checkAndIncrementHop - blocked at 4/4", () => {
+    const { db, channels } = setup();
+    const ch = channels.create("hop-channel", "agent-a", 4);
+    // Manually set hop_count to 4 (at limit)
+    db.run("UPDATE channels SET hop_count = 4 WHERE id = ?", [ch.id]);
+    const result = channels.checkAndIncrementHop(ch.id);
+    expect(result.allowed).toBe(false);
+    expect(result.hopCount).toBe(4);
+    expect(result.maxHops).toBe(4);
+    db.close();
+  });
+
+  it("checkAndIncrementHop - counter not incremented when blocked", () => {
+    const { db, channels } = setup();
+    const ch = channels.create("hop-channel", "agent-a", 4);
+    db.run("UPDATE channels SET hop_count = 4 WHERE id = ?", [ch.id]);
+    channels.checkAndIncrementHop(ch.id);
+    const row = db.query("SELECT hop_count FROM channels WHERE id = ?").get(ch.id) as { hop_count: number };
+    expect(row.hop_count).toBe(4);
+    db.close();
+  });
+
+  it("resetHopCount resets hop_count to 0", () => {
+    const { db, channels } = setup();
+    const ch = channels.create("hop-channel", "agent-a", 4);
+    db.run("UPDATE channels SET hop_count = 3 WHERE id = ?", [ch.id]);
+    channels.resetHopCount(ch.id);
+    const row = db.query("SELECT hop_count FROM channels WHERE id = ?").get(ch.id) as { hop_count: number };
+    expect(row.hop_count).toBe(0);
+    db.close();
+  });
+
+  it("bumpHopAllowance decrements hop_count by N", () => {
+    const { db, channels } = setup();
+    const ch = channels.create("hop-channel", "agent-a", 4);
+    db.run("UPDATE channels SET hop_count = 3 WHERE id = ?", [ch.id]);
+    const result = channels.bumpHopAllowance(ch.id, 2);
+    expect(result.hopCount).toBe(1);
+    expect(result.maxHops).toBe(4);
+    expect(result.allowed).toBe(true);
+    db.close();
+  });
+
+  it("bumpHopAllowance clamps hop_count to 0, not negative", () => {
+    const { db, channels } = setup();
+    const ch = channels.create("hop-channel", "agent-a", 4);
+    db.run("UPDATE channels SET hop_count = 2 WHERE id = ?", [ch.id]);
+    const result = channels.bumpHopAllowance(ch.id, 10);
+    expect(result.hopCount).toBe(0);
+    expect(result.allowed).toBe(true);
+    db.close();
+  });
+
+  it("bumpHopAllowance returns new state after decrement", () => {
+    const { db, channels } = setup();
+    const ch = channels.create("hop-channel", "agent-a", 5);
+    db.run("UPDATE channels SET hop_count = 5 WHERE id = ?", [ch.id]);
+    const result = channels.bumpHopAllowance(ch.id, 1);
+    expect(result.hopCount).toBe(4);
+    expect(result.maxHops).toBe(5);
+    expect(result.allowed).toBe(true);
+    db.close();
+  });
 });

@@ -21,6 +21,9 @@ octo-santa takes the collaboration path. Instead of making one agent smarter, it
 - **Brain** — a knowledge layer that makes agents into domain experts. Each project declares its domain via config, agents get indexed access to curated docs, and a discovery mechanism (`brain_find_expert`) lets agents find the right expert to DM. Cross-domain knowledge flows through agent-to-agent conversation, not shared document stores.
 - **Per-domain config** (`.octo-santa/config.json`) — projects declare their identity, domain expertise, and brain directories. The agent's role in the network is defined by the repo it lives in.
 - **REPL** — interactive chat terminal for humans to observe, participate in, and moderate agent conversations in real time.
+- **Safety rails** — per-channel hop counter (default 50 agent messages before block), self-mention guard, `_system` block notifications, and human-only `/continue` REPL command. Prevents runaway agent loops; humans control resumption.
+- **Persistent agent profiles** — YAML profile store at `~/.octo-santa/profiles/` lets agents register with a profile-derived pool slot (e.g. `os-dev` → `os-dev-1`), inheriting persona, objective, and instructions across sessions.
+- **`messaging_listen`** — blocking pull mode for non-push MCP clients (Codex, Gemini CLI, OpenCode, local-model clients).
 
 **Planned:**
 - **Plugin distribution** — repackage octo-santa as a Claude Code plugin for install via `/plugin install` instead of manual MCP config. Enables SessionStart hooks for automatic brain priming, plugin channels for message delivery, and marketplace distribution.
@@ -95,15 +98,17 @@ Push and poll are fully compatible — agents using either mode can communicate 
 | Tool | Description |
 |------|-------------|
 | `messaging_register` | Register an agent with a unique name |
-| `messaging_create_channel` | Create a named channel |
+| `messaging_create_channel` | Create a named channel (optional `max_hops` override, default 50, max 50) |
 | `messaging_subscribe` | Subscribe to an existing channel for notifications |
-| `messaging_send_message` | Send a message to an existing channel |
+| `messaging_send_message` | Send a message to an existing channel (subject to per-channel hop limit) |
 | `messaging_read_messages` | Read unread messages with cursor tracking |
 | `messaging_direct_message` | Send a DM — creates channel and subscribes both parties |
+| `messaging_listen` | Block and wait for new messages across subscribed channels (non-push fallback, max 30s) |
 | `messaging_list_channels` | List all channels |
 | `messaging_list_agents` | List agents (active by default) |
 | `messaging_list_members` | List channel members with active/inactive status |
 | `messaging_rename_channel` | Rename a channel (members only) |
+| `messaging_get_instructions` | Re-read profile instructions and universal messaging guidance |
 
 ### Brain
 
@@ -161,6 +166,16 @@ Docs in `~/.octo-santa/brain/` are accessible to all agents across all repos via
 ### Cross-domain queries
 
 The cross-domain flow: discover an expert with `brain_find_expert`, then DM them with `messaging_direct_message`. The expert agent reads its brain docs and answers. No cross-domain brain access — the agent IS the query interface.
+
+## Safety Rails
+
+Per-channel hop counter prevents runaway agent loops. Each channel has a `max_hops` limit (default **50**). Every agent-sourced message increments the counter; when it reaches the limit, sends are blocked and a `_system` notice is posted to the channel announcing the block.
+
+- **Default:** 50 agent messages per channel before block. Override via `messaging_create_channel`'s `max_hops` argument (range 1–50; lower = stricter loop guard).
+- **Reset:** any message sent with the `human: true` flag (REPL-only) resets the counter to 0.
+- **Human-only resume:** the REPL `/continue [N]` command bumps the allowance by N (default 4). This is **not** an MCP tool — agents cannot invoke it. Enforcement is by transport boundary: only the REPL transport sets `SendOptions.human` and only the REPL surfaces `/continue`.
+- **Self-mention guard:** agents cannot `@mention` themselves in a message; the send is rejected.
+- **Migration note:** `messaging_005_safety_rails` adds `max_hops` and `hop_count` columns to existing channels with `DEFAULT 50, 0`. No action required on upgrade — pre-existing channels gain the default limit transparently.
 
 ## REPL
 
