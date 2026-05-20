@@ -11,6 +11,7 @@ import type {
   Channel,
   Message,
   ReadOptions,
+  UnreadResult,
 } from "./types";
 import type { RegisterResult, AutoJoinResult } from "../profiles/types";
 import {
@@ -262,6 +263,22 @@ export class MessagingService {
       channel.id,
       opts?.limit ?? 100
     );
+  }
+
+  readAllUnread(agentId: string): UnreadResult[] {
+    this.requireRegistered(agentId);
+    const cursorList = this.cursors.listForAgent(agentId);
+    const results: UnreadResult[] = [];
+    for (const cursor of cursorList) {
+      const messages = this.messages.readForwardAndAdvance(agentId, cursor.channelId, 100);
+      if (messages.length === 0) continue;
+      results.push({
+        channel: cursor.channelName,
+        messages,
+        is_dm: isDmChannel(cursor.channelName),
+      });
+    }
+    return results;
   }
 
   /**

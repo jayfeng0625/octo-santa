@@ -82,7 +82,8 @@ export function registerMessagingTools(
   messaging: MessagingService,
   onAgentId?: (agentId: string) => { commit: (resolvedName?: string) => void },
   onProfile?: (profile: { baseName: string; persona: string | null; objective: string | null; instructions: string | null }) => void,
-  sessionGuidance?: string
+  sessionGuidance?: string,
+  agents?: AgentRepository
 ): void {
   server.registerTool("messaging_register", {
     description:
@@ -272,6 +273,28 @@ export function registerMessagingTools(
       jsonResult(messaging.renameChannel(agent_id, channel, new_name))
     );
   });
+
+  server.registerTool("messaging_listen", {
+    description: "Block and wait for new messages across all subscribed channels. Returns when messages arrive or timeout is reached. Use this for agent polling loops instead of repeatedly calling messaging_read_messages.",
+    inputSchema: {
+      agent_id: z.string().trim().min(1).describe("Your registered agent name"),
+      timeout_ms: z.number().int().optional().describe("Max wait time in ms (default 10000, max 30000)"),
+    },
+  }, async ({ agent_id, timeout_ms }) => {
+    return withAgent(onAgentId, agent_id, async () => {
+      const timeout = Math.max(1000, Math.min(30000, timeout_ms ?? 10000));
+      agents?.heartbeatOrReclaim(agent_id, process.pid);
+      const deadline = Date.now() + timeout;
+      while (Date.now() < deadline) {
+        const result = messaging.readAllUnread(agent_id);
+        if (result.length > 0) {
+          return jsonResult({ channels: result, timed_out: false });
+        }
+        await Bun.sleep(1000);
+      }
+      return jsonResult({ channels: [], timed_out: true });
+    });
+  });
 }
 
 export function registerBrainTools(
@@ -451,7 +474,7 @@ export async function startMcpStdio(opts: McpStdioOpts): Promise<void> {
   const sessionInstructions = buildInstructions(config, brainIndex);
   registerMessagingTools(mcpServer, messaging, onAgentId, (profile) => {
     boundProfile = profile;
-  }, sessionInstructions);
+  }, sessionInstructions, agents);
   registerBrainTools(mcpServer, brain, config, hasBrain, onAgentId);
 
   const transport = new StdioServerTransport();
