@@ -215,21 +215,19 @@ Two coexisting mechanisms deliver push notifications:
 
 **In-process dispatcher** (`src/notifications/dispatch/`): `MessagingService.send()`
 resolves mention targets and calls `NotificationDispatch.dispatch()` synchronously.
-The adapter looks up handlers in an in-memory `Map<string, NotificationPort>`. This
-is instant — zero latency. **Currently dead code** because each MCP stdio process
-hosts one agent, and the sender is excluded from targets. Ready for future
-multi-agent-per-process transports.
+The adapter looks up handlers in an in-memory `Map<string, NotificationPort>`.
+Originally retained for a future multi-agent-per-process transport (Phase 3b direct
+mode). **Currently dead code and scheduled for removal** — see
+`docs/specs/2026-05-16-notification-dispatch-consolidation-prd.md`. Modern coding
+harnesses provide subagents at the harness layer (each as its own process), so a
+multi-agent-per-process MCP transport is no longer on the roadmap.
 
 **Cross-process poller** (`src/notifications/poller/`): Each process runs a 2-second
 `setInterval` that queries SQLite via raw functions injected from the composition root.
 Uses an adapter-owned high-water mark (HWM) completely independent of the read cursor.
 Mention filtering happens at the adapter level using the pre-extracted `mentions` column.
-**This is the mechanism that actually delivers notifications today.**
-
-No deduplication between the two paths. If the dispatcher and poller both fire for
-the same message (theoretically possible in a future multi-agent process), the agent
-receives a duplicate `<channel>` tag. This is harmless — `read_messages` deduplicates
-by cursor position.
+**This is the mechanism that actually delivers notifications today, and will be the
+sole push mechanism after the dispatcher is removed.**
 
 ### 2. Agent Liveness
 
@@ -248,9 +246,8 @@ The service doesn't know the trigger.
 ### 4. DM Channel Creation
 
 Service creates the DM channel, subscribes both agents, and sends the message —
-all storage writes. The dispatcher fires in-process (currently dead for DMs — both
-parties are in different processes). The poller in each process picks up the new
-message from SQLite.
+all storage writes. Each party's process picks up the new message from SQLite via
+its poller.
 
 ### 5. Brain Domain Discovery
 
@@ -265,9 +262,9 @@ and advances the cursor. The notification poller maintains its own high-water ma
 critical: bugs #7 and #8 (fixed in v0.7.0) were caused by the old architecture
 sharing cursor state between the read path and the notification path.
 
-**The pattern:** service writes to storage and dispatches in-process. Cross-process
-delivery goes through SQLite (the poller). No adapter-to-adapter communication.
-The database is the cross-process message bus.
+**The pattern:** service writes to storage. Cross-process delivery goes through
+SQLite (the poller). No adapter-to-adapter communication. The database is the
+cross-process message bus.
 
 ## Bootstrap Flow
 
@@ -294,8 +291,8 @@ the poller is stopped and the agent's handler is unregistered from the dispatche
 1. Create `src/transports/jsonrpc-http/adapter.ts`
 2. Map JSON-RPC methods to `MessagingService` / `BrainService` calls
 3. Add wiring in `main.ts` — same services, different transport
-4. Decide notification strategy: use the dispatcher (if multi-agent same-process),
-   the poller (if cross-process), or both
+4. Use the cross-process poller for notification delivery — the in-process
+   dispatcher is being removed (see §Honest Accounting)
 
 ### New Storage Backend (e.g., Postgres)
 
@@ -306,8 +303,8 @@ the poller is stopped and the agent's handler is unregistered from the dispatche
 ### New Notification Adapter (e.g., SSE)
 
 1. Create `src/notifications/sse-notifier/notifier.ts`
-2. Use the dispatcher for in-process events, or wire a poller with raw query
-   functions for cross-process — depending on the transport's process model
+2. Wire a poller with raw query functions for cross-process delivery (the in-process
+   dispatcher is being removed)
 3. Deliver via SSE stream instead of MCP channel notification
 4. Wire in `main.ts`
 
@@ -347,19 +344,20 @@ poller was added alongside the dispatcher to restore delivery.
 The roadmap's Phase 0-pre vision was "eliminate polling." What shipped is:
 
 1. **Dispatcher** — in-process, event-driven, zero-latency. Currently dead code
-   (single agent per process). Will become useful if/when multi-agent transports
-   arrive (Phase 3b direct mode).
+   (single agent per process). Originally retained for a future multi-agent-per-process
+   transport (Phase 3b direct mode). **That future has been retracted (2026-05-16):**
+   modern coding harnesses (Claude Code, Cursor, etc.) provide subagents at the harness
+   layer, with each subagent running as its own process. Building an in-process
+   multi-agent MCP transport would reinvent the wheel. The dispatcher is scheduled for
+   removal — see `docs/specs/2026-05-16-notification-dispatch-consolidation-prd.md`.
 2. **Poller** — cross-process, 2-second interval, reads SQLite. The mechanism that
-   actually delivers notifications today. Architecturally similar to the old notifier
-   it replaced, but with key improvements (independent HWM, simpler query, adapter-
-   level mention filtering, no core domain coupling).
+   actually delivers notifications today, and will be the sole push mechanism after
+   the dispatcher is removed. Architecturally similar to the old notifier it replaced,
+   but with key improvements (independent HWM, simpler query, adapter-level mention
+   filtering, no core domain coupling).
 3. **Pull** — `read_messages` / future `messaging_listen`. Always available as
    fallback. Messages are never lost (SQLite persistence). Current push is
    best-effort; as transports mature, adapter-level push reliability improves.
-
-The dispatcher is 31 lines of code carrying optionality for a future that may or
-may not arrive. If multi-agent-per-process never ships, it's dead code. If it does
-ship, it's the right mechanism and already wired in.
 
 ### Resolved: `NotificationQueryPort` removed from core (2026-04-11)
 
