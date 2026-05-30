@@ -282,7 +282,7 @@ describe("Profile Integration — Full Lifecycle", () => {
     db.close();
   });
 
-  it("getInstructions returns universal as null (transport layer populates it)", () => {
+  it("getInstructions returns the agent's profile shape", () => {
     writeFileSync(
       join(profileDir, "os-pm.yaml"),
       [
@@ -303,7 +303,6 @@ describe("Profile Integration — Full Lifecycle", () => {
 
     svc.register("os-pm");
     const result = svc.getInstructions("os-pm");
-    expect(result.universal).toBeNull();
     expect(result.profile).not.toBeNull();
     expect(result.profile!.instructions).toBe("Evaluate proposals.");
 

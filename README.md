@@ -98,7 +98,7 @@ Push and poll are fully compatible — agents using either mode can communicate 
 | Tool | Description |
 |------|-------------|
 | `messaging_register` | Register an agent with a unique name |
-| `messaging_create_channel` | Create a named channel (optional `max_hops` override, default 50, max 50) |
+| `messaging_create_channel` | Create a named channel (optional `max_hops` override, default 200, max 1000) |
 | `messaging_subscribe` | Subscribe to an existing channel for notifications |
 | `messaging_send_message` | Send a message to an existing channel (subject to per-channel hop limit) |
 | `messaging_read_messages` | Read unread messages with cursor tracking |
@@ -169,13 +169,13 @@ The cross-domain flow: discover an expert with `brain_find_expert`, then DM them
 
 ## Safety Rails
 
-Per-channel hop counter prevents runaway agent loops. Each channel has a `max_hops` limit (default **50**). Every agent-sourced message increments the counter; when it reaches the limit, sends are blocked and a `_system` notice is posted to the channel announcing the block.
+Per-channel hop counter prevents runaway agent loops. Each channel has a `max_hops` limit (default **200**). Every agent-sourced message increments the counter; when it reaches the limit, sends are blocked and a `_system` notice is posted to the channel announcing the block.
 
-- **Default:** 50 agent messages per channel before block. Override via `messaging_create_channel`'s `max_hops` argument (range 1–50; lower = stricter loop guard).
+- **Default:** 200 agent messages per channel before block. Override via `messaging_create_channel`'s `max_hops` argument (range 1–1000; lower = stricter loop guard).
 - **Reset:** any message sent with the `human: true` flag (REPL-only) resets the counter to 0.
 - **Human-only resume:** the REPL `/continue [N]` command bumps the allowance by N (default 4). This is **not** an MCP tool — agents cannot invoke it. Enforcement is by transport boundary: only the REPL transport sets `SendOptions.human` and only the REPL surfaces `/continue`.
 - **Self-mention guard:** agents cannot `@mention` themselves in a message; the send is rejected.
-- **Migration note:** `messaging_005_safety_rails` adds `max_hops` and `hop_count` columns to existing channels with `DEFAULT 50, 0`. No action required on upgrade — pre-existing channels gain the default limit transparently.
+- **Migration note:** `messaging_005_safety_rails` adds `max_hops` and `hop_count` columns to existing channels with `DEFAULT 200, 0`. `messaging_006_raise_default_hop_limit` bumps any channels still at the prior default (50) up to 200. No action required on upgrade.
 
 ## REPL
 

@@ -15,11 +15,13 @@ import type {
   SendOptions,
   ContinueResult,
 } from "./types";
-import type { RegisterResult, AutoJoinResult } from "../profiles/types";
+import type { RegisterResult, AutoJoinResult, ProfileFields } from "../profiles/types";
 import {
   validateAgentName,
   assertDmAccess,
   isDmChannel,
+  dmChannelName,
+  parseDmChannelName,
   extractMentions,
   isAgentActive,
 } from "../utils";
@@ -45,6 +47,13 @@ export class MessagingService {
     }
   }
 
+  private otherMembers(channelId: number, exclude: string): string[] {
+    return this.channels
+      .getMembers(channelId)
+      .map((m) => m.id)
+      .filter((id) => id !== exclude);
+  }
+
   private resolveTargets(
     channelId: number,
     channelName: string,
@@ -54,11 +63,7 @@ export class MessagingService {
     const isDm = this.isDmChannelWithMembers(channelName, channelId);
 
     if (isDm) {
-      const members = this.channels.getMembers(channelId);
-      const targetAgents = members
-        .map((m) => m.id)
-        .filter((id) => id !== senderId);
-      return { targetAgents, isDm: true };
+      return { targetAgents: this.otherMembers(channelId, senderId), isDm: true };
     }
 
     if (mentions.length === 0) {
@@ -66,11 +71,7 @@ export class MessagingService {
     }
 
     if (mentions.includes("*")) {
-      const members = this.channels.getMembers(channelId);
-      const targetAgents = members
-        .map((m) => m.id)
-        .filter((id) => id !== senderId);
-      return { targetAgents, isDm: false };
+      return { targetAgents: this.otherMembers(channelId, senderId), isDm: false };
     }
 
     const members = this.channels.getMembers(channelId);
@@ -102,12 +103,31 @@ export class MessagingService {
     channelName: string,
     channelId: number
   ): boolean {
-    if (!isDmChannel(channelName)) return false;
-    const match = /^([\w-]+),([\w-]+)$/.exec(channelName);
-    if (!match) return false;
+    const p = parseDmChannelName(channelName);
+    if (!p) return false;
     const members = this.channels.getMembers(channelId);
     const memberIds = new Set(members.map((m) => m.id));
-    return memberIds.has(match[1]!) && memberIds.has(match[2]!);
+    return memberIds.has(p.lo) && memberIds.has(p.hi);
+  }
+
+  private dispatchTo(
+    channelName: string,
+    sender: string,
+    content: string,
+    messageId: number,
+    isDm: boolean,
+    targetAgents: string[]
+  ): void {
+    if (!this.dispatch) return;
+    if (targetAgents.length === 0) return;
+    this.dispatch.dispatch({
+      channelName,
+      sender,
+      content,
+      messageId,
+      isDm,
+      targetAgents,
+    });
   }
 
   register(agentId: string): RegisterResult {
@@ -218,18 +238,7 @@ export class MessagingService {
     if (options?.human) {
       this.channels.resetHopCount(channel.id);
     } else {
-      const hop = this.channels.checkAndIncrementHop(channel.id);
-      if (!hop.allowed) {
-        if (!this.hasRecentHopNotice(channel.id)) {
-          this.sendSystemNotice(
-            channel,
-            `hop limit reached (${hop.hopCount}/${hop.maxHops}) in #${channelName} -- message from @${agentId} blocked. Waiting for human input.`
-          );
-        }
-        throw new Error(
-          `Hop limit reached (${hop.hopCount}/${hop.maxHops}) in #${channelName}. Message dropped. Only a human can /continue.`
-        );
-      }
+      this.enforceHopLimit(channel, channelName, agentId);
     }
 
     const message = this.messages.insertAndJoinSender(
@@ -239,24 +248,13 @@ export class MessagingService {
       mentions
     );
 
-    if (this.dispatch) {
-      const { targetAgents, isDm } = this.resolveTargets(
-        channel.id,
-        channelName,
-        mentions,
-        agentId
-      );
-      if (targetAgents.length > 0) {
-        this.dispatch.dispatch({
-          channelName,
-          sender: agentId,
-          content,
-          messageId: message.id,
-          isDm,
-          targetAgents,
-        });
-      }
-    }
+    const { targetAgents, isDm } = this.resolveTargets(
+      channel.id,
+      channelName,
+      mentions,
+      agentId
+    );
+    this.dispatchTo(channelName, agentId, content, message.id, isDm, targetAgents);
 
     return message;
   }
@@ -307,10 +305,15 @@ export class MessagingService {
   }
 
   /**
-   * Accepted deviation (spec section 6.3): current code wraps
-   * create+subscribe+send in one .immediate() transaction. The hex
-   * architecture uses separate repo calls — failure partway through
-   * is recoverable (channel created, message unsent; agent retries).
+   * NOT atomic by design (accepted deviation). The DM flow is several
+   * independent repo calls — createChannel, addMember x2, checkAndIncrementHop,
+   * insertAndJoinSender — with NO enclosing transaction. A failure partway
+   * through (channel created, message unsent) is recoverable: the agent retries
+   * directMessage, which is idempotent on channel creation (channels.create uses
+   * ON CONFLICT(name) DO NOTHING) and membership (addMember uses
+   * ON CONFLICT(agent_id,channel_id) DO NOTHING), and re-sends. We accept the
+   * partial-state window over a single wrapping transaction because it is
+   * harmless and recoverable.
    */
   directMessage(
     agentId: string,
@@ -324,8 +327,7 @@ export class MessagingService {
     const target = this.agents.findById(targetAgentId);
     if (!target) throw new Error(`Agent "${targetAgentId}" not found`);
 
-    const sorted = [agentId, targetAgentId].sort();
-    const channelName = `${sorted[0]},${sorted[1]}`;
+    const channelName = dmChannelName(agentId, targetAgentId);
 
     const channel = this.createChannel(agentId, channelName);
 
@@ -338,18 +340,7 @@ export class MessagingService {
     if (mentions.includes(agentId)) throw new Error("Cannot @mention yourself in a message");
 
     // Hop counter logic for DMs (always agent, no human option)
-    const hopResult = this.channels.checkAndIncrementHop(channel.id);
-    if (!hopResult.allowed) {
-      if (!this.hasRecentHopNotice(channel.id)) {
-        this.sendSystemNotice(
-          channel,
-          `hop limit reached (${hopResult.hopCount}/${hopResult.maxHops}) in #${channelName} -- message from @${agentId} blocked. Waiting for human input.`
-        );
-      }
-      throw new Error(
-        `Hop limit reached (${hopResult.hopCount}/${hopResult.maxHops}) in #${channelName}. Message dropped. Only a human can /continue.`
-      );
-    }
+    this.enforceHopLimit(channel, channelName, agentId);
 
     const message = this.messages.insertAndJoinSender(
       channel.id,
@@ -358,16 +349,7 @@ export class MessagingService {
       mentions
     );
 
-    if (this.dispatch) {
-      this.dispatch.dispatch({
-        channelName,
-        sender: agentId,
-        content,
-        messageId: message.id,
-        isDm: true,
-        targetAgents: [targetAgentId],
-      });
-    }
+    this.dispatchTo(channelName, agentId, content, message.id, true, [targetAgentId]);
 
     return message;
   }
@@ -396,6 +378,21 @@ export class MessagingService {
    * revisit by either (i) moving dedup into the increment transaction, or
    * (ii) adding an INSERT … WHERE NOT EXISTS guard at the storage layer.
    */
+  private enforceHopLimit(channel: Channel, channelName: string, agentId: string): void {
+    const hop = this.channels.checkAndIncrementHop(channel.id);
+    if (!hop.allowed) {
+      if (!this.hasRecentHopNotice(channel.id)) {
+        this.sendSystemNotice(
+          channel,
+          `hop limit reached (${hop.hopCount}/${hop.maxHops}) in #${channelName} -- message from @${agentId} blocked. Waiting for human input.`
+        );
+      }
+      throw new Error(
+        `Hop limit reached (${hop.hopCount}/${hop.maxHops}) in #${channelName}. Message dropped. Only a human can /continue.`
+      );
+    }
+  }
+
   private hasRecentHopNotice(channelId: number): boolean {
     const recent = this.messages.readRecent(channelId, 1);
     return recent.length > 0
@@ -405,21 +402,8 @@ export class MessagingService {
 
   private sendSystemNotice(channel: Channel, content: string): void {
     const message = this.messages.insertAndJoinSender(channel.id, '_system', content, ['*']);
-
-    if (this.dispatch) {
-      const members = this.channels.getMembers(channel.id);
-      const targetAgents = members.map((m) => m.id).filter((id) => id !== '_system');
-      if (targetAgents.length > 0) {
-        this.dispatch.dispatch({
-          channelName: channel.name,
-          sender: '_system',
-          content,
-          messageId: message.id,
-          isDm: isDmChannel(channel.name),
-          targetAgents,
-        });
-      }
-    }
+    const targetAgents = this.otherMembers(channel.id, '_system');
+    this.dispatchTo(channel.name, '_system', content, message.id, isDmChannel(channel.name), targetAgents);
   }
 
   renameChannel(
@@ -465,21 +449,19 @@ export class MessagingService {
   }
 
   getInstructions(agentId: string): {
-    universal: string | null;
-    profile: { persona: string | null; objective: string | null; instructions: string | null } | null;
+    profile: ProfileFields | null;
   } {
     this.requireRegistered(agentId);
     const agent = this.agents.findById(agentId);
-    if (!agent) return { universal: null, profile: null };
+    if (!agent) return { profile: null };
 
     // Read from persisted DB data, not live YAML — instructions are
     // snapshotted at registration time and should not change mid-session.
     if (!agent.base_name) {
-      return { universal: null, profile: null };
+      return { profile: null };
     }
 
     return {
-      universal: null, // Populated by the transport layer (adapter owns the text)
       profile: {
         persona: agent.persona,
         objective: agent.objective,
@@ -519,12 +501,16 @@ export class MessagingService {
     return { channel: channelName, hopCount: result.hopCount, maxHops: result.maxHops, bumped: amount };
   }
 
-  readRecent(channelId: number, limit: number): Message[] {
-    return this.messages.readRecent(channelId, limit);
+  readRecent(channelName: string, limit: number): Message[] {
+    const channel = this.channels.findByName(channelName);
+    if (!channel) return [];
+    return this.messages.readRecent(channel.id, limit);
   }
 
-  getCursorPosition(agentId: string, channelId: number): number {
-    return this.cursors.get(agentId, channelId);
+  getCursorPosition(agentId: string, channelName: string): number {
+    const channel = this.channels.findByName(channelName);
+    if (!channel) return 0;
+    return this.cursors.get(agentId, channel.id);
   }
 
   pollNewMessages(

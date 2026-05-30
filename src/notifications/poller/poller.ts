@@ -1,9 +1,7 @@
-import type { NotificationPort } from "../../core/ports";
-import type { Message } from "../../core/messaging/types";
+import type { NotificationPort, NotificationMeta } from "../../core/ports";
+import type { MessageWithChannel } from "../../core/messaging/types";
 import { isDmChannel } from "../../core/utils";
 import { log } from "../../log";
-
-type MessageWithChannel = Message & { channel_name: string };
 
 export function createNotificationPoller(opts: {
   getNewMessagesForAgent: (
@@ -27,7 +25,7 @@ export function createNotificationPoller(opts: {
       for (const msg of messages) {
         const shouldNotify = shouldNotifyMessage(msg.channel_name, msg.mentions);
         if (shouldNotify) {
-          const meta: Record<string, string> = {
+          const meta: NotificationMeta = {
             channel_name: msg.channel_name,
             sender: msg.agent_id,
             message_id: String(msg.id),

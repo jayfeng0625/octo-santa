@@ -7,6 +7,7 @@ import {
   allMigrations,
 } from "../../../src/storage/sqlite/migrations";
 import { cleanupDb } from "../../helpers/db";
+import { MAX_HOPS_CAP } from "../../../src/core/messaging/types";
 import type { ProfileRepository } from "../../../src/core/ports";
 import type { AgentProfile } from "../../../src/core/profiles/types";
 import type { Database } from "bun:sqlite";
@@ -445,13 +446,14 @@ describe("validation", () => {
     );
   });
 
-  it("createChannel allows maxHops > 50 (upper bound enforced at transport)", () => {
+  it("createChannel allows maxHops > MAX_HOPS_CAP (upper bound enforced at transport)", () => {
     const { svc } = setup();
 
     svc.register("alice");
 
-    const ch = svc.createChannel("alice", "stress-ch", 100);
-    expect(ch.max_hops).toBe(100);
+    const overCap = MAX_HOPS_CAP + 500;
+    const ch = svc.createChannel("alice", "stress-ch", overCap);
+    expect(ch.max_hops).toBe(overCap);
   });
 });
 

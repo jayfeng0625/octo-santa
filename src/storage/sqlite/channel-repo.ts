@@ -1,6 +1,7 @@
 import type { Database } from "bun:sqlite";
 import type { ChannelRepository } from "../../core/ports";
 import type { Agent, Channel, HopCheckResult } from "../../core/messaging/types";
+import { DEFAULT_MAX_HOPS } from "../../core/messaging/types";
 import { withRetrySync } from "./db";
 
 export class SqliteChannelRepo implements ChannelRepository {
@@ -11,20 +12,13 @@ export class SqliteChannelRepo implements ChannelRepository {
   }
 
   create(name: string, createdBy: string, maxHops?: number): Channel {
+    const effectiveMaxHops = maxHops ?? DEFAULT_MAX_HOPS;
     return withRetrySync(() => {
-      if (maxHops !== undefined) {
-        this.db.run(
-          `INSERT INTO channels (name, created_by, created_at, max_hops) VALUES (?, ?, ?, ?)
-           ON CONFLICT(name) DO NOTHING`,
-          [name, createdBy, Date.now(), maxHops]
-        );
-      } else {
-        this.db.run(
-          `INSERT INTO channels (name, created_by, created_at) VALUES (?, ?, ?)
-           ON CONFLICT(name) DO NOTHING`,
-          [name, createdBy, Date.now()]
-        );
-      }
+      this.db.run(
+        `INSERT INTO channels (name, created_by, created_at, max_hops) VALUES (?, ?, ?, ?)
+         ON CONFLICT(name) DO NOTHING`,
+        [name, createdBy, Date.now(), effectiveMaxHops]
+      );
       return this.findByName(name) as Channel;
     });
   }

@@ -1,6 +1,6 @@
 import { describe, it, expect } from "bun:test";
 import { createNotificationPoller } from "../../../src/notifications/poller/poller";
-import type { NotificationPort } from "../../../src/core/ports";
+import type { NotificationPort, NotificationMeta } from "../../../src/core/ports";
 import type { Message } from "../../../src/core/messaging/types";
 
 type MessageWithChannel = Message & { channel_name: string };
@@ -21,9 +21,9 @@ function makeQueryFns(
 
 function makeNotificationPort(): {
   port: NotificationPort;
-  calls: { content: string; meta: Record<string, string> }[];
+  calls: { content: string; meta: NotificationMeta }[];
 } {
-  const calls: { content: string; meta: Record<string, string> }[] = [];
+  const calls: { content: string; meta: NotificationMeta }[] = [];
   const port: NotificationPort = {
     notify: async (content, meta) => {
       calls.push({ content, meta });

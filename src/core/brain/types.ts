@@ -1,4 +1,4 @@
-import type { Agent } from "../messaging/types";
+import type { AgentLiveness } from "../utils";
 
 export interface DomainConfig {
   identifier: string;
@@ -50,5 +50,5 @@ export interface DomainWithClaims {
   identifier: string;
   tags: string; // JSON string from DB
   description: string;
-  claims: Array<{ agent_id: string; pid: number; agent: Agent }>;
+  claims: Array<{ agent_id: string; pid: number; agent: AgentLiveness }>;
 }

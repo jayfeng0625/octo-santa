@@ -1,10 +1,17 @@
 import type { Agent } from "../messaging/types";
 
-export interface AgentProfile {
-  name: string;          // base name
+export interface ProfileFields {
   persona: string | null;
   objective: string | null;
   instructions: string | null;
+}
+
+export interface NamedProfileFields extends ProfileFields {
+  baseName: string;
+}
+
+export interface AgentProfile extends ProfileFields {
+  name: string;          // base name
   maxInstances: number;  // >= 1
   autoJoinChannels: string[];
 }
@@ -18,11 +25,6 @@ export interface RegisterResult extends Agent {
   registeredName: string;
   baseName: string | null;
   instanceNumber: number | null;
-  profile: {
-    persona: string | null;
-    objective: string | null;
-    instructions: string | null;
-    maxInstances: number;
-  } | null;
+  profile: (ProfileFields & { maxInstances: number }) | null;
   autoJoined: AutoJoinResult | null;
 }

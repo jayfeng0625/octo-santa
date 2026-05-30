@@ -8,15 +8,13 @@ import type {
   HopCheckResult,
 } from "./messaging/types";
 import type { BrainDoc, DomainWithClaims } from "./brain/types";
-import type { AgentProfile } from "./profiles/types";
+import type { AgentProfile, ProfileFields, NamedProfileFields } from "./profiles/types";
 
 // --- Storage ports (core defines, adapters implement) ---
 
 export interface AgentRepository {
   findById(id: string): Agent | null;
-  register(agentId: string, pid: number, profileFields?: {
-    baseName: string; persona: string | null; objective: string | null; instructions: string | null;
-  }): Agent;
+  register(agentId: string, pid: number, profileFields?: NamedProfileFields): Agent;
   heartbeatOrReclaim(agentId: string, pid: number): HeartbeatResult;
   listAll(): Agent[];
   clearPid(id: string, expectedPid: number): void;
@@ -25,7 +23,7 @@ export interface AgentRepository {
     baseName: string,
     pid: number,
     maxInstances: number,
-    profileFields: { persona: string | null; objective: string | null; instructions: string | null }
+    profileFields: ProfileFields
   ): { agent: Agent; registeredName: string; instanceNumber: number | null };
 }
 
@@ -81,7 +79,6 @@ export interface MessageRepository {
 
 export interface CursorRepository {
   get(agentId: string, channelId: number): number;
-  upsert(agentId: string, channelId: number, messageId: number): void;
   listForAgent(agentId: string): CursorWithChannel[];
 }
 
@@ -106,8 +103,14 @@ export interface BrainStore {
 
 // --- Notification port ---
 
+export interface NotificationMeta {
+  channel_name: string;
+  sender: string;
+  message_id: string;
+}
+
 export interface NotificationPort {
-  notify(content: string, meta: Record<string, string>): Promise<void>;
+  notify(content: string, meta: NotificationMeta): Promise<void>;
 }
 
 export interface NotificationDispatch {

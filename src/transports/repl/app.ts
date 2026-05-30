@@ -30,8 +30,7 @@ export function startApp(opts: AppOptions): () => void {
   };
 
   // Init cursor from DB cursor (preserves unread backlog on reconnect)
-  const ch = channelRepo.findByName(channel);
-  state.cursors.set(channel, ch ? svc.getCursorPosition(agentId, ch.id) : 0);
+  state.cursors.set(channel, svc.getCursorPosition(agentId, channel));
 
   function getPrompt(): string {
     return `${state.activeChannel}> `;

@@ -1,7 +1,6 @@
 import type { Database } from "bun:sqlite";
 import type { DomainRepository } from "../../core/ports";
 import type { DomainWithClaims } from "../../core/brain/types";
-import type { Agent } from "../../core/messaging/types";
 import { withRetrySync } from "./db";
 
 export class SqliteDomainRepo implements DomainRepository {
@@ -33,12 +32,12 @@ export class SqliteDomainRepo implements DomainRepository {
     }>;
     const claims = this.db.query(
       `SELECT dc.agent_id, dc.pid, dc.domain_identifier,
-              a.id, a.created_at, a.last_seen_at, a.pid as agent_pid, a.registered_at
+              a.last_seen_at, a.pid as agent_pid
        FROM domain_claims dc
        JOIN agents a ON dc.agent_id = a.id AND dc.pid = a.pid`
     ).all() as Array<{
       agent_id: string; pid: number; domain_identifier: string;
-      id: string; created_at: number; last_seen_at: number; agent_pid: number | null; registered_at: number | null;
+      last_seen_at: number; agent_pid: number | null;
     }>;
 
     return domains.map((d) => ({
@@ -48,7 +47,7 @@ export class SqliteDomainRepo implements DomainRepository {
       claims: claims.filter((c) => c.domain_identifier === d.identifier).map((c) => ({
         agent_id: c.agent_id,
         pid: c.pid,
-        agent: { id: c.id, created_at: c.created_at, last_seen_at: c.last_seen_at, pid: c.agent_pid, registered_at: c.registered_at, base_name: null, persona: null, objective: null, instructions: null } as Agent,
+        agent: { pid: c.agent_pid, last_seen_at: c.last_seen_at },
       })),
     }));
   }

@@ -66,10 +66,7 @@ export function executeCommand(
         return { output: [(err as Error).message] };
       }
       // Sync in-memory cursor from DB to prevent historical message flood
-      const ch = channelRepo.findByName(channelName);
-      if (ch) {
-        state.cursors.set(channelName, svc.getCursorPosition(state.agentId, ch.id));
-      }
+      state.cursors.set(channelName, svc.getCursorPosition(state.agentId, channelName));
       state.joinedChannels.add(channelName);
       return { output: [`Joined #${channelName}`], channelChange: channelName };
     }
@@ -88,7 +85,7 @@ export function executeCommand(
       const channel = channelRepo.findByName(state.activeChannel);
       if (!channel) return { output: ["Channel not found"] };
 
-      const rows = svc.readRecent(channel.id, limit);
+      const rows = svc.readRecent(state.activeChannel, limit);
 
       if (rows.length === 0) return { output: ["No messages"] };
       return { output: [], messages: rows.map(r => ({ agent_id: r.agent_id, content: r.content })) };

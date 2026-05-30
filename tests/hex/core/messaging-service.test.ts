@@ -339,7 +339,7 @@ describe("MessagingService", () => {
       svc.send("bob", "general", "message 2");
       svc.send("alice", "general", "message 3");
 
-      const recent = svc.readRecent(ch.id, 10);
+      const recent = svc.readRecent("general", 10);
       expect(recent.length).toBe(3);
       // Should be in chronological order
       expect(recent[0]!.content).toBe("message 1");
@@ -361,7 +361,7 @@ describe("MessagingService", () => {
       svc.send("alice", "general", "msg 2");
       svc.send("alice", "general", "msg 3");
 
-      const recent = svc.readRecent(ch.id, 2);
+      const recent = svc.readRecent("general", 2);
       expect(recent.length).toBe(2);
       // Should be the last 2, in chronological order
       expect(recent[0]!.content).toBe("msg 2");
@@ -528,13 +528,13 @@ describe("MessagingService", () => {
 
       // After reading, cursor should advance
       svc.read("alice", "general");
-      const pos = svc.getCursorPosition("alice", ch.id);
+      const pos = svc.getCursorPosition("alice", "general");
       expect(pos).toBe(msg.id);
     });
 
     it("returns 0 for non-existent cursor", () => {
       const { svc } = setup();
-      const pos = svc.getCursorPosition("nobody", 999);
+      const pos = svc.getCursorPosition("nobody", "nonexistent");
       expect(pos).toBe(0);
     });
   });
