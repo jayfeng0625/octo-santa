@@ -1,6 +1,7 @@
 import { Database } from "bun:sqlite";
 import { createHash } from "crypto";
 import { withRetrySync } from "./db";
+import { DEFAULT_MAX_HOPS } from "../../core/messaging/types";
 
 export interface Migration {
   name: string;
@@ -154,6 +155,12 @@ const messagingMigrations: Migration[] = [
     up: `
       ALTER TABLE channels ADD COLUMN max_hops INTEGER NOT NULL DEFAULT 50;
       ALTER TABLE channels ADD COLUMN hop_count INTEGER NOT NULL DEFAULT 0;
+    `,
+  },
+  {
+    name: "messaging_006_raise_default_hop_limit",
+    up: `
+      UPDATE channels SET max_hops = ${DEFAULT_MAX_HOPS} WHERE max_hops = 50;
     `,
   },
 ];

@@ -4,7 +4,7 @@ import { createSqliteRepos } from "../../../src/storage/sqlite";
 import { SqliteNotificationQueryRepo } from "../../../src/storage/sqlite/notification-query-repo";
 import { createNotificationPoller } from "../../../src/notifications/poller/poller";
 import { createNotificationDispatcher } from "../../../src/notifications/dispatch/dispatcher";
-import type { NotificationPort } from "../../../src/core/ports";
+import type { NotificationPort, NotificationMeta } from "../../../src/core/ports";
 import { cleanupDb } from "../../helpers/db";
 import { createDb } from "../../../src/storage/sqlite/db";
 import { runMigrations, allMigrations } from "../../../src/storage/sqlite/migrations";
@@ -31,9 +31,9 @@ function setup() {
 
 function makeNotificationPort(): {
   port: NotificationPort;
-  calls: { content: string; meta: Record<string, string> }[];
+  calls: { content: string; meta: NotificationMeta }[];
 } {
-  const calls: { content: string; meta: Record<string, string> }[] = [];
+  const calls: { content: string; meta: NotificationMeta }[] = [];
   const port: NotificationPort = {
     notify: async (content, meta) => {
       calls.push({ content, meta });

@@ -1,3 +1,6 @@
+export const DEFAULT_MAX_HOPS = 200;
+export const MAX_HOPS_CAP = 1000;
+
 export interface Agent {
   id: string;
   created_at: number;
@@ -61,6 +64,8 @@ export interface CursorWithChannel {
   channelName: string;
   lastReadMessageId: number;
 }
+
+export type MessageWithChannel = Message & { channel_name: string };
 
 export type HeartbeatResult = "ok" | "lost";
 

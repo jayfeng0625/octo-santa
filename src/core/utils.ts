@@ -9,21 +9,31 @@ const MENTION_RE = /@([\w-]+)/g;
 /** Staleness threshold for PID reuse detection (15 minutes). */
 export const PID_STALE_MS = 15 * 60 * 1000;
 
+export function dmChannelName(a: string, b: string): string {
+  return [a, b].sort().join(",");
+}
+
+export function parseDmChannelName(
+  name: string
+): { lo: string; hi: string } | null {
+  const m = DM_CHANNEL_RE.exec(name);
+  if (!m || !(m[1]! < m[2]!)) return null;
+  return { lo: m[1]!, hi: m[2]! };
+}
+
 export function isDmChannel(channelName: string): boolean {
-  const m = DM_CHANNEL_RE.exec(channelName);
-  if (!m) return false;
-  return m[1]! < m[2]!;
+  return parseDmChannelName(channelName) !== null;
 }
 
 export function assertDmAccess(
   channelName: string,
   agentId: string
 ): void {
-  const m = DM_CHANNEL_RE.exec(channelName);
-  if (!m || m[1]! >= m[2]!) return;
-  if (agentId !== m[1] && agentId !== m[2]) {
+  const p = parseDmChannelName(channelName);
+  if (!p) return;
+  if (agentId !== p.lo && agentId !== p.hi) {
     throw new Error(
-      `DM channel "${channelName}" is private to ${m[1]} and ${m[2]}`
+      `DM channel "${channelName}" is private to ${p.lo} and ${p.hi}`
     );
   }
 }
@@ -78,7 +88,10 @@ export function isProcessAlive(pid: number): boolean {
   }
 }
 
-export function isAgentActive(agent: Agent): boolean {
+/** Minimal liveness fields needed to decide whether an agent session is active. */
+export type AgentLiveness = Pick<Agent, "pid" | "last_seen_at">;
+
+export function isAgentActive(agent: AgentLiveness): boolean {
   if (agent.pid === null) return false;
   if (!isProcessAlive(agent.pid)) return false;
   return Date.now() - agent.last_seen_at <= PID_STALE_MS;

@@ -1,5 +1,5 @@
 import type { Database } from "bun:sqlite";
-import type { Message } from "../../core/messaging/types";
+import type { MessageWithChannel } from "../../core/messaging/types";
 
 /**
  * Storage-internal class for cross-process notification queries.
@@ -20,7 +20,7 @@ export class SqliteNotificationQueryRepo {
     agentId: string,
     sinceId: number,
     limit: number
-  ): Array<Message & { channel_name: string }> {
+  ): MessageWithChannel[] {
     return this.db
       .query(
         `SELECT m.*, c.name AS channel_name
@@ -31,7 +31,7 @@ export class SqliteNotificationQueryRepo {
          ORDER BY m.id ASC
          LIMIT ?`
       )
-      .all(agentId, sinceId, agentId, limit) as Array<Message & { channel_name: string }>;
+      .all(agentId, sinceId, agentId, limit) as MessageWithChannel[];
   }
 
   /**

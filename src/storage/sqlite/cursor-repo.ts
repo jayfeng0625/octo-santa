@@ -1,7 +1,6 @@
 import type { Database } from "bun:sqlite";
 import type { CursorRepository } from "../../core/ports";
 import type { CursorWithChannel } from "../../core/messaging/types";
-import { withRetrySync } from "./db";
 
 export class SqliteCursorRepo implements CursorRepository {
   constructor(private db: Database) {}
@@ -13,16 +12,6 @@ export class SqliteCursorRepo implements CursorRepository {
       )
       .get(agentId, channelId) as { last_read_message_id: number } | null;
     return row?.last_read_message_id ?? 0;
-  }
-
-  upsert(agentId: string, channelId: number, messageId: number): void {
-    withRetrySync(() => {
-      this.db.run(
-        `INSERT INTO cursors (agent_id, channel_id, last_read_message_id) VALUES (?, ?, ?)
-         ON CONFLICT(agent_id, channel_id) DO UPDATE SET last_read_message_id = excluded.last_read_message_id`,
-        [agentId, channelId, messageId]
-      );
-    });
   }
 
   listForAgent(agentId: string): CursorWithChannel[] {

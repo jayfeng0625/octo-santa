@@ -1,7 +1,8 @@
 import type { Database } from "bun:sqlite";
 import type { AgentRepository } from "../../core/ports";
+import type { ProfileFields, NamedProfileFields } from "../../core/profiles/types";
 import type { Agent, HeartbeatResult } from "../../core/messaging/types";
-import { isProcessAlive, PID_STALE_MS } from "../../core/utils";
+import { isAgentActive } from "../../core/utils";
 import { withRetrySync } from "./db";
 
 export class SqliteAgentRepo implements AgentRepository {
@@ -25,7 +26,7 @@ export class SqliteAgentRepo implements AgentRepository {
   private _upsertAgent(
     agentId: string,
     pid: number,
-    profileFields?: { baseName: string; persona: string | null; objective: string | null; instructions: string | null }
+    profileFields?: NamedProfileFields
   ): void {
     const now = Date.now();
     if (profileFields) {
@@ -64,13 +65,13 @@ export class SqliteAgentRepo implements AgentRepository {
   register(
     agentId: string,
     pid: number,
-    profileFields?: { baseName: string; persona: string | null; objective: string | null; instructions: string | null }
+    profileFields?: NamedProfileFields
   ): Agent {
     const doRegister = this.db.transaction(() => {
       const existing = this.findById(agentId);
 
       if (existing && existing.pid !== null && existing.pid !== pid) {
-        if (isProcessAlive(existing.pid) && Date.now() - existing.last_seen_at <= PID_STALE_MS) {
+        if (isAgentActive(existing)) {
           throw new Error(
             `Agent "${agentId}" is already active (pid ${existing.pid}). Choose a different name.`
           );
@@ -88,7 +89,7 @@ export class SqliteAgentRepo implements AgentRepository {
     baseName: string,
     pid: number,
     maxInstances: number,
-    profileFields: { persona: string | null; objective: string | null; instructions: string | null }
+    profileFields: ProfileFields
   ): { agent: Agent; registeredName: string; instanceNumber: number | null } {
     const doRegister = this.db.transaction(() => {
       const existing = this.findByBaseName(baseName);
@@ -109,7 +110,7 @@ export class SqliteAgentRepo implements AgentRepository {
         // Singleton: registered name equals base name
         const current = existing[0] ?? null;
         if (current && current.pid !== null && current.pid !== pid) {
-          if (isProcessAlive(current.pid) && Date.now() - current.last_seen_at <= PID_STALE_MS) {
+          if (isAgentActive(current)) {
             throw new Error(
               `Agent "${baseName}" is already active (pid ${current.pid}). Max instances: 1.`
             );
@@ -127,10 +128,7 @@ export class SqliteAgentRepo implements AgentRepository {
       for (const a of existing) {
         const slot = extractInstanceNumber(a.id, baseName);
         if (slot === null) continue;
-        const isDead =
-          a.pid === null ||
-          !isProcessAlive(a.pid) ||
-          Date.now() - a.last_seen_at > PID_STALE_MS;
+        const isDead = !isAgentActive(a);
         if (isDead) {
           deadSlots.push({ slot, agentId: a.id });
         } else {
@@ -149,7 +147,7 @@ export class SqliteAgentRepo implements AgentRepository {
         while (liveSlots.has(chosenSlot)) chosenSlot++;
       } else {
         const activeList = existing
-          .filter((a) => a.pid !== null && isProcessAlive(a.pid) && Date.now() - a.last_seen_at <= PID_STALE_MS)
+          .filter((a) => isAgentActive(a))
           .map((a) => `${a.id} (pid ${a.pid})`)
           .join(", ");
         throw new Error(
@@ -182,11 +180,7 @@ export class SqliteAgentRepo implements AgentRepository {
       if (!current) return "lost";
 
       // If current owner is alive, we lost the agent
-      if (
-        current.pid !== null &&
-        isProcessAlive(current.pid) &&
-        Date.now() - current.last_seen_at <= PID_STALE_MS
-      ) {
+      if (isAgentActive(current)) {
         return "lost";
       }
 

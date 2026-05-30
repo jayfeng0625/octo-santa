@@ -3,6 +3,7 @@ import { SqliteChannelRepo } from "../../../src/storage/sqlite/channel-repo";
 import { SqliteAgentRepo } from "../../../src/storage/sqlite/agent-repo";
 import { createDb } from "../../../src/storage/sqlite/db";
 import { runMigrations, allMigrations } from "../../../src/storage/sqlite/migrations";
+import { DEFAULT_MAX_HOPS } from "../../../src/core/messaging/types";
 import { cleanupDb } from "../../helpers/db";
 
 const TEST_DB = `/tmp/octo-santa-test-hex-channel-repo-${process.pid}.sqlite`;
@@ -76,10 +77,10 @@ describe("SqliteChannelRepo", () => {
     db.close();
   });
 
-  it("create with default maxHops returns channel with max_hops = 50", () => {
+  it("create with default maxHops returns channel with DEFAULT_MAX_HOPS", () => {
     const { db, channels } = setup();
     const ch = channels.create("test-channel", "agent-a");
-    expect(ch.max_hops).toBe(50);
+    expect(ch.max_hops).toBe(DEFAULT_MAX_HOPS);
     expect(ch.hop_count).toBe(0);
     db.close();
   });

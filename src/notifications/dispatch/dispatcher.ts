@@ -1,4 +1,4 @@
-import type { NotificationDispatch, NotificationPort } from "../../core/ports";
+import type { NotificationDispatch, NotificationPort, NotificationMeta } from "../../core/ports";
 import { log } from "../../log";
 
 export function createNotificationDispatcher(): NotificationDispatch & {
@@ -8,7 +8,7 @@ export function createNotificationDispatcher(): NotificationDispatch & {
   const handlers = new Map<string, NotificationPort>();
   return {
     dispatch(notification) {
-      const meta = {
+      const meta: NotificationMeta = {
         channel_name: notification.channelName,
         sender: notification.sender,
         message_id: String(notification.messageId),

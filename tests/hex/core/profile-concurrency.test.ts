@@ -16,7 +16,7 @@ import { MessagingService } from "../../../src/core/messaging/service";
 import { YamlProfileStore } from "../../../src/storage/yaml-profiles/store";
 import { SqliteNotificationQueryRepo } from "../../../src/storage/sqlite/notification-query-repo";
 import { createNotificationPoller } from "../../../src/notifications/poller/poller";
-import type { NotificationPort } from "../../../src/core/ports";
+import type { NotificationPort, NotificationMeta } from "../../../src/core/ports";
 
 const projectRoot = process.cwd();
 
@@ -280,7 +280,7 @@ db.close();
     const db2 = createDb(TEST_DB);
     const notificationQueries = new SqliteNotificationQueryRepo(db2);
 
-    const notifications: Array<{ content: string; meta: Record<string, string> }> = [];
+    const notifications: Array<{ content: string; meta: NotificationMeta }> = [];
     const port: NotificationPort = {
       notify: async (content, meta) => {
         notifications.push({ content, meta });

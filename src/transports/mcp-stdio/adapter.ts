@@ -3,11 +3,13 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import type { MessagingService } from "../../core/messaging/service";
+import { DEFAULT_MAX_HOPS, MAX_HOPS_CAP } from "../../core/messaging/types";
 import type { BrainService } from "../../core/brain/service";
 import type { OctoSantaConfig, BrainDoc } from "../../core/brain/types";
 import type { NotificationPort, AgentRepository } from "../../core/ports";
+import type { NamedProfileFields } from "../../core/profiles/types";
 import { log } from "../../log";
-import { jsonResult, withAgent } from "./helpers";
+import { jsonResult, withAgent, formatBrainIndex } from "./helpers";
 import pkg from "../../../package.json";
 
 // --- Instructions builder ---
@@ -102,7 +104,7 @@ export function registerMessagingTools(
   server: McpServer,
   messaging: MessagingService,
   onAgentId?: (agentId: string) => { commit: (resolvedName?: string) => void },
-  onProfile?: (profile: { baseName: string; persona: string | null; objective: string | null; instructions: string | null }) => void,
+  onProfile?: (profile: NamedProfileFields) => void,
   sessionGuidance?: string,
   agents?: AgentRepository
 ): void {
@@ -143,7 +145,7 @@ export function registerMessagingTools(
     inputSchema: {
       agent_id: z.string().trim().min(1).describe("Your agent/project name"),
       name: z.string().trim().min(1).describe("Channel name"),
-      max_hops: z.number().int().min(1).max(50).optional().describe("Max consecutive agent messages before channel blocks (default 50; set lower for stricter loop guard, max 50)"),
+      max_hops: z.number().int().min(1).max(MAX_HOPS_CAP).optional().describe(`Max consecutive agent messages before channel blocks (default ${DEFAULT_MAX_HOPS}; set lower for stricter loop guard, max ${MAX_HOPS_CAP})`),
     },
   }, async ({ agent_id, name, max_hops }) => {
     return withAgent(onAgentId, agent_id, () => {
@@ -333,9 +335,7 @@ export function registerBrainTools(
     if (!hasBrain) return { content: [{ type: "text" as const, text: "" }] };
     const docs = brain.index();
     if (docs.length === 0) return { content: [{ type: "text" as const, text: "" }] };
-    const index = docs
-      .map((d) => `- [${d.path}](${d.slug}) — ${d.summary}`)
-      .join("\n");
+    const index = formatBrainIndex(docs);
     return { content: [{ type: "text" as const, text: index }] };
   });
 
@@ -359,9 +359,7 @@ export function registerBrainTools(
   }, async () => {
     const docs = brain.sharedIndex();
     if (docs.length === 0) return { content: [{ type: "text" as const, text: "" }] };
-    const index = docs
-      .map((d) => `- [${d.path}](${d.slug}) — ${d.summary}`)
-      .join("\n");
+    const index = formatBrainIndex(docs);
     return { content: [{ type: "text" as const, text: index }] };
   });
 
@@ -455,7 +453,7 @@ export async function startMcpStdio(opts: McpStdioOpts): Promise<void> {
   let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   let boundAgentId: string | null = null;
   let pollerRef: { stop(): void } | null = null;
-  let boundProfile: { baseName: string; persona: string | null; objective: string | null; instructions: string | null } | null = null;
+  let boundProfile: NamedProfileFields | null = null;
 
   function onAgentId(agentId: string): { commit: (resolvedName?: string) => void } {
     if (boundAgentId !== null) {
@@ -524,9 +522,7 @@ export async function startMcpStdio(opts: McpStdioOpts): Promise<void> {
       "After messaging_register, call brain_claim_domain to become a queryable expert.";
   }
   if (brainIndex && brainIndex.length > 0) {
-    const index = brainIndex
-      .map((d) => `- [${d.path}](${d.slug}) — ${d.summary}`)
-      .join("\n");
+    const index = formatBrainIndex(brainIndex);
     bootstrapMsg += `\n\nBrain index:\n${index}`;
   }
   await mcpServer.server.notification({

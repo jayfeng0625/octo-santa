@@ -3,7 +3,7 @@ import { allMigrations } from "../../src/storage/sqlite/migrations";
 import { createSqliteRepos } from "../../src/storage/sqlite";
 import { MessagingService } from "../../src/core/messaging/service";
 import { createNotificationDispatcher } from "../../src/notifications/dispatch/dispatcher";
-import type { NotificationPort } from "../../src/core/ports";
+import type { NotificationPort, NotificationMeta } from "../../src/core/ports";
 import type { Database } from "bun:sqlite";
 import { cleanupDb, testDbPath, setupTestDb } from "../helpers/db";
 
@@ -26,7 +26,7 @@ afterEach(() => {
 
 describe("DM notification mode", () => {
   it("DM channel push-all works for named agents without mentions", () => {
-    const notifications: { content: string; meta: Record<string, string> }[] = [];
+    const notifications: { content: string; meta: NotificationMeta }[] = [];
     const port: NotificationPort = {
       notify: async (content, meta) => {
         notifications.push({ content, meta });
