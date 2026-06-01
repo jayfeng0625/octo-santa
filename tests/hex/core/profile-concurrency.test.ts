@@ -217,6 +217,246 @@ describe("cross-process profile registration concurrency", () => {
     expect(rows.map((r) => r.id)).toEqual(["os-dev-1", "os-dev-2", "os-dev-3"]);
   });
 
+  it("(b.2) pool race repeated: 3 workers / 3 slots, 5 consecutive iterations — all produce 3 unique names", async () => {
+    // Issue #18: the read-then-write race in pool slot allocation caused
+    // duplicate slot assignments under contention, failing 4/5 runs.
+    // This test runs the same 3-for-3 race 5 times to verify the fix is
+    // reliable, not just lucky on a single run.
+
+    const ITERATIONS = 5;
+
+    for (let iter = 0; iter < ITERATIONS; iter++) {
+      const profileDir = makeTempProfileDir();
+      writeProfileYaml(profileDir, "os-racer", 3);
+
+      // Fresh DB per iteration to avoid cross-contamination
+      const iterDb = `/tmp/octo-santa-test-pool-race-iter-${iter}.sqlite`;
+      const setupDb = createDb(iterDb);
+      runMigrations(setupDb, allMigrations);
+      setupDb.close();
+
+      const workerScript = `
+import { createDb } from "${projectRoot}/src/storage/sqlite/db";
+import { runMigrations, allMigrations } from "${projectRoot}/src/storage/sqlite/migrations";
+import { createSqliteRepos } from "${projectRoot}/src/storage/sqlite";
+import { MessagingService } from "${projectRoot}/src/core/messaging/service";
+import { YamlProfileStore } from "${projectRoot}/src/storage/yaml-profiles/store";
+
+const db = createDb("${iterDb}");
+runMigrations(db, allMigrations);
+const repos = createSqliteRepos(db);
+const profiles = new YamlProfileStore("${profileDir}");
+const svc = new MessagingService(
+  repos.agents, repos.channels, repos.messages, repos.cursors,
+  process.pid, undefined, profiles
+);
+
+try {
+  const result = svc.register("os-racer");
+  console.log(JSON.stringify({ ok: true, registeredName: result.registeredName }));
+  db.close();
+} catch (err) {
+  console.error(err.message);
+  db.close();
+  process.exit(1);
+}
+`;
+      const workerPath = `/tmp/octo-santa-pool-race-iter-${iter}-worker.ts`;
+      await Bun.write(workerPath, workerScript);
+
+      const workers = [0, 1, 2].map(() =>
+        Bun.spawn(["bun", "run", workerPath], {
+          cwd: projectRoot,
+          stdout: "pipe",
+          stderr: "pipe",
+        })
+      );
+
+      const exitCodes = await Promise.all(workers.map((w) => w.exited));
+      const outputs = await Promise.all(
+        workers.map(async (w, i) => ({
+          idx: i,
+          code: exitCodes[i],
+          stdout: await new Response(w.stdout).text(),
+          stderr: await new Response(w.stderr).text(),
+        }))
+      );
+
+      const succeeded = outputs.filter((o) => o.code === 0);
+
+      if (succeeded.length !== 3) {
+        console.error(`Iteration ${iter} failed:`, JSON.stringify(outputs, null, 2));
+      }
+
+      expect(succeeded).toHaveLength(3);
+
+      const registeredNames = succeeded.map((o) => {
+        const parsed = JSON.parse(o.stdout.trim()) as { ok: boolean; registeredName: string };
+        return parsed.registeredName;
+      });
+
+      // All names must be unique — this is the exact invariant that broke in issue #18
+      const uniqueNames = new Set(registeredNames);
+      expect(uniqueNames.size).toBe(3);
+
+      const expected = new Set(["os-racer-1", "os-racer-2", "os-racer-3"]);
+      for (const name of registeredNames) {
+        expect(expected.has(name)).toBe(true);
+      }
+
+      // Cleanup iteration DB
+      cleanupDb(iterDb);
+    }
+  });
+
+  it("(b.3) over-subscription race: 5 workers for 3 slots — exactly 3 succeed, 2 rejected at capacity", async () => {
+    const profileDir = makeTempProfileDir();
+    writeProfileYaml(profileDir, "os-pool", 3);
+
+    const setupDb = createDb(TEST_DB);
+    runMigrations(setupDb, allMigrations);
+    setupDb.close();
+
+    const workerScript = makeWorkerScript(profileDir, "os-pool");
+    const workerPath = "/tmp/octo-santa-profile-concurrency-oversub-worker.ts";
+    await Bun.write(workerPath, workerScript);
+
+    // 5 workers, but only 3 slots available
+    const workers = [0, 1, 2, 3, 4].map(() =>
+      Bun.spawn(["bun", "run", workerPath], {
+        cwd: projectRoot,
+        stdout: "pipe",
+        stderr: "pipe",
+      })
+    );
+
+    const exitCodes = await Promise.all(workers.map((w) => w.exited));
+    const outputs = await Promise.all(
+      workers.map(async (w, i) => ({
+        idx: i,
+        code: exitCodes[i],
+        stdout: await new Response(w.stdout).text(),
+        stderr: await new Response(w.stderr).text(),
+      }))
+    );
+
+    const succeeded = outputs.filter((o) => o.code === 0);
+    const failed = outputs.filter((o) => o.code !== 0);
+
+    if (succeeded.length !== 3) {
+      console.error("Over-subscription results:", JSON.stringify(outputs, null, 2));
+    }
+
+    // Exactly 3 workers should succeed
+    expect(succeeded).toHaveLength(3);
+    // Exactly 2 workers should fail with at-capacity
+    expect(failed).toHaveLength(2);
+
+    // Successful workers must have unique slot names
+    const registeredNames = succeeded.map((o) => {
+      const parsed = JSON.parse(o.stdout.trim()) as { ok: boolean; registeredName: string };
+      return parsed.registeredName;
+    });
+    const uniqueNames = new Set(registeredNames);
+    expect(uniqueNames.size).toBe(3);
+
+    const expected = new Set(["os-pool-1", "os-pool-2", "os-pool-3"]);
+    for (const name of registeredNames) {
+      expect(expected.has(name)).toBe(true);
+    }
+
+    // Failed workers should report at-capacity
+    for (const f of failed) {
+      expect(f.stderr).toContain("at capacity");
+    }
+
+    // DB should have exactly 3 rows
+    const db = createDb(TEST_DB);
+    const rows = db
+      .query("SELECT id FROM agents WHERE base_name = 'os-pool' ORDER BY id")
+      .all() as { id: string }[];
+    db.close();
+
+    expect(rows).toHaveLength(3);
+    expect(rows.map((r) => r.id)).toEqual(["os-pool-1", "os-pool-2", "os-pool-3"]);
+  });
+
+  it("(b.4) stale-slot reclamation under contention: 3 workers race to reclaim 3 dead slots", async () => {
+    const profileDir = makeTempProfileDir();
+    writeProfileYaml(profileDir, "os-reclaim", 3);
+
+    // Pre-populate DB with 3 stale agent rows (PID = -1, last_seen_at far in the past)
+    const db = createDb(TEST_DB);
+    runMigrations(db, allMigrations);
+    const staleTimestamp = Date.now() - 60 * 60 * 1000; // 1 hour ago (well past PID_STALE_MS)
+    for (let slot = 1; slot <= 3; slot++) {
+      db.query(
+        `INSERT INTO agents (id, created_at, last_seen_at, pid, registered_at, base_name, persona, objective, instructions)
+         VALUES (?, ?, ?, ?, ?, ?, NULL, NULL, NULL)`
+      ).run(`os-reclaim-${slot}`, staleTimestamp, staleTimestamp, -1, staleTimestamp, "os-reclaim");
+    }
+    db.close();
+
+    const workerScript = makeWorkerScript(profileDir, "os-reclaim");
+    const workerPath = "/tmp/octo-santa-profile-concurrency-reclaim-worker.ts";
+    await Bun.write(workerPath, workerScript);
+
+    // 3 workers race to reclaim the 3 dead slots
+    const workers = [0, 1, 2].map(() =>
+      Bun.spawn(["bun", "run", workerPath], {
+        cwd: projectRoot,
+        stdout: "pipe",
+        stderr: "pipe",
+      })
+    );
+
+    const exitCodes = await Promise.all(workers.map((w) => w.exited));
+    const outputs = await Promise.all(
+      workers.map(async (w, i) => ({
+        idx: i,
+        code: exitCodes[i],
+        stdout: await new Response(w.stdout).text(),
+        stderr: await new Response(w.stderr).text(),
+      }))
+    );
+
+    const succeeded = outputs.filter((o) => o.code === 0);
+
+    if (succeeded.length !== 3) {
+      console.error("Reclamation race results:", JSON.stringify(outputs, null, 2));
+    }
+
+    // All 3 workers should succeed by reclaiming dead slots
+    expect(succeeded).toHaveLength(3);
+
+    const registeredNames = succeeded.map((o) => {
+      const parsed = JSON.parse(o.stdout.trim()) as { ok: boolean; registeredName: string };
+      return parsed.registeredName;
+    });
+
+    // All names must be unique
+    const uniqueNames = new Set(registeredNames);
+    expect(uniqueNames.size).toBe(3);
+
+    // All names should be os-reclaim-1, os-reclaim-2, os-reclaim-3
+    const expected = new Set(["os-reclaim-1", "os-reclaim-2", "os-reclaim-3"]);
+    for (const name of registeredNames) {
+      expect(expected.has(name)).toBe(true);
+    }
+
+    // Verify DB rows were reclaimed (all PIDs should now be live worker PIDs, not -1)
+    const verifyDb = createDb(TEST_DB);
+    const rows = verifyDb
+      .query("SELECT id, pid FROM agents WHERE base_name = 'os-reclaim' ORDER BY id")
+      .all() as { id: string; pid: number }[];
+    verifyDb.close();
+
+    expect(rows).toHaveLength(3);
+    for (const row of rows) {
+      expect(row.pid).not.toBe(-1);
+    }
+  });
+
   it("(c) cross-process: pool base-name mention triggers poller notification", async () => {
     const profileDir = makeTempProfileDir();
     writeProfileYaml(profileDir, "os-dev", 3);
