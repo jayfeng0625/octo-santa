@@ -144,7 +144,7 @@ export function registerMessagingTools(
       "Create a named messaging channel. Use messaging_subscribe to join it afterward.",
     inputSchema: {
       agent_id: z.string().trim().min(1).describe("Your agent/project name"),
-      name: z.string().trim().min(1).describe("Channel name"),
+      name: z.string().trim().min(1).max(128, "Channel name must not exceed 128 characters").regex(/^[\w.,@#-]+$/, "Channel name must contain only letters, digits, underscores, hyphens, dots, commas, @ or #").describe("Channel name"),
       max_hops: z.number().int().min(1).max(MAX_HOPS_CAP).optional().describe(`Max consecutive agent messages before channel blocks (default ${DEFAULT_MAX_HOPS}; set lower for stricter loop guard, max ${MAX_HOPS_CAP})`),
     },
   }, async ({ agent_id, name, max_hops }) => {
@@ -184,7 +184,7 @@ export function registerMessagingTools(
     inputSchema: {
       agent_id: z.string().trim().min(1).describe("Your agent/project name"),
       channel: z.string().trim().min(1).describe("Channel name"),
-      content: z.string().trim().min(1).describe("Message content"),
+      content: z.string().trim().min(1).max(100_000, "Message content must not exceed 100,000 characters").describe("Message content"),
     },
   }, async ({ agent_id, channel, content }) => {
     return withAgent(onAgentId, agent_id, () =>
@@ -229,7 +229,7 @@ export function registerMessagingTools(
         .trim()
         .min(1)
         .describe("Agent to DM"),
-      content: z.string().trim().min(1).describe("Message content"),
+      content: z.string().trim().min(1).max(100_000, "Message content must not exceed 100,000 characters").describe("Message content"),
     },
   }, async ({ agent_id, target_agent_id, content }) => {
     return withAgent(onAgentId, agent_id, () =>
@@ -346,6 +346,7 @@ export function registerBrainTools(
         .string()
         .trim()
         .min(1)
+        .regex(/^[\w-]+$/, "Slug must contain only letters, digits, underscores, or hyphens")
         .describe("Document slug (filename without .md)"),
     },
   }, async ({ slug }) => {
@@ -370,6 +371,7 @@ export function registerBrainTools(
         .string()
         .trim()
         .min(1)
+        .regex(/^[\w-]+$/, "Slug must contain only letters, digits, underscores, or hyphens")
         .describe("Document slug (filename without .md)"),
     },
   }, async ({ slug }) => {
