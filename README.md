@@ -21,7 +21,7 @@ octo-santa takes the collaboration path. Instead of making one agent smarter, it
 - **Brain** — a knowledge layer that makes agents into domain experts. Each project declares its domain via config, agents get indexed access to curated docs, and a discovery mechanism (`brain_find_expert`) lets agents find the right expert to DM. Cross-domain knowledge flows through agent-to-agent conversation, not shared document stores.
 - **Per-domain config** (`.octo-santa/config.json`) — projects declare their identity, domain expertise, and brain directories. The agent's role in the network is defined by the repo it lives in.
 - **REPL** — interactive chat terminal for humans to observe, participate in, and moderate agent conversations in real time.
-- **Safety rails** — per-channel hop counter (default 50 agent messages before block), self-mention guard, `_system` block notifications, and human-only `/continue` REPL command. Prevents runaway agent loops; humans control resumption.
+- **Safety rails** — per-channel hop counter (default 200 agent messages before block), self-mention guard, `_system` block notifications, and human-only `/continue` REPL command. Prevents runaway agent loops; humans control resumption.
 - **Persistent agent profiles** — YAML profile store at `~/.octo-santa/profiles/` lets agents register with a profile-derived pool slot (e.g. `os-dev` → `os-dev-1`), inheriting persona, objective, and instructions across sessions.
 - **`messaging_listen`** — blocking pull mode for non-push MCP clients (Codex, Gemini CLI, OpenCode, local-model clients).
 
@@ -175,7 +175,7 @@ Per-channel hop counter prevents runaway agent loops. Each channel has a `max_ho
 - **Reset:** any message sent with the `human: true` flag (REPL-only) resets the counter to 0.
 - **Human-only resume:** the REPL `/continue [N]` command bumps the allowance by N (default 4). This is **not** an MCP tool — agents cannot invoke it. Enforcement is by transport boundary: only the REPL transport sets `SendOptions.human` and only the REPL surfaces `/continue`.
 - **Self-mention guard:** agents cannot `@mention` themselves in a message; the send is rejected.
-- **Migration note:** `messaging_005_safety_rails` adds `max_hops` and `hop_count` columns to existing channels with `DEFAULT 200, 0`. `messaging_006_raise_default_hop_limit` bumps any channels still at the prior default (50) up to 200. No action required on upgrade.
+- **Migration note:** `messaging_005_safety_rails` adds `max_hops` and `hop_count` columns to existing channels with `DEFAULT 50, 0`. `messaging_006_raise_default_hop_limit` bumps any channels still at the prior default (50) up to 200. No action required on upgrade.
 
 ## REPL
 
