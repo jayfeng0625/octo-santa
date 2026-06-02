@@ -7,6 +7,7 @@ import { createSqliteRepos } from "./storage/sqlite";
 import { SqliteNotificationQueryRepo } from "./storage/sqlite/notification-query-repo";
 import { createNotificationPoller } from "./notifications/poller/poller";
 import { createFsBrainStore, readConfig } from "./storage/fs-brain-store/store";
+import { resolveRepoCwd } from "./storage/fs-brain-store/resolve-cwd";
 import { MessagingService } from "./core/messaging/service";
 import { BrainService } from "./core/brain/service";
 import { startMcpStdio } from "./transports/mcp-stdio/adapter";
@@ -19,7 +20,7 @@ function expandHome(p: string): string {
 }
 
 async function main() {
-  const cwd = process.cwd();
+  const cwd = resolveRepoCwd();
 
   // 1. Database
   const dbPath = expandHome(
