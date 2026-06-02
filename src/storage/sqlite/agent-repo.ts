@@ -2,7 +2,7 @@ import type { Database } from "bun:sqlite";
 import type { AgentRepository } from "../../core/ports";
 import type { ProfileFields, NamedProfileFields } from "../../core/profiles/types";
 import type { Agent, HeartbeatResult } from "../../core/messaging/types";
-import { isAgentActive } from "../../core/utils";
+import { isAgentActive, PID_STALE_MS } from "../../core/utils";
 import { withRetrySync } from "./db";
 
 export class SqliteAgentRepo implements AgentRepository {
@@ -128,7 +128,7 @@ export class SqliteAgentRepo implements AgentRepository {
       for (const a of existing) {
         const slot = extractInstanceNumber(a.id, baseName);
         if (slot === null) continue;
-        const isDead = !isAgentActive(a);
+        const isDead = !isSlotOccupied(a);
         if (isDead) {
           deadSlots.push({ slot, agentId: a.id });
         } else {
@@ -147,7 +147,7 @@ export class SqliteAgentRepo implements AgentRepository {
         while (liveSlots.has(chosenSlot)) chosenSlot++;
       } else {
         const activeList = existing
-          .filter((a) => isAgentActive(a))
+          .filter((a) => isSlotOccupied(a))
           .map((a) => `${a.id} (pid ${a.pid})`)
           .join(", ");
         throw new Error(
@@ -225,4 +225,21 @@ function extractInstanceNumber(agentId: string, baseName: string): number | null
   const n = parseInt(suffix, 10);
   if (isNaN(n) || n <= 0 || String(n) !== suffix) return null;
   return n;
+}
+
+/**
+ * Decides whether a pool slot is occupied using ONLY committed DB state
+ * (last_seen_at recency) — deliberately NOT isProcessAlive.
+ *
+ * A racer that claimed a slot microseconds ago may have already exited by the
+ * time the next racer reads it. isAgentActive() would then see the dead process
+ * and report the freshly-claimed slot as free, so the next racer picks the same
+ * slot and silently overwrites it via ON CONFLICT(id) DO UPDATE — the
+ * duplicate-slot race in issue #18. Recency is monotonic under the serialized
+ * EXCLUSIVE transaction, so it cannot regress mid-race. A crashed slot frees
+ * once its last_seen_at ages past PID_STALE_MS.
+ */
+function isSlotOccupied(agent: Pick<Agent, "pid" | "last_seen_at">): boolean {
+  if (agent.pid === null) return false;
+  return Date.now() - agent.last_seen_at <= PID_STALE_MS;
 }

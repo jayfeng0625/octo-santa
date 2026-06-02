@@ -189,15 +189,18 @@ describe("pool profile registration", () => {
     runMigrations(db, allMigrations);
     const repos = createSqliteRepos(db);
 
-    // Manually insert two dead workers
+    // Manually insert two stale workers (last_seen aged past PID_STALE_MS).
+    // Staleness — not a dead PID — is what makes a slot reclaimable; a slot
+    // seen recently stays occupied even if its process has exited (issue #18).
     const now = Date.now();
+    const stale = now - 60 * 60 * 1000; // 1 hour ago
     db.run(
       "INSERT INTO agents (id, created_at, last_seen_at, pid, registered_at, base_name) VALUES (?, ?, ?, ?, ?, ?)",
-      ["worker-1", now, now - 1, 999999, now - 1, "worker"]  // dead PID
+      ["worker-1", now, stale, 999999, stale, "worker"]  // stale slot
     );
     db.run(
       "INSERT INTO agents (id, created_at, last_seen_at, pid, registered_at, base_name) VALUES (?, ?, ?, ?, ?, ?)",
-      ["worker-2", now, now - 1, 999998, now - 1, "worker"]  // dead PID
+      ["worker-2", now, stale, 999998, stale, "worker"]  // stale slot
     );
 
     const svc = new MessagingService(repos.agents, repos.channels, repos.messages, repos.cursors, process.pid, undefined, profileRepo);
