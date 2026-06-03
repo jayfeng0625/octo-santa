@@ -5,25 +5,24 @@
 // proving the composition boundary: concrete storage is injected at the harness, NEVER
 // imported by the adapter (archunit hexagonal-boundaries.test.ts:192, adapters ↛ storage).
 //
-// PRE-CORE GATE (architect ruling, os-rewrite #2687, rule 2): the adapter has no CORE
-// delivery yet (publish/subscribe/replayFrom land in I6 via the pump()/poll seam), so the
-// ungated CORE suite would red-fail. The whole runConformanceSuite invocation is gated
-// behind ONE named flag, REMOVED in I6. Until then it shows as a single VISIBLE, NAMED skip
-// (rule 3: no silent caps). The descriptor test below runs green now and asserts the
-// truthful PROGRESSIVE descriptor (rule 1), which grows to the final 4-axis by I8.
+// CORE DELIVERY LIVE (I6): the adapter implements publish/subscribe/replayFrom over the
+// pump()/poll seam, so runConformanceSuite runs UNCONDITIONALLY — the I4-I5 pre-CORE gate
+// (SQLITE_CORE_DELIVERY_READY) is REMOVED (architect ruling #2687, rule 2; atomic un-gate).
+// CORE + the topicLifecycle:"explicit" reject section pass; the implicit-lifecycle branch
+// (caps-inherent — SQLite is explicit), durable (→I7), and at-least-once (→I8) sections remain
+// descriptor-gated skips, VISIBLE + named by the suite's skipIf(caps), each tied to its
+// flipping slice (no silent cap, rule 3). The descriptor test asserts the truthful PROGRESSIVE
+// descriptor (rule 1) — {durable:false, at-most-once} here, reaching the final 4-axis by I8.
 
 import { describe, it, expect } from "bun:test";
 import { createDb } from "../../src/storage/sqlite/db";
 import { runMigrations, allMigrations } from "../../src/storage/sqlite/migrations";
 import { createSqliteRepos } from "../../src/storage/sqlite";
 import { MessagingService } from "../../src/core/messaging/service";
-import { connectSqlitePeer } from "../../src/adapters/sqlite/sqlite-pubsub";
+import { createSqliteBackplane, connectSqlitePeer, pump } from "../../src/adapters/sqlite/sqlite-pubsub";
 import { cleanupDb } from "../helpers/db";
 import type { ConformanceHarness, HarnessFactory } from "./harness";
 import { runConformanceSuite } from "./suite";
-
-// ← Flip true / remove in I6 when CORE delivery (publish/subscribe/replayFrom via pump) lands.
-const SQLITE_CORE_DELIVERY_READY = false;
 
 let dbSeq = 0;
 
@@ -41,8 +40,20 @@ function makeHarness(): ConformanceHarness {
     repos.cursors,
     process.pid
   );
+  // A registered agent to own out-of-band topic creation (control plane). CORE topics are
+  // plain channels (not DMs), so createChannel needs only a registered creator.
+  svc.register("__provisioner__");
+  // The adapter's hidden, process-local delivery backplane over this one DB connection.
+  const bp = createSqliteBackplane(svc);
   return {
-    connect: async (name) => connectSqlitePeer(svc, name),
+    connect: async (name) => connectSqlitePeer(bp, name),
+    // R6 α poll tick: one deterministic, timer-free pump() drive (I5 seam).
+    advance: async () => pump(bp),
+    // I5.5 provision seam: explicit topicLifecycle → create the topic out-of-band (control
+    // plane) so the DELIVERY sections can exercise it; the lifecycle-reject sections do not call it.
+    provision: async (topic) => {
+      svc.createChannel("__provisioner__", topic);
+    },
     cleanup: async () => {
       db.close();
       cleanupDb(dbPath);
@@ -67,10 +78,6 @@ describe("SQLite adapter (I4 — skeleton + descriptor)", () => {
   });
 });
 
-if (SQLITE_CORE_DELIVERY_READY) {
-  await runConformanceSuite("SQLite", sqliteFactory);
-} else {
-  describe("PubSub conformance — SQLite", () => {
-    it.skip("gated until I6 — CORE delivery (publish/subscribe/replayFrom via pump) not yet implemented", () => {});
-  });
-}
+// Gate removed (I6): CORE delivery + topicLifecycle:"explicit" reject are implemented, so the
+// suite runs unconditionally. durable + at-least-once remain descriptor-gated skips until I7/I8.
+await runConformanceSuite("SQLite", sqliteFactory);
