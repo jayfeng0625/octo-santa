@@ -269,6 +269,58 @@ export async function runConformanceSuite(label: string, factory: HarnessFactory
         await settle(harness);
         expect(got).toEqual(["1", "2"]); // only the missed "2", never "1" again
       });
+
+      it("in-flight unsubscribe: a drain suspended at the handler does not deliver/advance past the unsubscribe", async () => {
+        const [a] = await newPeers("alice");
+        const topic = freshTopic("inflight-unsub");
+        await ensureTopic(harness, topic);
+
+        // A gate lets the test suspend the handler INSIDE the drain (the handler runs
+        // synchronously up to `await gate` when the drain fires, so `entered` resolves
+        // deterministically — no timer, no race).
+        let entered!: () => void;
+        const enteredP = new Promise<void>((r) => (entered = r));
+        let release!: () => void;
+        const gate = new Promise<void>((r) => (release = r));
+
+        const got: string[] = [];
+        let first = true;
+        await a!.pubsub.subscribe(topic, async (m) => {
+          if (first) {
+            first = false;
+            got.push(m.data);
+            entered();
+            await gate; // suspend the in-flight drain here
+            return;
+          }
+          got.push(m.data);
+        });
+
+        await a!.pubsub.publish(topic, "1");
+        await a!.pubsub.publish(topic, "2");
+
+        // Drive a tick: the drain delivers "1" and suspends on the gate (now in-flight).
+        const driving = settle(harness);
+        await enteredP;
+
+        // Unsubscribe lands WHILE the drain is suspended.
+        await a!.pubsub.unsubscribe(topic);
+
+        // Resume: the drain must NOT advance the held cursor past "1" nor deliver "2" to the
+        // now-detached subscription.
+        release();
+        await driving;
+        for (let i = 0; i < 4; i++) await settle(harness);
+        expect(got).toEqual(["1"]); // "2" never delivered to the detached subscription
+
+        // Held cursor intact (no advance past "1") → re-subscribe redelivers BOTH "1" and "2".
+        const got2: string[] = [];
+        await a!.pubsub.subscribe(topic, (m) => {
+          got2.push(m.data);
+        });
+        for (let i = 0; i < 4; i++) await settle(harness);
+        expect(got2).toEqual(["1", "2"]);
+      });
     });
 
     // ===================================================================================

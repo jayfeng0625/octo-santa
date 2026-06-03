@@ -167,6 +167,12 @@ async function drain(bp: Backplane, t: TopicState, peer: PeerId, sub: Subscripti
           // NACK → cursor holds; redelivery happens on the NEXT cycle. Stop draining.
           break;
         }
+        // R4 F6: an unsubscribe that landed while the handler was suspended deletes this
+        // subscription from the topic. Stop the WHOLE drain BEFORE advancing — never advance the
+        // held cursor past a message delivered to a now-detached subscription. Returning (not
+        // break) also skips the do-while `pending` re-run, which would otherwise re-deliver from
+        // the unadvanced cursor. Mirrors the SQLite drain.
+        if (t.subscriptions.get(peer) !== sub) return;
         // ACK → advance past this message.
         sub.cursor = next.id;
         setHeldCursor(bp, peer, next.message.topic, sub.cursor);

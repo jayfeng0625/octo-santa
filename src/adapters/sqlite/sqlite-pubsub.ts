@@ -163,6 +163,12 @@ async function drain(bp: SqliteBackplane, sub: Subscription): Promise<void> {
             log(`sqlite-pubsub NACK ${sub.agentId}@${sub.topic} msg ${next.id}: ${err}`);
             break batchLoop;
           }
+          // R4 F6: an unsubscribe that landed while the handler was suspended splices this
+          // subscription from the registry. Stop the WHOLE drain BEFORE advancing the held
+          // cursor — never advance past or deliver to a detached subscription. Returning (not
+          // break) also skips the do-while `pending` re-run and the loop-back read, which after
+          // R2 would throw "not a member" and log a spurious fault. Mirrors the InMemory drain.
+          if (!bp.subscriptions.includes(sub)) return;
           // Persist-then-advance per message: write the durable cursor FIRST, then move the
           // in-memory cursor. If the persist throws it is contained below with BOTH cursors still
           // at the prior id (consistent; redelivers next tick) — never the split state of
