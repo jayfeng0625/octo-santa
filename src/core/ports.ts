@@ -85,9 +85,12 @@ export interface MessageRepository {
 }
 
 export interface CursorRepository {
+  /** PUSH delivery cursor (I10/F4): the position the pump() resumes from. */
   get(agentId: string, channelId: number): number;
-  /** Per-ACK single-step advance: persist the read position to exactly this message id. */
-  set(agentId: string, channelId: number, lastReadMessageId: number): void;
+  /** PULL read cursor (I10/F4): where read_messages / the REPL left off. Separate column. */
+  getRead(agentId: string, channelId: number): number;
+  /** Per-ACK single-step advance of the PUSH delivery cursor (monotonic). */
+  set(agentId: string, channelId: number, messageId: number): void;
   listForAgent(agentId: string): CursorWithChannel[];
 }
 

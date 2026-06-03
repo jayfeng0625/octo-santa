@@ -228,3 +228,63 @@ describe("messaging_007 subscribed membership column (I2)", () => {
     db.close();
   });
 });
+
+// I10 — F4: messaging_008 adds the push `delivery_cursor` to cursors via a plain ADD COLUMN.
+// cursors is an FK CHILD (no table rebuild, no foreign_keys=OFF), so the FK-parent rebuild
+// landmine does not apply — proven by COMMITting cleanly against a POPULATED db, backfilling
+// existing rows to 0, and leaving the pull cursor (last_read_message_id) untouched.
+describe("messaging_008 delivery_cursor column (I10/F4)", () => {
+  const M008 = "messaging_008_delivery_cursor";
+
+  it("adds `delivery_cursor` to a populated cursors table, backfills to 0, pull cursor untouched", () => {
+    cleanupDb(TEST_DB);
+    const db = createDb(TEST_DB);
+
+    // Migrate everything EXCEPT 008, then populate a member with a NON-ZERO pull position.
+    const pre008 = allMigrations.filter((m) => m.name !== M008);
+    runMigrations(db, pre008);
+    db.run("INSERT INTO agents (id, created_at, last_seen_at) VALUES ('agent-a', 0, 0)");
+    db.run(
+      "INSERT INTO channels (name, created_by, created_at) VALUES ('general', 'agent-a', 0)"
+    );
+    const chId = (db.query("SELECT id FROM channels WHERE name = 'general'").get() as {
+      id: number;
+    }).id;
+    db.run(
+      "INSERT INTO cursors (agent_id, channel_id, last_read_message_id) VALUES ('agent-a', ?, 42)",
+      [chId]
+    );
+
+    // Apply 008 against the POPULATED db — must COMMIT cleanly (FK-child ADD COLUMN).
+    const result = runMigrations(db, allMigrations);
+    expect(result.applied).toContain(M008);
+    expect(result.driftDetected).toEqual([]);
+
+    const cols = (db.query("PRAGMA table_info(cursors)").all() as { name: string }[]).map(
+      (c) => c.name
+    );
+    expect(cols).toContain("delivery_cursor");
+
+    // delivery_cursor backfills to 0 (a fresh push position) and does NOT inherit the pull
+    // cursor — the two are independent (F4 fix).
+    const row = db
+      .query(
+        "SELECT delivery_cursor, last_read_message_id FROM cursors WHERE agent_id = 'agent-a' AND channel_id = ?"
+      )
+      .get(chId) as { delivery_cursor: number; last_read_message_id: number };
+    expect(row.delivery_cursor).toBe(0);
+    expect(row.last_read_message_id).toBe(42); // pull cursor untouched
+
+    db.close();
+  });
+
+  it("is idempotent on a second run (already applied, no drift)", () => {
+    cleanupDb(TEST_DB);
+    const db = createDb(TEST_DB);
+    runMigrations(db, allMigrations);
+    const second = runMigrations(db, allMigrations);
+    expect(second.applied).not.toContain(M008);
+    expect(second.driftDetected).toEqual([]);
+    db.close();
+  });
+});

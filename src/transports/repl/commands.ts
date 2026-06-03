@@ -65,8 +65,9 @@ export function executeCommand(
       } catch (err) {
         return { output: [(err as Error).message] };
       }
-      // Sync in-memory cursor from DB to prevent historical message flood
-      state.cursors.set(channelName, svc.getCursorPosition(state.agentId, channelName));
+      // Sync in-memory cursor from the DB PULL read cursor to prevent historical message flood
+      // (the REPL is a pull reader — NOT the push delivery cursor, I10/F4).
+      state.cursors.set(channelName, svc.getReadCursor(state.agentId, channelName));
       state.joinedChannels.add(channelName);
       return { output: [`Joined #${channelName}`], channelChange: channelName };
     }

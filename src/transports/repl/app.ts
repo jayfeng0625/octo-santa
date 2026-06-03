@@ -29,8 +29,9 @@ export function startApp(opts: AppOptions): () => void {
     agentId,
   };
 
-  // Init cursor from DB cursor (preserves unread backlog on reconnect)
-  state.cursors.set(channel, svc.getCursorPosition(agentId, channel));
+  // Init cursor from the DB PULL read cursor (preserves unread backlog on reconnect). The REPL
+  // is a pull reader (pollNewMessages) — it must NOT read the push delivery cursor (I10/F4).
+  state.cursors.set(channel, svc.getReadCursor(agentId, channel));
 
   function getPrompt(): string {
     return `${state.activeChannel}> `;

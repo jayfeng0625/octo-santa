@@ -550,6 +550,11 @@ export class MessagingService {
     return this.messages.replayMessages(channel.id, sinceId, limit);
   }
 
+  /**
+   * I10 — F4: the PUSH delivery cursor — where the SQLite PubSub pump() resumes delivery from.
+   * SEPARATE from the pull read cursor (see getReadCursor); a read_messages pull never moves it,
+   * so a message the push pump has not yet delivered is never skipped.
+   */
   getCursorPosition(agentId: string, channelName: string): number {
     const channel = this.channels.findByName(channelName);
     if (!channel) return 0;
@@ -557,10 +562,22 @@ export class MessagingService {
   }
 
   /**
-   * I1 — Gap#1: per-ACK cursor advance. Persists the subscriber's read position to
-   * exactly the ACKed message id. The SQLite PubSub adapter's pump() calls this once per
-   * delivered message (single-step); on NACK it simply does not call it, so the cursor
-   * holds and the message is re-read next cycle (head-of-line). No-op for an unknown channel.
+   * I10 — F4: the PULL read cursor — where read_messages / the REPL left off. SEPARATE from the
+   * push delivery cursor (getCursorPosition). The REPL restores its unread backlog from this on
+   * reconnect; advancing it (via read_messages) does not affect push delivery.
+   */
+  getReadCursor(agentId: string, channelName: string): number {
+    const channel = this.channels.findByName(channelName);
+    if (!channel) return 0;
+    return this.cursors.getRead(agentId, channel.id);
+  }
+
+  /**
+   * I1 — Gap#1: per-ACK advance of the PUSH delivery cursor (I10/F4 — NOT the pull read cursor).
+   * Persists the subscriber's delivery position to exactly the ACKed message id. The SQLite PubSub
+   * adapter's pump() calls this once per delivered message (single-step); on NACK it simply does
+   * not call it, so the cursor holds and the message is re-read next cycle (head-of-line). The
+   * repo write is monotonic (never regresses). No-op for an unknown channel.
    */
   advanceCursor(agentId: string, channelName: string, messageId: number): void {
     const channel = this.channels.findByName(channelName);

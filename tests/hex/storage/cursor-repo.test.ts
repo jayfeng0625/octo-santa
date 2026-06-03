@@ -103,6 +103,16 @@ describe("SqliteCursorRepo", () => {
       expect(rows.some((r) => r.id === ownA.id && r.agent_id === "agent-a")).toBe(true);
       db.close();
     });
+
+    // I10 — F4: the push delivery cursor must be monotonic so no stale/racing writer (or R1's
+    // persist-then-advance after a transient fault) can move a persisted position backward.
+    it("set is monotonic: a lower id never moves the delivery cursor backward (I10/F4)", () => {
+      const { db, cursors, channelId } = setup();
+      cursors.set("agent-a", channelId, 5);
+      cursors.set("agent-a", channelId, 3); // stale/lower write — must be ignored
+      expect(cursors.get("agent-a", channelId)).toBe(5);
+      db.close();
+    });
   });
 
   // I2 — Gap#2: listForAgent is a membership-driving read (the readAllUnread pull-drain),

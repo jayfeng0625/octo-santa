@@ -175,6 +175,21 @@ const messagingMigrations: Migration[] = [
       ALTER TABLE cursors ADD COLUMN subscribed INTEGER NOT NULL DEFAULT 1;
     `,
   },
+  {
+    // I10 — F4: the PUSH delivery cursor, separate from the PULL read cursor
+    // (last_read_message_id). The pull path (read_messages) excludes self-authored messages and
+    // advances last_read_message_id; the push pump includes self and advances delivery_cursor.
+    // Sharing one column meant a pull read could advance the cursor past a message the push pump
+    // had not delivered → silent LOSS once both surfaces run on one channel. Same FK-CHILD plain
+    // ADD COLUMN as 007 (no table rebuild, no foreign_keys=OFF) — the FK-parent rebuild trap
+    // (reference_sqlite_fk_parent_table_rebuild_trap) is specific to rebuilding `channels`, N/A
+    // here. Existing rows backfill to 0 (a fresh push position; push is unwired today so nothing
+    // relies on a non-zero default) — independent of the pull cursor.
+    name: "messaging_008_delivery_cursor",
+    up: `
+      ALTER TABLE cursors ADD COLUMN delivery_cursor INTEGER NOT NULL DEFAULT 0;
+    `,
+  },
 ];
 
 const brainMigrations: Migration[] = [

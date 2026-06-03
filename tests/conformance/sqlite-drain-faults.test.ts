@@ -38,6 +38,7 @@ function makeFaultHarness() {
   const fault = { armed: false };
   const cursors: CursorRepository = {
     get: (a, c) => repos.cursors.get(a, c),
+    getRead: (a, c) => repos.cursors.getRead(a, c),
     set: (a, c, id) => {
       if (fault.armed) throw new Error("injected cursor write fault");
       repos.cursors.set(a, c, id);
@@ -197,6 +198,38 @@ describe("R3 — SQLite drain batch catch-up", () => {
     await pump(h.bp);
     await flush();
     expect(received).toEqual(["m0", "m1", "m2", "m3", "m4"]);
+
+    h.cleanup();
+  });
+});
+
+describe("I10 — SQLite push/pull cursor isolation", () => {
+  it("push delivers every message regardless of pull-cursor advancement (independent cursors, no loss)", async () => {
+    const h = makeFaultHarness();
+    h.svc.createChannel("__provisioner__", "topic");
+    const self = connectSqlitePeer(h.bp, "self");
+    connectSqlitePeer(h.bp, "other");
+
+    // other + self each publish; self has NOT push-subscribed yet.
+    h.svc.send("other", "topic", "o1");
+    h.svc.send("self", "topic", "s1");
+
+    // self PULLS via read_messages → advances the PULL cursor (last_read_message_id) past "o1"
+    // (the pull path excludes self-authored "s1").
+    const pulled = h.svc.read("self", "topic");
+    expect(pulled.map((m) => m.content)).toEqual(["o1"]);
+
+    // NOW self push-subscribes. getCursorPosition must read the PUSH delivery cursor
+    // (delivery_cursor = 0), NOT the pull-advanced last_read_message_id — else "o1" is lost.
+    const received: string[] = [];
+    await self.pubsub.subscribe("topic", async (m) => {
+      received.push(m.data);
+    });
+    await pump(h.bp);
+    await flush();
+
+    // push delivers BOTH (at-least-once includes self-authored) — zero loss from the pull read.
+    expect(received).toEqual(["o1", "s1"]);
 
     h.cleanup();
   });

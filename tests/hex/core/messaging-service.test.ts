@@ -511,31 +511,34 @@ describe("MessagingService", () => {
   // ── getCursorPosition ──────────────────────────────────────────
 
   describe("getCursorPosition", () => {
-    it("returns cursor position after reading", () => {
+    // I10 — F4: getCursorPosition is the PUSH delivery cursor; getReadCursor is the PULL read
+    // cursor. They are SEPARATE columns. A pull read advances the read cursor only — the push
+    // cursor stays put, so the push pump never skips a message a pull read consumed.
+    it("push cursor is independent of pull reads; getReadCursor tracks the pull read", () => {
       const { svc } = setup();
 
       svc.register("alice");
       svc.register("bob");
-      const ch = svc.createChannel("alice", "general");
+      svc.createChannel("alice", "general");
       svc.subscribe("alice", "general");
       svc.subscribe("bob", "general");
 
       const msg = svc.send("bob", "general", "hello");
 
-      // Before reading, cursor is at subscribe position (maxId at time of subscribe)
-      // Alice subscribed before any messages, so her cursor should be 0
-      // But subscribe sets cursor to maxId at subscribe time — messages were sent after
-
-      // After reading, cursor should advance
+      // A pull read advances the READ cursor, NOT the push delivery cursor.
       svc.read("alice", "general");
-      const pos = svc.getCursorPosition("alice", "general");
-      expect(pos).toBe(msg.id);
+      expect(svc.getReadCursor("alice", "general")).toBe(msg.id);
+      expect(svc.getCursorPosition("alice", "general")).toBe(0);
+
+      // advanceCursor (the push ACK) is what getCursorPosition reflects — independently.
+      svc.advanceCursor("alice", "general", msg.id);
+      expect(svc.getCursorPosition("alice", "general")).toBe(msg.id);
     });
 
-    it("returns 0 for non-existent cursor", () => {
+    it("returns 0 for non-existent cursor (both push and pull)", () => {
       const { svc } = setup();
-      const pos = svc.getCursorPosition("nobody", "nonexistent");
-      expect(pos).toBe(0);
+      expect(svc.getCursorPosition("nobody", "nonexistent")).toBe(0);
+      expect(svc.getReadCursor("nobody", "nonexistent")).toBe(0);
     });
   });
 
