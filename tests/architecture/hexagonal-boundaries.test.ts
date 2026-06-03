@@ -6,6 +6,7 @@
 // then actively enforce boundaries as code is extracted.
 
 import { describe, it, expect } from "bun:test";
+import { readdirSync } from "node:fs";
 import { projectFiles } from "archunit";
 import type { FileInfo } from "archunit";
 
@@ -148,6 +149,18 @@ describe("hexagonal architecture boundaries", () => {
 
       const violations = await rule.check(CHECK_OPTS);
       expect(violations).toEqual([]);
+    });
+
+    // Non-vacuity guard (subsumes the deleted tests/contracts/contracts-imports.test.ts):
+    // the archunit contracts rules above run with allowEmptyTests:true and would pass on an
+    // empty folder. src/contracts/ exists today, so assert it is populated — any future file
+    // under it is then held to the purity rules above rather than silently uncovered.
+    it("src/contracts/ is non-empty so the purity rules above are not vacuous", () => {
+      const dir = new URL("../../src/contracts/", import.meta.url).pathname;
+      const tsFiles = readdirSync(dir, { recursive: true }).filter(
+        (f) => typeof f === "string" && f.endsWith(".ts")
+      );
+      expect(tsFiles.length).toBeGreaterThan(0);
     });
   });
 
