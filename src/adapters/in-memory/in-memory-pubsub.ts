@@ -43,6 +43,14 @@ interface Subscription {
   cursor: number;
   /** Re-entrancy guard so a cycle triggered mid-cycle doesn't double-deliver. */
   draining: boolean;
+  /**
+   * Set when a drain was suppressed by the re-entrancy guard while an outer drain was
+   * suspended at `await onMessage`. The outer drain re-checks the log once more in its
+   * `finally` so the suppressed cycle (a publish that would otherwise be stranded) is not
+   * lost — including across a NACK-break (spec §2.7: at-least-once redelivery on the next
+   * cycle).
+   */
+  pending: boolean;
 }
 
 /** Per-topic state: ordered log + monotonic id counter. */
@@ -97,28 +105,73 @@ function setHeldCursor(bp: Backplane, peer: PeerId, topic: string, value: number
 }
 
 /**
+ * Mint an opaque cursor for `(topic, entryId)`. Cursors are per-topic-scoped (spec §2.5:
+ * a Message.cursor is the id of THAT message on THAT topic). The topic is length-prefixed
+ * so parsing is unambiguous for any topic string. Consumers NEVER parse this — it is
+ * round-tripped back to `replayFrom`, which uses `parseCursor` to bind it to its topic.
+ */
+function mintCursor(topic: string, entryId: number): Cursor {
+  return asCursor(`${topic.length}:${topic}:${entryId}`);
+}
+
+/**
+ * Parse a cursor minted by `mintCursor`, returning the entry id ONLY if the cursor is
+ * well-formed AND belongs to `topic`. Returns null otherwise — a foreign-topic cursor or a
+ * non-integer/foreign-shaped cursor is rejected by `replayFrom`, never silently mapped by
+ * numeric position (the contract says cursors are opaque + per-topic-scoped, spec §2.5/§2.6).
+ */
+function parseCursor(topic: string, cursor: Cursor): number | null {
+  const raw = cursor as string;
+  const sep = raw.indexOf(":");
+  if (sep < 0) return null;
+  const len = Number(raw.slice(0, sep));
+  if (!Number.isInteger(len) || len < 0) return null;
+  const cursorTopic = raw.slice(sep + 1, sep + 1 + len);
+  if (cursorTopic !== topic) return null; // foreign-topic cursor → rejected
+  if (raw[sep + 1 + len] !== ":") return null;
+  const idStr = raw.slice(sep + 1 + len + 1);
+  const id = Number(idStr);
+  if (idStr === "" || !Number.isInteger(id)) return null;
+  return id;
+}
+
+/**
  * Drain a subscription forward from its cursor: deliver the next message, await the
  * handler, ACK→advance cursor, NACK→hold (HOL). Redelivery is NEXT-cycle only —
  * a NACK stops the drain; it does not synchronously retry (spec §2.7).
  */
 async function drain(bp: Backplane, t: TopicState, peer: PeerId, sub: Subscription): Promise<void> {
-  if (sub.draining) return;
+  if (sub.draining) {
+    // A drain is already in flight (the outer drain is suspended at `await onMessage`).
+    // Mark a re-check so the outer drain re-runs once more in its `finally` — otherwise an
+    // overlapping publish is silently swallowed and, on a NACK-break, the next message is
+    // stranded and redelivery stalls (at-least-once violation, spec §2.7).
+    sub.pending = true;
+    return;
+  }
   sub.draining = true;
   try {
-    // Loop forward over the log; stop on the first NACK (HOL block).
-    while (true) {
-      const next = t.log.find((e) => e.id > sub.cursor);
-      if (!next) break;
-      try {
-        await sub.onMessage(next.message);
-      } catch {
-        // NACK → cursor holds; redelivery happens on the NEXT cycle. Stop draining.
-        break;
+    // Re-runs while a suppressed overlapping cycle was recorded. A persistent NACK does not
+    // advance the cursor and does not set `pending` (it breaks synchronously, not mid-await),
+    // so this re-check delivers the stranded message / re-attempts the NACKed one exactly
+    // once without tight-looping a poison pill.
+    do {
+      sub.pending = false;
+      // Loop forward over the log; stop on the first NACK (HOL block).
+      while (true) {
+        const next = t.log.find((e) => e.id > sub.cursor);
+        if (!next) break;
+        try {
+          await sub.onMessage(next.message);
+        } catch {
+          // NACK → cursor holds; redelivery happens on the NEXT cycle. Stop draining.
+          break;
+        }
+        // ACK → advance past this message.
+        sub.cursor = next.id;
+        setHeldCursor(bp, peer, next.message.topic, sub.cursor);
       }
-      // ACK → advance past this message.
-      sub.cursor = next.id;
-      setHeldCursor(bp, peer, next.message.topic, sub.cursor);
-    }
+    } while (sub.pending);
   } finally {
     sub.draining = false;
   }
@@ -146,7 +199,7 @@ export async function connectInMemoryPeer(bp: Backplane, name: string): Promise<
         topic,
         from: id, // publisher identity (OD-1)
         data,
-        cursor: asCursor(String(entryId)), // cursor on a Message = id of THAT message (γ-1)
+        cursor: mintCursor(topic, entryId), // cursor on a Message = id of THAT message (γ-1)
       };
       t.log.push({ id: entryId, message });
       // Deliver to all subscribers in FIFO order (each drains its own cursor).
@@ -167,6 +220,7 @@ export async function connectInMemoryPeer(bp: Backplane, name: string): Promise<
           onMessage,
           cursor: heldCursor(bp, id, topic),
           draining: false,
+          pending: false,
         };
         t.subscriptions.set(id, sub);
         await drain(bp, t, id, sub);
@@ -188,9 +242,16 @@ export async function connectInMemoryPeer(bp: Backplane, name: string): Promise<
       // any subscription cursor; does NOT self-exclude (spec §2.6). Non-creating lookup:
       // a "stateless read" must not mutate state, so a never-seen topic yields nothing
       // (no implicit auto-vivify — unlike publish/subscribe).
+      //
+      // Cursors are opaque + per-topic-scoped (spec §2.5): a cursor not minted for THIS
+      // topic (foreign-topic) or not well-formed (non-integer / foreign-shaped) is REJECTED
+      // rather than silently mapped by numeric position into an unrelated slice.
+      const after = parseCursor(topic, cursor);
+      if (after === null) {
+        throw new Error("cursor is not from this topic on this backend");
+      }
       const t = bp.topics.get(topic);
       if (!t) return;
-      const after = Number(cursor);
       for (const e of t.log) {
         if (e.id > after) {
           await onMessage(e.message);

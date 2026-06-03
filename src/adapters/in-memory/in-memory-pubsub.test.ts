@@ -1,4 +1,5 @@
 import { describe, it, expect } from "bun:test";
+import { asCursor } from "../../contracts";
 import type { Message, Cursor } from "../../contracts";
 import { createBackplane, connectInMemoryPeer } from "./in-memory-pubsub";
 
@@ -180,6 +181,41 @@ describe("InMemoryPubSub — at-least-once NACK / HOL", () => {
     // this cycle redelivers N (now acks), then N+1, then N+2 — all in order
     expect(attempts).toEqual(["N", "N", "N", "N+1", "N+2"]);
   });
+
+  it("async NACK during an overlapping publish does not strand the next message", async () => {
+    const bp = createBackplane();
+    const a = await connectInMemoryPeer(bp, "a");
+    const seen: string[] = [];
+    let release!: () => void;
+    const gate = new Promise<void>((r) => {
+      release = r;
+    });
+    let failN = true;
+    await a.pubsub.subscribe("t", async (m) => {
+      seen.push(m.data);
+      if (m.data === "N") {
+        await gate; // suspend so an overlapping publish lands mid-delivery
+        if (failN) {
+          failN = false;
+          throw new Error("NACK N");
+        }
+      }
+    });
+    // N suspends at the gate inside its handler (drain is in flight).
+    const publishN = a.pubsub.publish("t", "N");
+    await flush();
+    // Overlapping publish of M while N is suspended — hits the re-entrancy guard.
+    const publishM = a.pubsub.publish("t", "M");
+    await flush();
+    release(); // N resumes → NACK.
+    await publishN;
+    await publishM;
+    await flush();
+    // N redelivered (then ACKs) and M delivered — neither stranded. FIFO: M after N.
+    expect(seen.filter((x) => x === "N").length).toBe(2);
+    expect(seen).toContain("M");
+    expect(seen.indexOf("M")).toBe(seen.lastIndexOf("N") + 1);
+  });
 });
 
 describe("InMemoryPubSub — unsubscribe stop-only", () => {
@@ -275,6 +311,38 @@ describe("InMemoryPubSub — replayFrom exclusivity", () => {
     await a.pubsub.publish("t", "3");
     await flush();
     expect(live.map((m) => m.data)).toEqual(["1", "2", "3"]);
+  });
+
+  it("rejects a non-integer / foreign-shaped cursor instead of silently returning empty", async () => {
+    const bp = createBackplane();
+    const a = await connectInMemoryPeer(bp, "a");
+    await a.pubsub.subscribe("t", () => {});
+    await a.pubsub.publish("t", "1");
+    await flush();
+    // A future-shaped (ULID-like) cursor is not from this backend → rejected, not empty.
+    await expect(
+      a.pubsub.replayFrom("t", asCursor("msg_01HZX"), () => {})
+    ).rejects.toThrow();
+    // An empty-string cursor is rejected too (no longer coerced to 0 → full-log replay).
+    await expect(
+      a.pubsub.replayFrom("t", asCursor(""), () => {})
+    ).rejects.toThrow();
+  });
+
+  it("rejects a cursor minted for a different topic (cursors are per-topic-scoped)", async () => {
+    const bp = createBackplane();
+    const a = await connectInMemoryPeer(bp, "a");
+    const x: Message[] = [];
+    await a.pubsub.subscribe("x", (m) => {
+      x.push(m);
+    });
+    await a.pubsub.publish("x", "x1");
+    await a.pubsub.publish("y", "y1");
+    await flush();
+    // X's cursor handed to topic Y must reject, not map by numeric position into Y's log.
+    await expect(
+      a.pubsub.replayFrom("y", x[0]!.cursor, () => {})
+    ).rejects.toThrow();
   });
 });
 

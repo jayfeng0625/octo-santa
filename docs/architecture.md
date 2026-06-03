@@ -83,6 +83,13 @@ src/
     ports.ts                     ← All port interfaces (repositories, notification, brain store)
     utils.ts                     ← Pure domain utilities (validation, mention parsing, liveness)
 
+  contracts/                     ← Thin-core product seam (PubSub + PeerDiscovery).
+    index.ts                     ← PURE TYPES. Zero runtime deps, zero infra imports, no core.
+
+  adapters/                      ← Seam adapters (implement src/contracts). No cross-adapter deps.
+    in-memory/
+      in-memory-pubsub.ts        ← InMemoryPubSub reference adapter (ephemeral, in-process)
+
   storage/                       ← Storage adapters
     sqlite/                      ← SQLite implementation of all repository ports
       agent-repo.ts

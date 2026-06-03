@@ -31,9 +31,10 @@ export interface Message {
    */
   readonly data: string;
   /**
-   * The id of THIS message (spec §2.5, γ-1). Opaque. A consumer gets it from a
-   * delivered Message and may hand it back to `replayFrom`. It NEVER constructs
-   * or parses one.
+   * The id of THIS message (spec §2.5, γ-1). Opaque AND per-topic-scoped. A consumer
+   * gets it from a delivered Message and may hand it back to `replayFrom` — for the SAME
+   * topic the Message came from. It NEVER constructs or parses one, and a cursor from one
+   * topic is NOT a valid round-trip into another topic's `replayFrom`.
    */
   readonly cursor: Cursor;
 }
@@ -112,7 +113,9 @@ export interface PubSub {
    * Stateless one-shot read, STRICTLY AFTER `cursor` (spec §2.6, γ-2, exclusive).
    * Forward read; does NOT advance any subscription cursor; does NOT self-exclude.
    * Distinct from `subscribe`: replay never mutates subscription state. `cursor` is an
-   * opaque id obtained from a delivered Message — never constructed by the consumer.
+   * opaque, per-topic-scoped id obtained from a delivered Message on THIS topic — never
+   * constructed by the consumer. A cursor not minted for `topic` (foreign-topic) or not
+   * well-formed for this backend is REJECTED (throws), never silently mapped by position.
    */
   replayFrom(topic: string, cursor: Cursor, onMessage: OnMessage): Promise<void>;
 }

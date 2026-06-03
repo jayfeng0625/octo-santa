@@ -10,6 +10,23 @@
 // brand makes that a COMPILE error. Every id is round-tripped from a delivered Message
 // (`msg.cursor`, `msg.from`) or from `discovery.list()`. If you find yourself casting, you
 // are doing it wrong.
+//
+// SCOPE — DELIVERY TIMING IS PUSH-IMPL-SPECIFIC (Phase A): the wait primitive below
+// (`flush()`) settles only microtasks, and the at-least-once section drives redelivery by
+// issuing a SUBSEQUENT publish. Both assume SYNCHRONOUS, in-process push delivery — which
+// the InMemory reference impl provides (it drains every subscriber inside `publish`). A
+// POLL-based backend (the Phase B SQLite adapter, a future Cloudflare adapter) delivers on
+// a poller TICK (a real timer), and a subsequent `publish` in one logical peer does NOT
+// synchronously drive a different-process subscriber's next tick (CLAUDE.md: "cross-process
+// delivery requires polling"; spec §2.7: redelivery is "next publish (push impls) OR next
+// poll tick (poll impls)"). There is intentionally NO delivery-timing descriptor axis and
+// NO time-tolerant settle/tick seam in Phase A — the descriptor is locked to 4 axes (spec
+// §1 D: "no speculative third") and the harness shape is ratified (R6). So the "this file
+// does not change at Phase B" promise holds ONLY for push impls: when the first poll-based
+// adapter lands, this `flush()` becomes a time-tolerant settle helper (e.g. `until(pred,
+// {timeoutMs})`) and/or the harness grows an `advance()`/`tick()` seam, and the
+// at-least-once redelivery trigger is re-parameterized to a tick for poll impls. Do NOT
+// rely on the byte-for-byte-unchanged claim for poll backends.
 
 import { describe, it, expect, afterEach } from "bun:test";
 import type { Message } from "../../src/contracts";
@@ -17,7 +34,8 @@ import type { ConformanceHarness, HarnessFactory, Peer } from "./harness";
 
 // Delivery is driven by `publish`/`subscribe` completing. We add a tiny microtask flush so
 // impls that defer delivery to microtasks settle before assertions. No timers, no sleeps —
-// deterministic.
+// deterministic. PUSH-IMPL-SPECIFIC: see the SCOPE note above — poll backends will replace
+// this with a time-tolerant settle primitive in Phase B.
 async function flush(): Promise<void> {
   await Promise.resolve();
   await Promise.resolve();
@@ -154,6 +172,41 @@ export async function runConformanceSuite(label: string, factory: HarnessFactory
         expect(live.map((m) => m.data)).toEqual(["1", "2", "3", "4"]);
       });
 
+      it("replayFrom rejects a foreign-topic cursor and returns empty for an end-of-log cursor (cursors are per-topic-scoped, opaque)", async () => {
+        const [a] = await newPeers("alice");
+        const topicX = freshTopic("xcursor-x");
+        const topicY = freshTopic("xcursor-y");
+        const xMsgs: Message[] = [];
+        const yMsgs: Message[] = [];
+        await a!.pubsub.subscribe(topicX, (m) => {
+          xMsgs.push(m);
+        });
+        await a!.pubsub.subscribe(topicY, (m) => {
+          yMsgs.push(m);
+        });
+        await a!.pubsub.publish(topicX, "x1");
+        await a!.pubsub.publish(topicX, "x2");
+        await a!.pubsub.publish(topicY, "y1");
+        await flush();
+
+        // FOREIGN-TOPIC: a cursor round-tripped from topic X handed to replayFrom(topicY)
+        // is rejected — never silently mapped by numeric position into Y's slice.
+        const cursorFromX = xMsgs[0]!.cursor; // never minted — round-tripped from a delivery
+        await expect(
+          a!.pubsub.replayFrom(topicY, cursorFromX, () => {})
+        ).rejects.toThrow();
+
+        // END-OF-LOG (in-range, same-topic): a cursor for the last message on Y yields an
+        // empty read — nothing is strictly after it.
+        const lastCursorY = yMsgs[yMsgs.length - 1]!.cursor;
+        const replayed: string[] = [];
+        await a!.pubsub.replayFrom(topicY, lastCursorY, (m) => {
+          replayed.push(m.data);
+        });
+        await flush();
+        expect(replayed).toEqual([]);
+      });
+
       it("peer list: list() returns the connected peers (>= 2 via connect)", async () => {
         const [a, b] = await newPeers("alice", "bob");
         const peers = await a!.discovery.list();
@@ -272,6 +325,9 @@ export async function runConformanceSuite(label: string, factory: HarnessFactory
     // ===================================================================================
     // DESCRIPTOR-GATED — delivery "at-least-once" (ack/nack, next-cycle, HOL, poison-pill).
     // Redelivery is triggered DETERMINISTICALLY by a subsequent publish — NO sleeps/timers.
+    // PUSH-IMPL-SPECIFIC trigger (see SCOPE note at top): for a poll backend the next cycle
+    // is a poll TICK, not a subsequent publish, so this trigger is re-parameterized to a
+    // harness tick in Phase B — the assertions (redelivery, HOL, duplicate-tolerance) stay.
     // ===================================================================================
     describe.skipIf(caps.delivery !== "at-least-once")(
       'delivery "at-least-once" — NACK redelivery, HOL, duplicate tolerance',
@@ -358,6 +414,50 @@ export async function runConformanceSuite(label: string, factory: HarnessFactory
             await flush();
             // "d" appears TWICE — at-least-once delivers duplicates; the consumer must dedupe.
             expect(seen.filter((x) => x === "d").length).toBe(2);
+          } finally {
+            await harness.cleanup();
+          }
+        });
+
+        it("async NACK with an overlapping publish: the next message is not stranded and the NACKed one is redelivered", async () => {
+          const harness = await factory();
+          try {
+            const a = await harness.connect("alice");
+            const topic = freshTopic("alo-overlap");
+            const seen: string[] = [];
+            let release!: () => void;
+            const gate = new Promise<void>((r) => {
+              release = r;
+            });
+            let failN = true;
+            await a.pubsub.subscribe(topic, async (m) => {
+              seen.push(m.data);
+              if (m.data === "N") {
+                // Suspend mid-delivery so an overlapping publish lands while we await,
+                // then NACK once (spec §2.9 blesses awaiting onMessage as flow control).
+                await gate;
+                if (failN) {
+                  failN = false;
+                  throw new Error("NACK N");
+                }
+              }
+            });
+            // Publish N — drain suspends at the gate inside onMessage(N).
+            const publishN = a.pubsub.publish(topic, "N");
+            await flush();
+            // Overlapping publish of M while N's handler is suspended. Must not be swallowed.
+            const publishM = a.pubsub.publish(topic, "M");
+            await flush();
+            release(); // N's handler resumes and NACKs.
+            await publishN;
+            await publishM;
+            await flush();
+            // At-least-once: N must be redelivered (and ACK this time) and M must be
+            // delivered — neither stranded. N appears twice (NACK then ACK), M once.
+            expect(seen.filter((x) => x === "N").length).toBe(2);
+            expect(seen).toContain("M");
+            // FIFO: M is delivered only after N finally ACKs (HOL).
+            expect(seen.indexOf("M")).toBe(seen.lastIndexOf("N") + 1);
           } finally {
             await harness.cleanup();
           }

@@ -79,9 +79,114 @@ describe("hexagonal architecture boundaries", () => {
     });
   });
 
+  // --- Contracts seam must stay a PURE seam (zero infra, not a second port home) ---
+
+  describe("contracts seam must stay pure", () => {
+    it("contracts must not depend on storage layer", async () => {
+      const rule = projectFiles()
+        .inFolder("src/contracts/**")
+        .shouldNot()
+        .dependOnFiles()
+        .inFolder("src/storage/**");
+
+      const violations = await rule.check(CHECK_OPTS);
+      expect(violations).toEqual([]);
+    });
+
+    it("contracts must not depend on transports layer", async () => {
+      const rule = projectFiles()
+        .inFolder("src/contracts/**")
+        .shouldNot()
+        .dependOnFiles()
+        .inFolder("src/transports/**");
+
+      const violations = await rule.check(CHECK_OPTS);
+      expect(violations).toEqual([]);
+    });
+
+    it("contracts must not depend on notifications layer", async () => {
+      const rule = projectFiles()
+        .inFolder("src/contracts/**")
+        .shouldNot()
+        .dependOnFiles()
+        .inFolder("src/notifications/**");
+
+      const violations = await rule.check(CHECK_OPTS);
+      expect(violations).toEqual([]);
+    });
+
+    it("contracts must not depend on adapters layer", async () => {
+      const rule = projectFiles()
+        .inFolder("src/contracts/**")
+        .shouldNot()
+        .dependOnFiles()
+        .inFolder("src/adapters/**");
+
+      const violations = await rule.check(CHECK_OPTS);
+      expect(violations).toEqual([]);
+    });
+
+    it("contracts must not depend on core (a pure seam is not a second port home)", async () => {
+      const rule = projectFiles()
+        .inFolder("src/contracts/**")
+        .shouldNot()
+        .dependOnFiles()
+        .inFolder("src/core/**");
+
+      const violations = await rule.check(CHECK_OPTS);
+      expect(violations).toEqual([]);
+    });
+
+    it("contracts must not import bun:sqlite or @modelcontextprotocol (folder-wide)", async () => {
+      const rule = projectFiles()
+        .inFolder("src/contracts/**")
+        .should()
+        .adhereTo(
+          hasNoForbiddenImports,
+          "Contracts files must not import bun:sqlite or @modelcontextprotocol"
+        );
+
+      const violations = await rule.check(CHECK_OPTS);
+      expect(violations).toEqual([]);
+    });
+  });
+
   // --- No cross-adapter dependencies ---
 
   describe("no cross-adapter dependencies", () => {
+    it("adapters must not depend on transports", async () => {
+      const rule = projectFiles()
+        .inFolder("src/adapters/**")
+        .shouldNot()
+        .dependOnFiles()
+        .inFolder("src/transports/**");
+
+      const violations = await rule.check(CHECK_OPTS);
+      expect(violations).toEqual([]);
+    });
+
+    it("adapters must not depend on notifications", async () => {
+      const rule = projectFiles()
+        .inFolder("src/adapters/**")
+        .shouldNot()
+        .dependOnFiles()
+        .inFolder("src/notifications/**");
+
+      const violations = await rule.check(CHECK_OPTS);
+      expect(violations).toEqual([]);
+    });
+
+    it("adapters must not depend on storage", async () => {
+      const rule = projectFiles()
+        .inFolder("src/adapters/**")
+        .shouldNot()
+        .dependOnFiles()
+        .inFolder("src/storage/**");
+
+      const violations = await rule.check(CHECK_OPTS);
+      expect(violations).toEqual([]);
+    });
+
     it("storage must not depend on transports", async () => {
       const rule = projectFiles()
         .inFolder("src/storage/**")

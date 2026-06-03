@@ -75,9 +75,9 @@ These are CONTRACT TEXT. Both InMemory and SQLite MUST honor them identically, o
    - `unsubscribe` is stop-only: cursor + membership persist; re-`subscribe` RESUMES from the held cursor (does not replay from 0).
    - Re-`subscribe` to an already-active topic replaces the handler; cursor unchanged.
 
-5. **`cursor` on a Message = the id of THAT message (γ-1).** Opaque. A consumer gets it from a delivered Message and may hand it to `replayFrom`. It NEVER constructs or parses one.
+5. **`cursor` on a Message = the id of THAT message (γ-1).** Opaque AND per-topic-scoped. A consumer gets it from a delivered Message and may hand it to `replayFrom`. It NEVER constructs or parses one. A cursor is bound to the topic of the Message it came from: handing topic X's cursor to `replayFrom(topicY, …)` is NOT a valid round-trip. Every impl MUST bind cursors to their topic (the InMemory reference encodes the topic into the cursor; the SQLite adapter MUST be held to the same rule in Phase B).
 
-6. **`replayFrom(topic, cursor)` = stateless one-shot read, STRICTLY AFTER cursor (γ-2, exclusive).** Forward read; does NOT advance any subscription cursor; does NOT self-exclude. Maps to the future Gap #3 `replayMessages`. Distinct from `subscribe`: replay never mutates subscription state.
+6. **`replayFrom(topic, cursor)` = stateless one-shot read, STRICTLY AFTER cursor (γ-2, exclusive).** Forward read; does NOT advance any subscription cursor; does NOT self-exclude. Maps to the future Gap #3 `replayMessages`. Distinct from `subscribe`: replay never mutates subscription state. A cursor that was not minted for `topic` (foreign-topic), or that is not well-formed for this backend (non-integer / foreign-shaped), is REJECTED (throws) — it is NEVER silently mapped by numeric position into an unrelated slice. An in-range, same-topic cursor whose id is at or beyond the log end yields an empty read (nothing strictly after it).
 
 7. **At-least-once delivery (gated on `delivery`).** Consumers MUST tolerate duplicate delivery; idempotency is the CONSUMER's job. Mechanics:
    - **Ack model:** `onMessage` resolves = ACK → cursor advances past the message. `onMessage` throws/rejects = NACK → cursor holds.
@@ -111,6 +111,8 @@ Key split (architect ruling, msg 2561): at-least-once is ORTHOGONAL to durabilit
 ## 4. Conformance suite (β) — Phase A definition-of-done
 
 The suite is the contractual proof a backend "is octo-santa." It is parameterized over a harness factory and validates the SAME behaviors against every impl. SQLite's factory slots in UNCHANGED at Phase B.
+
+**Scope of "UNCHANGED" — delivery timing is push-impl-specific (Phase A).** The Phase A suite's wait primitive (`flush()` = two microtask awaits) and its at-least-once redelivery trigger (a *subsequent publish* drives the next cycle) assume SYNCHRONOUS in-process push delivery — true of the InMemory reference impl. The "this file does not change at Phase B" claim therefore holds for PUSH impls. A POLL-based backend (SQLite, future Cloudflare) delivers on a poller TICK (a real timer), and a subsequent `publish` in one logical peer does not synchronously drive a different-process subscriber's next tick (§2.7: redelivery = "next publish (push impls) or next poll tick (poll impls)"; CLAUDE.md: cross-process delivery requires polling). When the first poll-based adapter lands, the suite's `flush()` is replaced by a time-tolerant settle primitive (e.g. `until(pred, {timeoutMs})`) and/or the harness gains an `advance()`/`tick()` seam, and the at-least-once redelivery trigger is re-parameterized to a tick — the asserted BEHAVIORS (cross-peer delivery, FIFO, catch-up, redelivery, HOL, duplicate-tolerance) are unchanged. There is intentionally no delivery-timing descriptor axis and no tick seam in Phase A (descriptor locked to 4 axes per §1 D "no speculative third"; harness shape ratified by R6). This is a named Phase B re-parameterization, not a silent gap.
 
 ```ts
 // factory() creates a FRESH, hermetic backplane INSTANCE (NOT a process-global singleton —

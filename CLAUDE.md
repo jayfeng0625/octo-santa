@@ -11,6 +11,8 @@ Hexagonal architecture (ports and adapters). See `docs/architecture.md` for full
 ```
 src/
   core/           ← Domain logic + port interfaces. No infrastructure imports.
+  contracts/      ← Thin-core product seam (PubSub + PeerDiscovery). Pure types, zero infra, no core.
+  adapters/       ← Seam adapters implementing src/contracts (e.g. in-memory). No cross-adapter deps.
   storage/        ← Storage adapters (SQLite, filesystem brain store)
   transports/     ← Transport adapters (MCP stdio, REPL)
   notifications/  ← Notification adapters (dispatch + cross-process poller)
@@ -20,8 +22,9 @@ src/
 **Key rules:**
 - `src/core/` must NEVER import from `src/storage/`, `src/transports/`, or `src/notifications/`.
 - `src/core/` must NEVER import `bun:sqlite` or `@modelcontextprotocol/*`.
-- Adapters depend on core (port interfaces). Core depends on nothing external.
-- Cross-adapter imports are forbidden (storage doesn't know about transports, etc.).
+- `src/contracts/` is a PURE seam: zero infra imports AND must NOT depend on `src/core/` (not a second port home).
+- Adapters depend on core (port interfaces) and/or `src/contracts/`. Core depends on nothing external.
+- Cross-adapter imports are forbidden (storage doesn't know about transports, adapters don't know about each other, etc.).
 - Ports in `src/core/ports.ts` must serve core's needs, not adapter capabilities.
 
 ## Deployment Model
