@@ -607,20 +607,68 @@ describe("MessagingService", () => {
       const m2 = svc.send("bob", "general", "b1");
       const m3 = svc.send("alice", "general", "a2");
 
-      const out = svc.replayMessages("general", m1.id, 50);
+      const out = svc.replayMessages("alice", "general", m1.id, 50);
       expect(out.map((m) => m.id)).toEqual([m2.id, m3.id]);
       // alice's own m3 is present — replay does not self-exclude.
       expect(out.some((m) => m.agent_id === "alice")).toBe(true);
 
       // No cursor mutation.
       const before = svc.getCursorPosition("alice", "general");
-      svc.replayMessages("general", 0, 50);
+      svc.replayMessages("alice", "general", 0, 50);
       expect(svc.getCursorPosition("alice", "general")).toBe(before);
     });
 
     it("returns empty for an unknown channel", () => {
       const { svc } = setup();
-      expect(svc.replayMessages("nonexistent", 0, 50)).toEqual([]);
+      svc.register("alice");
+      expect(svc.replayMessages("alice", "nonexistent", 0, 50)).toEqual([]);
+    });
+  });
+
+  // R2 — F3: replayMessages must gate like read() (single source of truth for "can this agent
+  // read this channel"). A forgeable opaque cursor + an unwired seam meant a registered NON-member
+  // could replay a private DM's full history once the SQLite adapter is the delivery surface.
+  describe("replayMessages authz (R2/F3 — mirror read()'s gate)", () => {
+    it("rejects a registered NON-member replaying a channel", () => {
+      const { svc } = setup();
+      svc.register("alice");
+      svc.createChannel("alice", "general");
+      svc.subscribe("alice", "general");
+      svc.send("alice", "general", "a1");
+      svc.register("charlie"); // registered, never joined "general"
+      expect(() => svc.replayMessages("charlie", "general", 0, 50)).toThrow(
+        'Not a member of channel "general"'
+      );
+    });
+
+    it("rejects a registered NON-participant replaying a DM", () => {
+      const { svc } = setup();
+      svc.register("alice");
+      svc.register("bob");
+      svc.register("eve");
+      svc.directMessage("alice", "bob", "secret");
+      expect(() => svc.replayMessages("eve", "alice,bob", 0, 50)).toThrow(
+        'DM channel "alice,bob" is private to alice and bob'
+      );
+    });
+
+    it("allows a member / DM participant to replay the expected messages", () => {
+      const { svc } = setup();
+      svc.register("alice");
+      svc.register("bob");
+      const m = svc.directMessage("alice", "bob", "hello bob");
+      const out = svc.replayMessages("bob", "alice,bob", 0, 50);
+      expect(out.map((x) => x.content)).toEqual(["hello bob"]);
+      expect(out[0]!.id).toBe(m.id);
+    });
+
+    it("requires registration before replay", () => {
+      const { svc } = setup();
+      svc.register("alice");
+      svc.createChannel("alice", "general");
+      expect(() => svc.replayMessages("ghost", "general", 0, 50)).toThrow(
+        "must call messaging_register"
+      );
     });
   });
 

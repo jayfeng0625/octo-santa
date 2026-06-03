@@ -150,7 +150,7 @@ async function drain(bp: SqliteBackplane, sub: Subscription): Promise<void> {
     do {
       sub.pending = false;
       while (true) {
-        const [next] = bp.svc.replayMessages(sub.topic, sub.cursor, 1); // next, strictly-after
+        const [next] = bp.svc.replayMessages(sub.agentId, sub.topic, sub.cursor, 1); // next, strictly-after
         if (!next) break;
         try {
           await sub.onMessage(toMessage(sub.topic, next));
@@ -259,7 +259,7 @@ export function connectSqlitePeer(bp: SqliteBackplane, name: string): Peer {
       }
       let from = after;
       while (true) {
-        const batch = bp.svc.replayMessages(topic, from, READ_BATCH);
+        const batch = bp.svc.replayMessages(agentId, topic, from, READ_BATCH);
         if (batch.length === 0) break;
         for (const coreMsg of batch) {
           await onMessage(toMessage(topic, coreMsg));

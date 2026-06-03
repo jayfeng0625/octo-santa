@@ -523,10 +523,30 @@ export class MessagingService {
    * I3 — Gap#3: stateless forward replay backing the SQLite PubSub adapter's replayFrom.
    * Returns messages strictly after sinceId (FIFO), INCLUDING the caller's own; advances
    * no cursor. NOT a readSince call — readSince self-excludes the named agent.
+   *
+   * R2 — F3: gated like read() — the single source of truth for "can this agent read this
+   * channel": requireRegistered + assertDmAccess + membership. Without it a registered
+   * non-member could replay a private DM's full history (a forgeable opaque cursor does not
+   * bypass this — the gate is per-channel on the channelName arg). An unknown channel stays a
+   * non-creating empty read (the forward-read contract replayFrom depends on), checked before
+   * membership since you cannot be a member of a channel that does not exist.
    */
-  replayMessages(channelName: string, sinceId: number, limit: number): Message[] {
+  replayMessages(
+    agentId: string,
+    channelName: string,
+    sinceId: number,
+    limit: number
+  ): Message[] {
+    this.requireRegistered(agentId);
+    assertDmAccess(channelName, agentId);
     const channel = this.channels.findByName(channelName);
     if (!channel) return [];
+    const members = this.channels.getMembers(channel.id);
+    if (!members.find((m) => m.id === agentId)) {
+      throw new Error(
+        `Not a member of channel "${channelName}". Join via messaging_subscribe, messaging_send_message, or messaging_direct_message.`
+      );
+    }
     return this.messages.replayMessages(channel.id, sinceId, limit);
   }
 
