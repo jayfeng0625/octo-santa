@@ -163,6 +163,18 @@ const messagingMigrations: Migration[] = [
       UPDATE channels SET max_hops = ${DEFAULT_MAX_HOPS} WHERE max_hops = 50;
     `,
   },
+  // NOTE: the channels.max_hops COLUMN default is still 50 (set by 005). 006 only
+  // backfilled existing rows — it does not change the column default, and we do not
+  // change it here. Doing so needs a full table rebuild (SQLite has no ALTER COLUMN
+  // SET DEFAULT), and `channels` is an FK parent of `messages`/`cursors`; a rebuild
+  // requires `PRAGMA foreign_keys=OFF`, which is a no-op inside the BEGIN EXCLUSIVE
+  // wrapper runMigrations uses (and `defer_foreign_keys` can't clear the deferred-
+  // violation counter the parent DROP creates) — so on a populated DB the rebuild's
+  // COMMIT throws and bricks startup. The column default is harmless: the only insert
+  // path, SqliteChannelRepo.create(), always supplies `maxHops ?? DEFAULT_MAX_HOPS`,
+  // so new channels get 200 (regression-locked by tests/hex/storage/channel-repo.test.ts
+  // "create with default maxHops"). The stale 50 only bites a code path that omits the
+  // column entirely — none exists since 0.7.3 (commit 36ba3e5).
 ];
 
 const brainMigrations: Migration[] = [
