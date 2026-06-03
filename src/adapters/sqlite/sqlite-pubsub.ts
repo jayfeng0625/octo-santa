@@ -149,21 +149,29 @@ async function drain(bp: SqliteBackplane, sub: Subscription): Promise<void> {
   try {
     do {
       sub.pending = false;
-      while (true) {
-        const [next] = bp.svc.replayMessages(sub.agentId, sub.topic, sub.cursor, 1); // next, strictly-after
-        if (!next) break;
-        try {
-          await sub.onMessage(toMessage(sub.topic, next));
-        } catch (err) {
-          // NACK → cursor HOLDS (head-of-line); redelivered on the next pump tick. Stop draining.
-          log(`sqlite-pubsub NACK ${sub.agentId}@${sub.topic} msg ${next.id}: ${err}`);
-          break;
+      // Read the backlog forward in batches (R3 F5): a cursor-0 catch-up on a large durable
+      // backlog must NOT be O(N) single-row queries monopolizing the one-per-process connection.
+      // Iterate the batch in memory with per-message ACK/HOL; refetch only when it is exhausted.
+      let batch = bp.svc.replayMessages(sub.agentId, sub.topic, sub.cursor, READ_BATCH);
+      batchLoop: while (batch.length > 0) {
+        for (const next of batch) {
+          try {
+            await sub.onMessage(toMessage(sub.topic, next));
+          } catch (err) {
+            // NACK → cursor HOLDS (head-of-line: N blocks N+1, the rest of the batch is NOT
+            // consumed); redelivered from this message on the next pump tick. Stop draining.
+            log(`sqlite-pubsub NACK ${sub.agentId}@${sub.topic} msg ${next.id}: ${err}`);
+            break batchLoop;
+          }
+          // Persist-then-advance per message: write the durable cursor FIRST, then move the
+          // in-memory cursor. If the persist throws it is contained below with BOTH cursors still
+          // at the prior id (consistent; redelivers next tick) — never the split state of
+          // advancing in-memory first.
+          bp.svc.advanceCursor(sub.agentId, sub.topic, next.id); // ACK → persist
+          sub.cursor = next.id; // ACK → advance past this message
         }
-        // Persist-then-advance: write the durable cursor FIRST, then move the in-memory cursor.
-        // If the persist throws it is contained below with BOTH cursors still at the prior id
-        // (consistent; redelivers next tick) — never the split state of advancing in-memory first.
-        bp.svc.advanceCursor(sub.agentId, sub.topic, next.id); // ACK → persist
-        sub.cursor = next.id; // ACK → advance past this message
+        // Batch fully ACKed → fetch the next one strictly-after the advanced cursor.
+        batch = bp.svc.replayMessages(sub.agentId, sub.topic, sub.cursor, READ_BATCH);
       }
     } while (sub.pending);
   } catch (err) {

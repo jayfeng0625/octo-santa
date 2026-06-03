@@ -138,3 +138,66 @@ describe("R1 — SQLite drain failure handling", () => {
     }
   });
 });
+
+describe("R3 — SQLite drain batch catch-up", () => {
+  it("delivers a cursor-0 backlog in one tick with batched reads, not one-query-per-message", async () => {
+    const h = makeFaultHarness();
+    h.svc.createChannel("__provisioner__", "topic");
+    connectSqlitePeer(h.bp, "pub");
+    const K = 600; // > READ_BATCH (500) → at least 2 batches
+    // Seed the backlog directly (human:true resets the hop counter so K > maxHops is allowed);
+    // the test exercises the DRAIN's batched read, not the publish path.
+    for (let i = 0; i < K; i++) h.svc.send("pub", "topic", `m${i}`, { human: true });
+
+    const sub = connectSqlitePeer(h.bp, "sub");
+    const received: string[] = [];
+    await sub.pubsub.subscribe("topic", async (m) => {
+      received.push(m.data);
+    });
+
+    const spy = spyOn(h.svc, "replayMessages");
+    try {
+      await pump(h.bp);
+      await flush();
+
+      // whole backlog delivered, in order, on a single tick
+      expect(received.length).toBe(K);
+      expect(received[0]).toBe("m0");
+      expect(received[K - 1]).toBe(`m${K - 1}`);
+
+      // batched: ceil(K/READ_BATCH) reads + 1 end-of-log read — NOT K+1 single-row reads
+      expect(spy.mock.calls.length).toBeLessThanOrEqual(Math.ceil(K / 500) + 1);
+    } finally {
+      spy.mockRestore();
+      h.cleanup();
+    }
+  });
+
+  it("HOL holds inside a batch: a NACK mid-batch stops delivery, redelivers from the NACKed message", async () => {
+    const h = makeFaultHarness();
+    h.svc.createChannel("__provisioner__", "topic");
+    const pub = connectSqlitePeer(h.bp, "pub");
+    for (let i = 0; i < 5; i++) await pub.pubsub.publish("topic", `m${i}`); // ids 1..5, one batch
+
+    const sub = connectSqlitePeer(h.bp, "sub");
+    const received: string[] = [];
+    let failOn: string | null = "m2";
+    await sub.pubsub.subscribe("topic", async (m) => {
+      if (m.data === failOn) throw new Error("poison");
+      received.push(m.data);
+    });
+
+    await pump(h.bp);
+    await flush();
+    // delivered m0,m1 then NACK at m2 → m3,m4 NOT delivered past the head-of-line block
+    expect(received).toEqual(["m0", "m1"]);
+
+    // heal the poison → next tick redelivers from m2 onward
+    failOn = null;
+    await pump(h.bp);
+    await flush();
+    expect(received).toEqual(["m0", "m1", "m2", "m3", "m4"]);
+
+    h.cleanup();
+  });
+});
