@@ -202,9 +202,18 @@ export async function connectInMemoryPeer(bp: Backplane, name: string): Promise<
         cursor: mintCursor(topic, entryId), // cursor on a Message = id of THAT message (γ-1)
       };
       t.log.push({ id: entryId, message });
-      // Deliver to all subscribers in FIFO order (each drains its own cursor).
-      for (const [peer, sub] of t.subscriptions) {
-        await drain(bp, t, peer, sub);
+      // #28 (decouple): snapshot the subscriber set BEFORE fan-out — concurrent
+      // (un)subscribe during a handler await must not mutate the iteration — and deliver to
+      // each subscriber INDEPENDENTLY (no serial await). publish() resolution must NOT depend
+      // on any handler's outcome: a slow/hung subscriber must not wedge publish() or starve
+      // co-subscribers. Per-subscriber drain() still owns FIFO + at-least-once + the
+      // re-entrancy/`pending` guard (so an overlapping publish is never stranded).
+      for (const [peer, sub] of [...t.subscriptions]) {
+        // `void` is safe ONLY because drain() contains ALL handler errors (sync throw AND
+        // async reject are caught → NACK), so this floating promise never rejects — it only
+        // pends (hung handler) or resolves. LOAD-BEARING: if drain() ever throws OUTSIDE the
+        // handler-catch, add a `.catch` here or it becomes an unhandled rejection.
+        void drain(bp, t, peer, sub);
       }
     },
 
