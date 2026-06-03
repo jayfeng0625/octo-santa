@@ -19,10 +19,10 @@
 // receive on a `pump()` tick driven by the conformance harness `advance()` (R6 α) in tests and
 // the real poller in production.
 //
-// PROGRESSIVE DESCRIPTOR (architect ruling, os-rewrite #2687): declare each capability ONLY in
-// the slice that implements it. This slice (I6) lands CORE delivery + topicLifecycle:"explicit"
-// reject + the opaque per-channel cursor; durable + reopen() flip in I7, at-least-once NACK/HOL
-// in I8. Final 4-axis descriptor is reached at I8.
+// PROGRESSIVE DESCRIPTOR (architect ruling, os-rewrite #2687): each capability was declared ONLY
+// in the slice that implemented it — CORE delivery + topicLifecycle:"explicit" reject + the
+// opaque per-channel cursor (I6); durable + reopen() (I7); at-least-once NACK/HOL (I8). The
+// descriptor below is now the FINAL 4-axis, every axis proven through the shared conformance suite.
 
 import {
   asPeerId,
@@ -39,11 +39,11 @@ import type { MessagingService } from "../../core/messaging/service";
 import type { Message as CoreMessage } from "../../core/messaging/types";
 
 /**
- * I7 descriptor — truthful to what is built so far:
- * - durable:true            → restart-survival proven through the reopen() harness seam (I7):
- *                        the store outlives a connection restart, persisted messages replay.
- * - delivery:"at-most-once" → flips "at-least-once" in I8 (NACK/HOL poll redelivery)
- * - replayable:true         → replayFrom is backed by MessagingService.replayMessages (I3)
+ * I8 descriptor — the FINAL 4-axis, truthful to the fully-built adapter:
+ * - durable:true            → restart-survival proven through the reopen() harness seam (I7).
+ * - delivery:"at-least-once" → NACK holds the cursor (head-of-line); the message redelivers on
+ *                        the next pump tick (I8). Consumers tolerate duplicates (idempotency theirs).
+ * - replayable:true         → replayFrom is backed by MessagingService.replayMessages (I3).
  * - topicLifecycle:"explicit" → publish/subscribe to an unknown channel REJECTS (OD-8); the
  *                        suite provisions CORE topics out-of-band via the harness provision()
  *                        seam (I5.5), the explicit-reject section deliberately does not.
@@ -51,7 +51,7 @@ import type { Message as CoreMessage } from "../../core/messaging/types";
 const DESCRIPTOR: CapabilityDescriptor = {
   durable: true,
   replayable: true,
-  delivery: "at-most-once",
+  delivery: "at-least-once",
   topicLifecycle: "explicit",
 };
 
@@ -110,6 +110,12 @@ interface Subscription {
   cursor: number;
   /** Re-entrancy guard so an overlapping tick does not double-drain one subscription. */
   draining: boolean;
+  /**
+   * Set when a tick was suppressed by the re-entrancy guard while an outer drain was suspended
+   * at `await onMessage`. The outer drain re-checks once more in its do-while, so the suppressed
+   * cycle (an overlapping publish/tick) is not stranded across a NACK-break (at-least-once F2).
+   */
+  pending: boolean;
 }
 
 export interface SqliteBackplane {
@@ -123,46 +129,54 @@ export function createSqliteBackplane(svc: MessagingService): SqliteBackplane {
 }
 
 /**
- * Drain one subscription forward from its held cursor: read strictly-after (no self-exclude,
- * no cursor mutation in the read — Gap#3 replayMessages), deliver each in FIFO order, advance
- * the persisted cursor per delivery (Gap#1 advanceCursor).
- *
- * I6 is at-most-once: a throwing handler does NOT hold the cursor — the message is not
- * redelivered. NACK-hold + next-pump redelivery (HOL) arrives with the at-least-once flip in I8.
+ * Drain one subscription forward from its held cursor (delivery:"at-least-once", spec §2.7):
+ * read the next message strictly-after the cursor (no self-exclude, no read-side mutation —
+ * Gap#3 replayMessages), await the handler, then ACK→advance the persisted cursor (Gap#1
+ * advanceCursor) or NACK→HOLD. A throwing handler does NOT advance the cursor (head-of-line: N
+ * blocks N+1), so the message reappears on the NEXT pump tick read forward from the unadvanced
+ * cursor — redelivery is next-cycle, never a synchronous retry (a poison pill wedges the topic,
+ * never tight-loops). Mirrors the InMemory reference drain, incl. the re-entrancy/`pending`
+ * guard: a tick suppressed while this drain is suspended re-runs in the do-while so an
+ * overlapping publish is not stranded across a NACK-break (F2).
  */
 async function drain(bp: SqliteBackplane, sub: Subscription): Promise<void> {
-  if (sub.draining) return;
+  if (sub.draining) {
+    sub.pending = true; // re-check after the in-flight drain finishes (overlap not stranded)
+    return;
+  }
   sub.draining = true;
   try {
-    while (true) {
-      const batch = bp.svc.replayMessages(sub.topic, sub.cursor, READ_BATCH);
-      if (batch.length === 0) break;
-      for (const coreMsg of batch) {
+    do {
+      sub.pending = false;
+      while (true) {
+        const [next] = bp.svc.replayMessages(sub.topic, sub.cursor, 1); // next, strictly-after
+        if (!next) break;
         try {
-          await sub.onMessage(toMessage(sub.topic, coreMsg));
+          await sub.onMessage(toMessage(sub.topic, next));
         } catch {
-          // at-most-once (I6): best-effort single delivery; failure does not redeliver. The
-          // cursor still advances so the next message is not head-of-line blocked. I8 changes
-          // this to NACK-hold (do not advance on throw) under delivery:"at-least-once".
+          // NACK → cursor HOLDS (head-of-line); redelivered on the next pump tick. Stop draining.
+          break;
         }
-        sub.cursor = coreMsg.id;
-        bp.svc.advanceCursor(sub.agentId, sub.topic, coreMsg.id);
+        sub.cursor = next.id; // ACK → advance past this message
+        bp.svc.advanceCursor(sub.agentId, sub.topic, next.id);
       }
-      if (batch.length < READ_BATCH) break;
-    }
+    } while (sub.pending);
   } finally {
     sub.draining = false;
   }
 }
 
 /**
- * One deterministic, TIMER-FREE poll tick: drive every active subscription forward. Wired to
- * the conformance harness `advance()` (R6 α) in tests and the real poller in production. A
- * snapshot guards against (un)subscribe mutating the set mid-tick.
+ * One deterministic, TIMER-FREE poll tick: fan a drain out to every active subscription. Like
+ * the InMemory reference's publish fan-out (#28), drains are fired INDEPENDENTLY (`void`) — a
+ * slow/suspended handler must not wedge the tick or starve co-subscribers. A snapshot guards
+ * against (un)subscribe mutating the set mid-tick. `void` is safe because drain() contains all
+ * handler errors (the try/catch → NACK), so the floating promise only pends or resolves, never
+ * rejects. Wired to the harness `advance()` (R6 α) in tests and the real poller in production.
  */
 export async function pump(bp: SqliteBackplane): Promise<void> {
   for (const sub of [...bp.subscriptions]) {
-    await drain(bp, sub);
+    void drain(bp, sub);
   }
 }
 
@@ -207,7 +221,7 @@ export function connectSqlitePeer(bp: SqliteBackplane, name: string): Peer {
       // resume from the held cursor (0 for a brand-new subscriber → full backlog catch-up).
       bp.svc.subscribe(agentId, topic);
       const cursor = bp.svc.getCursorPosition(agentId, topic);
-      bp.subscriptions.push({ peer: id, agentId, topic, onMessage, cursor, draining: false });
+      bp.subscriptions.push({ peer: id, agentId, topic, onMessage, cursor, draining: false, pending: false });
       // Delivery is deferred to the next pump() tick (poll), NOT synchronous here.
     },
 

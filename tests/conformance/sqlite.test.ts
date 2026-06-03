@@ -5,14 +5,13 @@
 // proving the composition boundary: concrete storage is injected at the harness, NEVER
 // imported by the adapter (archunit hexagonal-boundaries.test.ts:192, adapters ↛ storage).
 //
-// CORE DELIVERY LIVE (I6) + DURABLE (I7): the adapter implements publish/subscribe/replayFrom
-// over the pump()/poll seam (I6, un-gated) and restart-survival via the reopen() harness seam
-// (I7). runConformanceSuite runs UNCONDITIONALLY. CORE + topicLifecycle:"explicit" reject +
-// durable (cross-process/restart replay) all pass; the implicit-lifecycle branch (caps-inherent
-// — SQLite is explicit) and at-least-once (→I8) sections remain descriptor-gated skips, VISIBLE
-// + named by the suite's skipIf(caps), tied to their flipping slice (no silent cap). The
-// descriptor test asserts the truthful PROGRESSIVE descriptor — {durable:true, at-most-once}
-// here, reaching the final 4-axis at I8.
+// FULL CONFORMANCE (I8 — final): the SQLite adapter implements EVERY axis behind the thin-core
+// seam — CORE delivery + topicLifecycle:"explicit" reject + opaque cursor (I6), durable restart-
+// replay via reopen() (I7), at-least-once NACK/HOL/next-pump redelivery (I8). runConformanceSuite
+// runs UNCONDITIONALLY; CORE + explicit + durable + at-least-once all PASS. The ONLY remaining
+// SQLite skip is the implicit-lifecycle branch — caps-inherent (SQLite is explicit, the mirror of
+// InMemory skipping the explicit branch), permanent + visible via skipIf(caps), NEVER a pending
+// capability. The descriptor test asserts the FINAL, truthful 4-axis descriptor.
 
 import { describe, it, expect } from "bun:test";
 import { createDb } from "../../src/storage/sqlite/db";
@@ -100,7 +99,7 @@ describe("SQLite adapter (I4 — skeleton + descriptor)", () => {
     expect(peer.pubsub.capabilities).toEqual({
       durable: true, // I7: restart-survival via the reopen() harness seam
       replayable: true,
-      delivery: "at-most-once", // → "at-least-once" in I8
+      delivery: "at-least-once", // I8: NACK-hold/HOL + next-pump redelivery
       topicLifecycle: "explicit",
     });
     await h.cleanup();
