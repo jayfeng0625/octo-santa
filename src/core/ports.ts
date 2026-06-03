@@ -79,6 +79,8 @@ export interface MessageRepository {
 
 export interface CursorRepository {
   get(agentId: string, channelId: number): number;
+  /** Per-ACK single-step advance: persist the read position to exactly this message id. */
+  set(agentId: string, channelId: number, lastReadMessageId: number): void;
   listForAgent(agentId: string): CursorWithChannel[];
 }
 

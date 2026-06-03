@@ -563,4 +563,33 @@ describe("MessagingService", () => {
       expect(members).toEqual([]);
     });
   });
+
+  // I1 — Gap#1: per-ACK cursor advance. The SQLite PubSub pump() calls this once
+  // per ACKed message (single-step), holding on NACK (head-of-line).
+  describe("advanceCursor (I1 — per-ACK advance)", () => {
+    it("advances the agent's cursor by exactly the acked message id (single-step)", () => {
+      const { svc } = setup();
+      svc.register("alice");
+      svc.createChannel("alice", "general");
+      svc.subscribe("alice", "general");
+      svc.register("bob");
+      svc.subscribe("bob", "general");
+      const m1 = svc.send("bob", "general", "one");
+      const m2 = svc.send("bob", "general", "two");
+
+      expect(svc.getCursorPosition("alice", "general")).toBe(0);
+      svc.advanceCursor("alice", "general", m1.id);
+      expect(svc.getCursorPosition("alice", "general")).toBe(m1.id);
+      // ACKing the next message advances exactly one more step (not a batch).
+      svc.advanceCursor("alice", "general", m2.id);
+      expect(svc.getCursorPosition("alice", "general")).toBe(m2.id);
+    });
+
+    it("is a no-op for an unknown channel (does not throw)", () => {
+      const { svc } = setup();
+      svc.register("alice");
+      expect(() => svc.advanceCursor("alice", "nonexistent", 5)).not.toThrow();
+      expect(svc.getCursorPosition("alice", "nonexistent")).toBe(0);
+    });
+  });
 });

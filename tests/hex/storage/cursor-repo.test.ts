@@ -45,4 +45,63 @@ describe("SqliteCursorRepo", () => {
     expect(list[0]!.lastReadMessageId).toBe(sent.id);
     db.close();
   });
+
+  // I1 — Gap#1: per-ACK single-step cursor advance (the ACK primitive the SQLite
+  // PubSub pump() calls per delivered message). NOT batch advance, no self-exclude.
+  describe("set — per-ACK cursor advance (I1)", () => {
+    it("persists the cursor to exactly the given message id (single-step)", () => {
+      const { db, cursors, channelId } = setup();
+      expect(cursors.get("agent-a", channelId)).toBe(0);
+      cursors.set("agent-a", channelId, 5);
+      expect(cursors.get("agent-a", channelId)).toBe(5);
+      // ACKing one more advances exactly one step, never in a batch.
+      cursors.set("agent-a", channelId, 6);
+      expect(cursors.get("agent-a", channelId)).toBe(6);
+      db.close();
+    });
+
+    it("holds on NACK and releases the next message only after ACK (HOL)", () => {
+      const { db, cursors, messages, channelId } = setup();
+      const m1 = messages.insertAndJoinSender(channelId, "agent-b", "m1", []);
+      const m2 = messages.insertAndJoinSender(channelId, "agent-b", "m2", []);
+      messages.insertAndJoinSender(channelId, "agent-b", "m3", []);
+
+      // Forward read from the held cursor (no author filter — mirrors the seam pump).
+      const nextUnread = (): number | null =>
+        (
+          db
+            .query(
+              "SELECT id FROM messages WHERE channel_id = ? AND id > ? ORDER BY id ASC LIMIT 1"
+            )
+            .get(channelId, cursors.get("agent-a", channelId)) as { id: number } | null
+        )?.id ?? null;
+
+      // cursor at 0 → next to deliver is m1
+      expect(nextUnread()).toBe(m1.id);
+      // NACK m1 (do NOT advance) → re-read re-yields m1; m2 withheld behind it (HOL)
+      expect(nextUnread()).toBe(m1.id);
+      // ACK m1 → advance one step → next is m2
+      cursors.set("agent-a", channelId, m1.id);
+      expect(nextUnread()).toBe(m2.id);
+      db.close();
+    });
+
+    it("advancing never drops the caller's own messages from a forward read (no self-exclude)", () => {
+      const { db, cursors, messages, channelId } = setup();
+      const fromB = messages.insertAndJoinSender(channelId, "agent-b", "b1", []);
+      const ownA = messages.insertAndJoinSender(channelId, "agent-a", "a-own", []);
+      // ACK agent-b's message → advance cursor past it.
+      cursors.set("agent-a", channelId, fromB.id);
+      const rows = db
+        .query(
+          "SELECT id, agent_id FROM messages WHERE channel_id = ? AND id > ? ORDER BY id ASC"
+        )
+        .all(channelId, cursors.get("agent-a", channelId)) as {
+        id: number;
+        agent_id: string;
+      }[];
+      expect(rows.some((r) => r.id === ownA.id && r.agent_id === "agent-a")).toBe(true);
+      db.close();
+    });
+  });
 });

@@ -513,6 +513,18 @@ export class MessagingService {
     return this.cursors.get(agentId, channel.id);
   }
 
+  /**
+   * I1 — Gap#1: per-ACK cursor advance. Persists the subscriber's read position to
+   * exactly the ACKed message id. The SQLite PubSub adapter's pump() calls this once per
+   * delivered message (single-step); on NACK it simply does not call it, so the cursor
+   * holds and the message is re-read next cycle (head-of-line). No-op for an unknown channel.
+   */
+  advanceCursor(agentId: string, channelName: string, messageId: number): void {
+    const channel = this.channels.findByName(channelName);
+    if (!channel) return;
+    this.cursors.set(agentId, channel.id, messageId);
+  }
+
   pollNewMessages(
     channelName: string,
     sinceId: number,
