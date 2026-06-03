@@ -39,8 +39,9 @@ import type { MessagingService } from "../../core/messaging/service";
 import type { Message as CoreMessage } from "../../core/messaging/types";
 
 /**
- * I6 descriptor — truthful to what is built so far:
- * - durable:false           → flips true in I7 (reopen() restart-survival seam)
+ * I7 descriptor — truthful to what is built so far:
+ * - durable:true            → restart-survival proven through the reopen() harness seam (I7):
+ *                        the store outlives a connection restart, persisted messages replay.
  * - delivery:"at-most-once" → flips "at-least-once" in I8 (NACK/HOL poll redelivery)
  * - replayable:true         → replayFrom is backed by MessagingService.replayMessages (I3)
  * - topicLifecycle:"explicit" → publish/subscribe to an unknown channel REJECTS (OD-8); the
@@ -48,7 +49,7 @@ import type { Message as CoreMessage } from "../../core/messaging/types";
  *                        seam (I5.5), the explicit-reject section deliberately does not.
  */
 const DESCRIPTOR: CapabilityDescriptor = {
-  durable: false,
+  durable: true,
   replayable: true,
   delivery: "at-most-once",
   topicLifecycle: "explicit",
