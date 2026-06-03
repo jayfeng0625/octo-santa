@@ -37,6 +37,7 @@ import {
 } from "../../contracts";
 import type { MessagingService } from "../../core/messaging/service";
 import type { Message as CoreMessage } from "../../core/messaging/types";
+import { log } from "../../log";
 
 /**
  * I8 descriptor — the FINAL 4-axis, truthful to the fully-built adapter:
@@ -153,14 +154,24 @@ async function drain(bp: SqliteBackplane, sub: Subscription): Promise<void> {
         if (!next) break;
         try {
           await sub.onMessage(toMessage(sub.topic, next));
-        } catch {
+        } catch (err) {
           // NACK → cursor HOLDS (head-of-line); redelivered on the next pump tick. Stop draining.
+          log(`sqlite-pubsub NACK ${sub.agentId}@${sub.topic} msg ${next.id}: ${err}`);
           break;
         }
+        // Persist-then-advance: write the durable cursor FIRST, then move the in-memory cursor.
+        // If the persist throws it is contained below with BOTH cursors still at the prior id
+        // (consistent; redelivers next tick) — never the split state of advancing in-memory first.
+        bp.svc.advanceCursor(sub.agentId, sub.topic, next.id); // ACK → persist
         sub.cursor = next.id; // ACK → advance past this message
-        bp.svc.advanceCursor(sub.agentId, sub.topic, next.id);
       }
     } while (sub.pending);
+  } catch (err) {
+    // A storage throw from replayMessages/advanceCursor (SQLITE_BUSY past retries, IOERR, or a
+    // connection closed mid-reopen()) is CONTAINED here, not floated as an unhandled rejection.
+    // The cursor is unadvanced (persist-then-advance) so the message redelivers on the next pump
+    // tick — same outcome as NACK/HOL.
+    log(`sqlite-pubsub drain fault ${sub.agentId}@${sub.topic}: ${err}`);
   } finally {
     sub.draining = false;
   }
@@ -170,13 +181,17 @@ async function drain(bp: SqliteBackplane, sub: Subscription): Promise<void> {
  * One deterministic, TIMER-FREE poll tick: fan a drain out to every active subscription. Like
  * the InMemory reference's publish fan-out (#28), drains are fired INDEPENDENTLY (`void`) — a
  * slow/suspended handler must not wedge the tick or starve co-subscribers. A snapshot guards
- * against (un)subscribe mutating the set mid-tick. `void` is safe because drain() contains all
- * handler errors (the try/catch → NACK), so the floating promise only pends or resolves, never
- * rejects. Wired to the harness `advance()` (R6 α) in tests and the real poller in production.
+ * against (un)subscribe mutating the set mid-tick. drain() contains its own handler NACKs AND the
+ * storage throws from replayMessages/advanceCursor (SQLITE_BUSY/IOERR/closed-mid-reopen), so the
+ * floated promise normally resolves; the `.catch` is a belt-and-suspenders net that logs any
+ * truly-unexpected rejection instead of leaking it. Wired to the harness `advance()` (R6 α) in
+ * tests and the real poller in production.
  */
 export async function pump(bp: SqliteBackplane): Promise<void> {
   for (const sub of [...bp.subscriptions]) {
-    void drain(bp, sub);
+    void drain(bp, sub).catch((err) =>
+      log(`sqlite-pubsub drain fault ${sub.agentId}@${sub.topic}: ${err}`)
+    );
   }
 }
 
