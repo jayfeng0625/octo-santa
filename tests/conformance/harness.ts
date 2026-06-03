@@ -57,6 +57,20 @@ export interface ConformanceHarness {
    * β (until/timeout) is NOT adopted; a timer-free tick is feasible, so flake never enters.
    */
   advance?(): Promise<void> | void;
+  /**
+   * Out-of-band topic-provisioning seam for EXPLICIT impls (architect ruling os-rewrite
+   * #2707, ratified #2721/#2722). The PubSub seam has NO create-topic op — topic creation is
+   * octo-santa's CONTROL plane (createChannel / messaging_create_channel), separate from the
+   * publish/subscribe DATA plane (spec §2.2). An `topicLifecycle:"explicit"` backend (SQLite:
+   * publish/subscribe to an unknown topic REJECTS) therefore needs its topics created
+   * out-of-band before a DELIVERY test can exercise them. Poll/explicit impls define it
+   * (SQLite → createChannel); implicit impls (InMemory, auto-create) leave it undefined → the
+   * suite's `ensureTopic` is a no-op for them. Optional, capability-gated, SAME class as
+   * `reopen()`/`advance()`: the suite body is unchanged across backends; the DELIVERY sections
+   * call it uniformly, the lifecycle-reject sections deliberately do not (they prove the
+   * un-provisioned behavior).
+   */
+  provision?(topic: string): Promise<void> | void;
 }
 
 /** Each call yields a FRESH hermetic backplane instance (spec §4). */

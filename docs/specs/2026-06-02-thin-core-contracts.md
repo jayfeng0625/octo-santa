@@ -66,7 +66,7 @@ These are CONTRACT TEXT. Both InMemory and SQLite MUST honor them identically, o
 
 1. **Identity bound at construction (OD-1).** A `PubSub` is constructed for ONE peer identity. No per-call identity override.
 
-2. **Topic existence is `topicLifecycle`-defined (D).** For `topicLifecycle:"implicit"` impls, `publish` AND `subscribe` to an unknown topic BOTH auto-create it (empty, zero replay); unknown topic is NEVER an error. For `"explicit"` impls, unknown topic is REJECTED and topics are created out-of-band. Consumers branch on `topicLifecycle`, never assume. **octo-santa's hybrid is across ENTRYPOINTS, not the seam:** `directMessage` auto-creates (service.ts:332), but the seam's `publish` maps to `messaging.send` (OD-8), which THROWS on unknown (service.ts:227). So the SQLite adapter is uniformly `topicLifecycle:"explicit"` — a faithful mirror of `send` that adds no policy (matches "adapter wraps service, adds no policy"). Consequence: DM-style auto-create is NOT reachable through the seam's `publish` (DM topics pre-exist or are made via the existing `directMessage`/`createChannel` path); DM-auto-create-through-`publish` is a NAMED future enhancement (§6), not a silent gap.
+2. **Topic existence is `topicLifecycle`-defined (D).** For `topicLifecycle:"implicit"` impls, `publish` AND `subscribe` to an unknown topic BOTH auto-create it (empty, zero replay); unknown topic is NEVER an error. For `"explicit"` impls, unknown topic is REJECTED and topics are created out-of-band. Consumers branch on `topicLifecycle`, never assume. **octo-santa's hybrid is across ENTRYPOINTS, not the seam:** `directMessage` auto-creates (service.ts:332), but the seam's `publish` maps to `messaging.send` (OD-8), which THROWS on unknown (service.ts:227). So the SQLite adapter is uniformly `topicLifecycle:"explicit"` — a faithful mirror of `send` that adds no policy (matches "adapter wraps service, adds no policy"). Consequence: DM-style auto-create is NOT reachable through the seam's `publish` (DM topics pre-exist or are made via the existing `directMessage`/`createChannel` path); DM-auto-create-through-`publish` is a NAMED future enhancement (§6), not a silent gap. **Conformance provisioning of explicit topics (os-rewrite #2707, ratified #2721/#2722):** "created out-of-band" has a concrete suite mechanism — the PubSub seam has NO create-topic op (creation is the control plane: `createChannel` / `messaging_create_channel`), so the conformance harness carries an optional `provision?(topic)` seam and the suite's DELIVERY-proving sections call a uniform `ensureTopic(harness, topic)` before first publish/subscribe (explicit/SQLite → `createChannel`; implicit/InMemory leaves `provision?` undefined → no-op, auto-create covers it). The lifecycle sections (implicit auto-create / explicit reject) deliberately do NOT provision — un-provisioned behavior is exactly what they prove.
 
 3. **Per-topic FIFO ordering (invariant, all impls).** Messages within a topic are delivered in publish order. This is a contract invariant, not a descriptor field. (Cross-topic ordering is NOT guaranteed.)
 
@@ -110,7 +110,13 @@ Key split (architect ruling, msg 2561): at-least-once is ORTHOGONAL to durabilit
 
 ## 4. Conformance suite (β) — Phase A definition-of-done
 
-The suite is the contractual proof a backend "is octo-santa." It is parameterized over a harness factory and validates the SAME behaviors against every impl. SQLite's factory slots in UNCHANGED at Phase B.
+The suite is the contractual proof a backend "is octo-santa." It is parameterized over a harness factory and validates the SAME behaviors against every impl.
+
+**Keystone (os-rewrite, Jay-blessed — supersedes "byte-for-byte unchanged"):** the Phase-A wording "SQLite runs the suite byte-for-byte unchanged" was over-stated — latent gaps only the first poll + explicit backend exposes (poll-delivery timing, explicit-topic provisioning) required real seams. The honest, stronger keystone:
+
+> ONE structurally-unified suite proves every axis. INVARIANT across backends = assertions + delivery sequences + NO per-impl branch. VARIANT = setup/timing primitives behind a thin capability-gated harness interface (`connect`/`cleanup`/`settle`/`reopen`/`advance`/`provision`).
+
+This is the REAL pluggability contract: the suite depends on a thin harness interface; each backend varies behind it (push vs poll timing via `settle`/`advance`; implicit vs explicit topic creation via `ensureTopic`/`provision`; ephemeral vs durable via `reopen`). The suite NEVER branches on the impl (`if label === "SQLite"` is forbidden); the assertions and publish/subscribe sequences are identical for every backend.
 
 **Scope of "UNCHANGED" — delivery timing is push-impl-specific (Phase A).** The Phase A suite's wait primitive (`flush()` = two microtask awaits) and its at-least-once redelivery trigger (a *subsequent publish* drives the next cycle) assume SYNCHRONOUS in-process push delivery — true of the InMemory reference impl. The "this file does not change at Phase B" claim therefore holds for PUSH impls. A POLL-based backend (SQLite, future Cloudflare) delivers on a poller TICK (a real timer), and a subsequent `publish` in one logical peer does not synchronously drive a different-process subscriber's next tick (§2.7: redelivery = "next publish (push impls) or next poll tick (poll impls)"; CLAUDE.md: cross-process delivery requires polling). When the first poll-based adapter lands, the suite's `flush()` is replaced by a time-tolerant settle primitive (e.g. `until(pred, {timeoutMs})`) and/or the harness gains an `advance()`/`tick()` seam, and the at-least-once redelivery trigger is re-parameterized to a tick — the asserted BEHAVIORS (cross-peer delivery, FIFO, catch-up, redelivery, HOL, duplicate-tolerance) are unchanged. There is intentionally no delivery-timing descriptor axis and no tick seam in Phase A (descriptor locked to 4 axes per §1 D "no speculative third"; harness shape ratified by R6). This is a named Phase B re-parameterization, not a silent gap.
 
@@ -134,6 +140,21 @@ export interface ConformanceHarness {
    * harness-shape change (resolves Finding A — no false-passing durable stub).
    */
   reopen?(): Promise<ConformanceHarness>;
+  /**
+   * POLL backends only (R6 amendment, Option α — os-rewrite #2662). ONE deterministic,
+   * TIMER-FREE poll tick (drives the adapter's `pump()` once). The suite settles via the
+   * uniform `settle(harness)` primitive, which calls `advance()` when present, else
+   * microtask-drains. Push impls (InMemory) leave it undefined.
+   */
+  advance?(): Promise<void> | void;
+  /**
+   * EXPLICIT backends only (os-rewrite #2707, ratified #2721/#2722). The out-of-band
+   * create-topic hook — the PubSub seam has none (creation is the control plane, §2.2). The
+   * suite's DELIVERY sections call `ensureTopic(harness, topic)` → `provision()` when present
+   * (SQLite → `createChannel`); implicit impls leave it undefined → no-op. Lifecycle-reject
+   * sections never provision.
+   */
+  provision?(topic: string): Promise<void> | void;
 }
 export type HarnessFactory = () => Promise<ConformanceHarness>;
 ```

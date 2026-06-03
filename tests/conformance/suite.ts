@@ -42,6 +42,25 @@ export async function settle(harness?: ConformanceHarness): Promise<void> {
   await Promise.resolve();
 }
 
+// Out-of-band topic provisioning (architect ruling os-rewrite #2707, ratified #2721/#2722).
+// The PubSub seam has NO create-topic op — topic creation is octo-santa's CONTROL plane
+// (createChannel / messaging_create_channel), separate from the publish/subscribe DATA plane
+// (spec §2.2). So an `topicLifecycle:"explicit"` backend (SQLite: publish/subscribe to an
+// unknown topic REJECTS) needs topics created out-of-band before a DELIVERY test can exercise
+// them. ensureTopic is that uniform hook: the per-backend harness defines `provision?(topic)`
+// (SQLite → createChannel); push/implicit impls (InMemory, auto-create) leave it undefined →
+// no-op. Called by the DELIVERY-proving sections (CORE, at-least-once, durable) after
+// freshTopic(), before first pub/sub. The LIFECYCLE-reject sections (implicit auto-create /
+// explicit reject) deliberately DO NOT call it — un-provisioned behavior is what they prove.
+// No per-impl branch in the suite body. Exported so the seam is unit-tested
+// (tests/conformance/provision-seam.test.ts).
+export async function ensureTopic(
+  harness: ConformanceHarness | undefined,
+  topic: string
+): Promise<void> {
+  if (harness?.provision) await harness.provision(topic);
+}
+
 // A monotonically-incrementing suffix keeps topic names unique ACROSS tests within one
 // harness instance, so held cursors / backlogs from a prior test never leak into the next.
 // (CORE tests share a harness; per-test isolation comes from per-test topic names.)
@@ -88,6 +107,7 @@ export async function runConformanceSuite(label: string, factory: HarnessFactory
       it("cross-peer delivery: A.publish → B receives with from === A.id", async () => {
         const [a, b] = await newPeers("alice", "bob");
         const topic = freshTopic("xpeer");
+        await ensureTopic(harness, topic);
         const got: Message[] = [];
         await b!.pubsub.subscribe(topic, (m) => {
           got.push(m);
@@ -104,6 +124,7 @@ export async function runConformanceSuite(label: string, factory: HarnessFactory
       it("per-topic FIFO ordering", async () => {
         const [a] = await newPeers("alice");
         const topic = freshTopic("fifo");
+        await ensureTopic(harness, topic);
         const got: string[] = [];
         await a!.pubsub.subscribe(topic, (m) => {
           got.push(m.data);
@@ -118,6 +139,7 @@ export async function runConformanceSuite(label: string, factory: HarnessFactory
       it("race-free delivery: subscribe then publish fires, in FIFO order", async () => {
         const [a] = await newPeers("alice");
         const topic = freshTopic("race");
+        await ensureTopic(harness, topic);
         const got: string[] = [];
         await a!.pubsub.subscribe(topic, (m) => {
           got.push(m.data);
@@ -131,6 +153,7 @@ export async function runConformanceSuite(label: string, factory: HarnessFactory
       it("catch-up from cursor 0: a new subscriber receives the full backlog in order, then live", async () => {
         const [a, b] = await newPeers("alice", "bob");
         const topic = freshTopic("catchup");
+        await ensureTopic(harness, topic);
         await a!.pubsub.publish(topic, "1");
         await a!.pubsub.publish(topic, "2");
         const got: string[] = [];
@@ -147,6 +170,7 @@ export async function runConformanceSuite(label: string, factory: HarnessFactory
       it("replayFrom exclusivity: strictly-after cursor, does NOT advance the subscription cursor", async () => {
         const [a] = await newPeers("alice");
         const topic = freshTopic("replay");
+        await ensureTopic(harness, topic);
         const live: Message[] = [];
         await a!.pubsub.subscribe(topic, (m) => {
           live.push(m);
@@ -177,6 +201,8 @@ export async function runConformanceSuite(label: string, factory: HarnessFactory
         const [a] = await newPeers("alice");
         const topicX = freshTopic("xcursor-x");
         const topicY = freshTopic("xcursor-y");
+        await ensureTopic(harness, topicX);
+        await ensureTopic(harness, topicY);
         const xMsgs: Message[] = [];
         const yMsgs: Message[] = [];
         await a!.pubsub.subscribe(topicX, (m) => {
@@ -221,6 +247,7 @@ export async function runConformanceSuite(label: string, factory: HarnessFactory
       it("unsubscribe stop-only: re-subscribe resumes from the held cursor, not 0", async () => {
         const [a] = await newPeers("alice");
         const topic = freshTopic("unsub");
+        await ensureTopic(harness, topic);
         const got: string[] = [];
         await a!.pubsub.subscribe(topic, (m) => {
           got.push(m.data);
@@ -338,6 +365,7 @@ export async function runConformanceSuite(label: string, factory: HarnessFactory
           try {
             const a = await harness.connect("alice");
             const topic = freshTopic("alo-nack");
+            await ensureTopic(harness, topic);
             const attempts: string[] = [];
             let failFirst = true;
             await a.pubsub.subscribe(topic, (m) => {
@@ -366,6 +394,7 @@ export async function runConformanceSuite(label: string, factory: HarnessFactory
           try {
             const a = await harness.connect("alice");
             const topic = freshTopic("alo-hol");
+            await ensureTopic(harness, topic);
             const attempts: string[] = [];
             let nFails = true;
             await a.pubsub.subscribe(topic, (m) => {
@@ -400,6 +429,7 @@ export async function runConformanceSuite(label: string, factory: HarnessFactory
           try {
             const a = await harness.connect("alice");
             const topic = freshTopic("alo-dup");
+            await ensureTopic(harness, topic);
             const seen: string[] = [];
             let failOnce = true;
             await a.pubsub.subscribe(topic, (m) => {
@@ -425,6 +455,7 @@ export async function runConformanceSuite(label: string, factory: HarnessFactory
           try {
             const a = await harness.connect("alice");
             const topic = freshTopic("alo-overlap");
+            await ensureTopic(harness, topic);
             const seen: string[] = [];
             let release!: () => void;
             const gate = new Promise<void>((r) => {
@@ -469,6 +500,7 @@ export async function runConformanceSuite(label: string, factory: HarnessFactory
           try {
             const a = await harness.connect("alice");
             const topic = freshTopic("alo-poison");
+            await ensureTopic(harness, topic);
             const attempts: string[] = [];
             await a.pubsub.subscribe(topic, (m) => {
               attempts.push(m.data);
@@ -513,6 +545,7 @@ export async function runConformanceSuite(label: string, factory: HarnessFactory
         try {
           const a = await harness.connect("alice");
           const topic = freshTopic("durable");
+          await ensureTopic(harness, topic);
           await a.pubsub.publish(topic, "persisted");
 
           // A durable impl MUST expose the restart seam; without it the test FAILS LOUDLY
