@@ -88,4 +88,50 @@ describe("SqliteMessageRepo", () => {
     expect(recent[1]!.content).toBe("msg-3");
     db.close();
   });
+
+  // I3 — Gap#3: NEW replayMessages — forward read strictly after sinceId, INCLUDING the
+  // caller's own messages (NOT a readSince call: readSince carries an unconditional
+  // agent_id != ? self-exclude). No cursor mutation.
+  describe("replayMessages (I3 — forward read, no self-exclude)", () => {
+    it("returns messages strictly after sinceId in FIFO order, including the caller's own", () => {
+      const { db, messages, channelId } = setup();
+      const m1 = messages.insertAndJoinSender(channelId, "agent-a", "a1", []);
+      const m2 = messages.insertAndJoinSender(channelId, "agent-b", "b1", []);
+      const m3 = messages.insertAndJoinSender(channelId, "agent-a", "a2", []);
+      const out = messages.replayMessages(channelId, m1.id, 50);
+      expect(out.map((m) => m.id)).toEqual([m2.id, m3.id]);
+      // agent-a's OWN m3 is present — no self-exclude.
+      expect(out.some((m) => m.agent_id === "agent-a")).toBe(true);
+      db.close();
+    });
+
+    it("is demonstrably distinct from readSince (which excludes the named agent)", () => {
+      const { db, messages, channelId } = setup();
+      const own = messages.insertAndJoinSender(channelId, "agent-a", "mine", []);
+      messages.insertAndJoinSender(channelId, "agent-b", "theirs", []);
+      const excluded = messages.readSince(channelId, 0, 50, "agent-a");
+      const replayed = messages.replayMessages(channelId, 0, 50);
+      expect(excluded.some((m) => m.id === own.id)).toBe(false);
+      expect(replayed.some((m) => m.id === own.id)).toBe(true);
+      db.close();
+    });
+
+    it("returns empty when sinceId is at end-of-log", () => {
+      const { db, messages, channelId } = setup();
+      const m1 = messages.insertAndJoinSender(channelId, "agent-b", "b1", []);
+      expect(messages.replayMessages(channelId, m1.id, 50)).toEqual([]);
+      db.close();
+    });
+
+    it("does not mutate any cursor", () => {
+      const { db, messages, channelId } = setup();
+      messages.insertAndJoinSender(channelId, "agent-b", "b1", []);
+      messages.replayMessages(channelId, 0, 50);
+      const cursor = db
+        .query("SELECT last_read_message_id FROM cursors WHERE agent_id = ? AND channel_id = ?")
+        .get("agent-a", channelId);
+      expect(cursor).toBeNull();
+      db.close();
+    });
+  });
 });

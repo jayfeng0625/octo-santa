@@ -75,6 +75,11 @@ export interface MessageRepository {
     limit: number,
     excludeAgent: string
   ): Message[];
+  /**
+   * Forward read strictly after sinceId, INCLUDING the caller's own messages
+   * (no self-exclude — distinct from readSince). Stateless: advances no cursor.
+   */
+  replayMessages(channelId: number, sinceId: number, limit: number): Message[];
 }
 
 export interface CursorRepository {

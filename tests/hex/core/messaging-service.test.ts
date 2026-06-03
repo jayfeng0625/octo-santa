@@ -592,4 +592,35 @@ describe("MessagingService", () => {
       expect(svc.getCursorPosition("alice", "nonexistent")).toBe(0);
     });
   });
+
+  // I3 — Gap#3: replayMessages — stateless forward read backing the SQLite adapter's
+  // replayFrom. Strictly after sinceId, includes all authors (no self-exclude), no cursor advance.
+  describe("replayMessages (I3)", () => {
+    it("replays strictly after sinceId including all authors, advancing no cursor", () => {
+      const { svc } = setup();
+      svc.register("alice");
+      svc.createChannel("alice", "general");
+      svc.subscribe("alice", "general");
+      svc.register("bob");
+      svc.subscribe("bob", "general");
+      const m1 = svc.send("alice", "general", "a1");
+      const m2 = svc.send("bob", "general", "b1");
+      const m3 = svc.send("alice", "general", "a2");
+
+      const out = svc.replayMessages("general", m1.id, 50);
+      expect(out.map((m) => m.id)).toEqual([m2.id, m3.id]);
+      // alice's own m3 is present — replay does not self-exclude.
+      expect(out.some((m) => m.agent_id === "alice")).toBe(true);
+
+      // No cursor mutation.
+      const before = svc.getCursorPosition("alice", "general");
+      svc.replayMessages("general", 0, 50);
+      expect(svc.getCursorPosition("alice", "general")).toBe(before);
+    });
+
+    it("returns empty for an unknown channel", () => {
+      const { svc } = setup();
+      expect(svc.replayMessages("nonexistent", 0, 50)).toEqual([]);
+    });
+  });
 });

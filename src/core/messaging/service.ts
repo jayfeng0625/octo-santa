@@ -507,6 +507,17 @@ export class MessagingService {
     return this.messages.readRecent(channel.id, limit);
   }
 
+  /**
+   * I3 — Gap#3: stateless forward replay backing the SQLite PubSub adapter's replayFrom.
+   * Returns messages strictly after sinceId (FIFO), INCLUDING the caller's own; advances
+   * no cursor. NOT a readSince call — readSince self-excludes the named agent.
+   */
+  replayMessages(channelName: string, sinceId: number, limit: number): Message[] {
+    const channel = this.channels.findByName(channelName);
+    if (!channel) return [];
+    return this.messages.replayMessages(channel.id, sinceId, limit);
+  }
+
   getCursorPosition(agentId: string, channelName: string): number {
     const channel = this.channels.findByName(channelName);
     if (!channel) return 0;

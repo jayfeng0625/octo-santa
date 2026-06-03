@@ -143,4 +143,20 @@ export class SqliteMessageRepo implements MessageRepository {
       )
       .all(channelId, sinceId, excludeAgent, limit) as Message[];
   }
+
+  /**
+   * I3 — Gap#3: forward read STRICTLY AFTER sinceId, INCLUDING the caller's own messages.
+   * Distinct from readSince, which carries an unconditional `agent_id != ?` self-exclude.
+   * Stateless WAL read — no cursor mutation, no write transaction.
+   */
+  replayMessages(channelId: number, sinceId: number, limit: number): Message[] {
+    return this.db
+      .query(
+        `SELECT * FROM messages
+         WHERE channel_id = ? AND id > ?
+         ORDER BY id ASC
+         LIMIT ?`
+      )
+      .all(channelId, sinceId, limit) as Message[];
+  }
 }
