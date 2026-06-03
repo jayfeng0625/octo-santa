@@ -45,6 +45,18 @@ export interface ConformanceHarness {
    * edit, keeping "one unchanged suite proves every axis, including durable" true.
    */
   reopen?(): Promise<ConformanceHarness>;
+  /**
+   * Poll-tick seam for POLL impls (R6 amendment, Option α — os-rewrite #2662). ONE call =
+   * ONE deterministic, TIMER-FREE poll tick: it drives the adapter's `pump()` once, draining
+   * whatever is currently deliverable. The suite settles via the uniform `settle(harness)`
+   * primitive, which calls `advance()` when present, else microtask-drains. Push impls
+   * (InMemory, synchronous in-`publish` fan-out) leave it undefined → `settle` falls back to
+   * the microtask drain and never ticks. Poll impls (SQLite, Phase B) define it as a single
+   * `pump()` drive. Optional, capability-gated, SAME class as `reopen()`: the suite body is
+   * unchanged across backends — only the per-backend harness factory decides what a tick is.
+   * β (until/timeout) is NOT adopted; a timer-free tick is feasible, so flake never enters.
+   */
+  advance?(): Promise<void> | void;
 }
 
 /** Each call yields a FRESH hermetic backplane instance (spec §4). */

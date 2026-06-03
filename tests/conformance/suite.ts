@@ -11,32 +11,33 @@
 // (`msg.cursor`, `msg.from`) or from `discovery.list()`. If you find yourself casting, you
 // are doing it wrong.
 //
-// SCOPE — DELIVERY TIMING IS PUSH-IMPL-SPECIFIC (Phase A): the wait primitive below
-// (`flush()`) settles only microtasks, and the at-least-once section drives redelivery by
-// issuing a SUBSEQUENT publish. Both assume SYNCHRONOUS, in-process push delivery — which
-// the InMemory reference impl provides (it drains every subscriber inside `publish`). A
-// POLL-based backend (the Phase B SQLite adapter, a future Cloudflare adapter) delivers on
-// a poller TICK (a real timer), and a subsequent `publish` in one logical peer does NOT
-// synchronously drive a different-process subscriber's next tick (CLAUDE.md: "cross-process
-// delivery requires polling"; spec §2.7: redelivery is "next publish (push impls) OR next
-// poll tick (poll impls)"). There is intentionally NO delivery-timing descriptor axis and
-// NO time-tolerant settle/tick seam in Phase A — the descriptor is locked to 4 axes (spec
-// §1 D: "no speculative third") and the harness shape is ratified (R6). So the "this file
-// does not change at Phase B" promise holds ONLY for push impls: when the first poll-based
-// adapter lands, this `flush()` becomes a time-tolerant settle helper (e.g. `until(pred,
-// {timeoutMs})`) and/or the harness grows an `advance()`/`tick()` seam, and the
-// at-least-once redelivery trigger is re-parameterized to a tick for poll impls. Do NOT
-// rely on the byte-for-byte-unchanged claim for poll backends.
+// SCOPE — DELIVERY TIMING via the UNIFORM HARNESS PRIMITIVE `settle(harness)` (R6 amendment,
+// Option α — os-rewrite #2662, ratified #2662). The suite body settles at every assertion
+// point through ONE call, `settle(harness)`; what a settlement MEANS is defined by the
+// per-backend harness, NOT the suite. Push impls (the InMemory reference, which drains every
+// subscriber synchronously inside `publish`) leave `harness.advance` undefined → `settle`
+// microtask-drains. Poll impls (the Phase B SQLite adapter, a future Cloudflare adapter)
+// deliver on a `pump()` tick (CLAUDE.md: "cross-process delivery requires polling"; spec §2.7:
+// redelivery is "next publish (push) OR next poll tick (poll)") → their harness defines
+// `advance()` as a single deterministic, TIMER-FREE `pump()` drive, and `settle` ticks it.
+// So the SUITE BODY is byte-for-byte identical across backends — only the harness factory
+// differs, exactly as `reopen()` isolates the durable axis. β (until/timeout) is NOT adopted:
+// a deterministic tick keeps the no-sleeps/no-timers invariant, so no flake enters. The
+// at-least-once section still triggers a "next cycle" by a subsequent publish; for a poll
+// backend each interleaved `settle` is the tick that drives redelivery (re-parameterized in
+// the harness, assertions unchanged). The descriptor stays locked to 4 axes (spec §1 D).
 
 import { describe, it, expect, afterEach } from "bun:test";
 import type { Message } from "../../src/contracts";
 import type { ConformanceHarness, HarnessFactory, Peer } from "./harness";
 
-// Delivery is driven by `publish`/`subscribe` completing. We add a tiny microtask flush so
-// impls that defer delivery to microtasks settle before assertions. No timers, no sleeps —
-// deterministic. PUSH-IMPL-SPECIFIC: see the SCOPE note above — poll backends will replace
-// this with a time-tolerant settle primitive in Phase B.
-async function flush(): Promise<void> {
+// The UNIFORM settlement primitive (R6 α). ONE call the suite body uses everywhere; the
+// per-backend harness decides what it means: a poll impl's `advance()` drives a deterministic
+// `pump()` tick, then we microtask-drain; a push impl has no `advance()` and only the
+// microtask drain runs. No timers, no sleeps — deterministic for every backend. Exported so
+// the seam itself is unit-tested (tests/conformance/poll-seam.test.ts).
+export async function settle(harness?: ConformanceHarness): Promise<void> {
+  if (harness?.advance) await harness.advance();
   await Promise.resolve();
   await Promise.resolve();
 }
@@ -92,7 +93,7 @@ export async function runConformanceSuite(label: string, factory: HarnessFactory
           got.push(m);
         });
         await a!.pubsub.publish(topic, "hello-from-a");
-        await flush();
+        await settle(harness);
         expect(got.length).toBe(1);
         expect(got[0]!.data).toBe("hello-from-a");
         expect(got[0]!.topic).toBe(topic);
@@ -110,7 +111,7 @@ export async function runConformanceSuite(label: string, factory: HarnessFactory
         await a!.pubsub.publish(topic, "1");
         await a!.pubsub.publish(topic, "2");
         await a!.pubsub.publish(topic, "3");
-        await flush();
+        await settle(harness);
         expect(got).toEqual(["1", "2", "3"]);
       });
 
@@ -123,7 +124,7 @@ export async function runConformanceSuite(label: string, factory: HarnessFactory
         });
         await a!.pubsub.publish(topic, "first");
         await a!.pubsub.publish(topic, "second");
-        await flush();
+        await settle(harness);
         expect(got).toEqual(["first", "second"]);
       });
 
@@ -136,10 +137,10 @@ export async function runConformanceSuite(label: string, factory: HarnessFactory
         await b!.pubsub.subscribe(topic, (m) => {
           got.push(m.data);
         });
-        await flush();
+        await settle(harness);
         expect(got).toEqual(["1", "2"]); // full backlog from 0
         await a!.pubsub.publish(topic, "3");
-        await flush();
+        await settle(harness);
         expect(got).toEqual(["1", "2", "3"]); // then live
       });
 
@@ -153,7 +154,7 @@ export async function runConformanceSuite(label: string, factory: HarnessFactory
         await a!.pubsub.publish(topic, "1");
         await a!.pubsub.publish(topic, "2");
         await a!.pubsub.publish(topic, "3");
-        await flush();
+        await settle(harness);
         expect(live.map((m) => m.data)).toEqual(["1", "2", "3"]);
 
         // cursor of message "1" — round-tripped from the delivered Message, never minted.
@@ -162,13 +163,13 @@ export async function runConformanceSuite(label: string, factory: HarnessFactory
         await a!.pubsub.replayFrom(topic, cursorOf1, (m) => {
           replayed.push(m.data);
         });
-        await flush();
+        await settle(harness);
         // strictly AFTER "1" → "2","3" (cursor message itself excluded).
         expect(replayed).toEqual(["2", "3"]);
 
         // replay did NOT mutate subscription state → next live publish delivered exactly once.
         await a!.pubsub.publish(topic, "4");
-        await flush();
+        await settle(harness);
         expect(live.map((m) => m.data)).toEqual(["1", "2", "3", "4"]);
       });
 
@@ -187,7 +188,7 @@ export async function runConformanceSuite(label: string, factory: HarnessFactory
         await a!.pubsub.publish(topicX, "x1");
         await a!.pubsub.publish(topicX, "x2");
         await a!.pubsub.publish(topicY, "y1");
-        await flush();
+        await settle(harness);
 
         // FOREIGN-TOPIC: a cursor round-tripped from topic X handed to replayFrom(topicY)
         // is rejected — never silently mapped by numeric position into Y's slice.
@@ -203,7 +204,7 @@ export async function runConformanceSuite(label: string, factory: HarnessFactory
         await a!.pubsub.replayFrom(topicY, lastCursorY, (m) => {
           replayed.push(m.data);
         });
-        await flush();
+        await settle(harness);
         expect(replayed).toEqual([]);
       });
 
@@ -225,20 +226,20 @@ export async function runConformanceSuite(label: string, factory: HarnessFactory
           got.push(m.data);
         });
         await a!.pubsub.publish(topic, "1");
-        await flush();
+        await settle(harness);
         expect(got).toEqual(["1"]);
 
         await a!.pubsub.unsubscribe(topic);
         // published while unsubscribed — not delivered now.
         await a!.pubsub.publish(topic, "2");
-        await flush();
+        await settle(harness);
         expect(got).toEqual(["1"]);
 
         // re-subscribe resumes from held cursor (after "1"), NOT replay from 0.
         await a!.pubsub.subscribe(topic, (m) => {
           got.push(m.data);
         });
-        await flush();
+        await settle(harness);
         expect(got).toEqual(["1", "2"]); // only the missed "2", never "1" again
       });
     });
@@ -261,10 +262,10 @@ export async function runConformanceSuite(label: string, factory: HarnessFactory
             await a.pubsub.subscribe(topic, (m) => {
               got.push(m);
             });
-            await flush();
+            await settle(harness);
             expect(got.length).toBe(0); // empty, never an error
             await a.pubsub.publish(topic, "live");
-            await flush();
+            await settle(harness);
             expect(got.map((m) => m.data)).toEqual(["live"]);
           } finally {
             await harness.cleanup();
@@ -281,7 +282,7 @@ export async function runConformanceSuite(label: string, factory: HarnessFactory
             await a.pubsub.subscribe(topic, (m) => {
               got.push(m);
             });
-            await flush();
+            await settle(harness);
             expect(got.map((m) => m.data)).toEqual(["x"]); // backlog from auto-created topic
           } finally {
             await harness.cleanup();
@@ -347,12 +348,12 @@ export async function runConformanceSuite(label: string, factory: HarnessFactory
               }
             });
             await a.pubsub.publish(topic, "n");
-            await flush();
+            await settle(harness);
             // delivered once and NACKed; NOT synchronously retried (no tight loop).
             expect(attempts).toEqual(["n"]);
             // next cycle (a subsequent publish) re-reads forward from the held cursor.
             await a.pubsub.publish(topic, "next");
-            await flush();
+            await settle(harness);
             // "n" redelivered (ACKed this time), then "next".
             expect(attempts).toEqual(["n", "n", "next"]);
           } finally {
@@ -374,19 +375,19 @@ export async function runConformanceSuite(label: string, factory: HarnessFactory
               }
             });
             await a.pubsub.publish(topic, "N");
-            await flush();
+            await settle(harness);
             expect(attempts).toEqual(["N"]); // N delivered + NACKed; cursor holds
 
             // Publishing N+1 is itself a next cycle: N is redelivered (NACK again), and HOL
             // blocks N+1 — it must NOT appear while N is unacked.
             await a.pubsub.publish(topic, "N+1");
-            await flush();
+            await settle(harness);
             expect(attempts).toEqual(["N", "N"]);
 
             // Let N succeed, trigger the next cycle.
             nFails = false;
             await a.pubsub.publish(topic, "N+2");
-            await flush();
+            await settle(harness);
             // This cycle redelivers N (now ACKs), then N+1, then N+2 — all in order.
             expect(attempts).toEqual(["N", "N", "N", "N+1", "N+2"]);
           } finally {
@@ -409,9 +410,9 @@ export async function runConformanceSuite(label: string, factory: HarnessFactory
               }
             });
             await a.pubsub.publish(topic, "d");
-            await flush();
+            await settle(harness);
             await a.pubsub.publish(topic, "trigger");
-            await flush();
+            await settle(harness);
             // "d" appears TWICE — at-least-once delivers duplicates; the consumer must dedupe.
             expect(seen.filter((x) => x === "d").length).toBe(2);
           } finally {
@@ -444,14 +445,14 @@ export async function runConformanceSuite(label: string, factory: HarnessFactory
             });
             // Publish N — drain suspends at the gate inside onMessage(N).
             const publishN = a.pubsub.publish(topic, "N");
-            await flush();
+            await settle(harness);
             // Overlapping publish of M while N's handler is suspended. Must not be swallowed.
             const publishM = a.pubsub.publish(topic, "M");
-            await flush();
+            await settle(harness);
             release(); // N's handler resumes and NACKs.
             await publishN;
             await publishM;
-            await flush();
+            await settle(harness);
             // At-least-once: N must be redelivered (and ACK this time) and M must be
             // delivered — neither stranded. N appears twice (NACK then ACK), M once.
             expect(seen.filter((x) => x === "N").length).toBe(2);
@@ -476,13 +477,13 @@ export async function runConformanceSuite(label: string, factory: HarnessFactory
               }
             });
             await a.pubsub.publish(topic, "poison");
-            await flush();
+            await settle(harness);
             // Drive several cycles; the poison message keeps being redelivered and the
             // cursor never advances → nothing past it is ever delivered.
             await a.pubsub.publish(topic, "after-1");
-            await flush();
+            await settle(harness);
             await a.pubsub.publish(topic, "after-2");
-            await flush();
+            await settle(harness);
             // ONLY "poison" was ever attempted (redelivered each cycle); "after-*" wedged.
             expect(new Set(attempts)).toEqual(new Set(["poison"]));
             expect(attempts.includes("after-1")).toBe(false);
@@ -530,7 +531,7 @@ export async function runConformanceSuite(label: string, factory: HarnessFactory
           await b.pubsub.subscribe(topic, (m) => {
             got.push(m.data);
           });
-          await flush();
+          await settle(harness);
           expect(got).toEqual(["persisted"]); // survived the restart
         } finally {
           await harness.cleanup();
