@@ -54,6 +54,11 @@ export class SqliteMessageRepo implements MessageRepository {
   /**
    * Immediate transaction: read cursor internally, fetch messages WHERE id > cursor
    * AND agent_id != agentId, advance cursor. Fully atomic.
+   *
+   * I2 — Gap#2 EXEMPT: the internal cursor read is keyed by (agent,channel) — a
+   * specific-agent position read, NOT a membership enumeration — so it is deliberately
+   * NOT filtered by `subscribed`. Membership gating happens upstream (service.read requires
+   * getMembers; readAllUnread drains via the subscribed-filtered listForAgent).
    */
   readForwardAndAdvance(agentId: string, channelId: number, limit: number): Message[] {
     const doRead = this.db.transaction(() => {

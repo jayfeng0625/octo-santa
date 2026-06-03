@@ -104,4 +104,22 @@ describe("SqliteCursorRepo", () => {
       db.close();
     });
   });
+
+  // I2 — Gap#2: listForAgent is a membership-driving read (the readAllUnread pull-drain),
+  // so it must exclude channels the agent has unsubscribed from (subscribed=0).
+  describe("listForAgent — subscribed filter (I2)", () => {
+    it("excludes channels the agent has unsubscribed from", () => {
+      const { db, cursors, messages, channelId } = setup();
+      messages.insertAndJoinSender(channelId, "agent-b", "hi", []);
+      messages.readForwardAndAdvance("agent-a", channelId, 50); // creates agent-a's cursor row
+      expect(cursors.listForAgent("agent-a").length).toBe(1);
+
+      db.run(
+        "UPDATE cursors SET subscribed = 0 WHERE agent_id = 'agent-a' AND channel_id = ?",
+        [channelId]
+      );
+      expect(cursors.listForAgent("agent-a").length).toBe(0);
+      db.close();
+    });
+  });
 });

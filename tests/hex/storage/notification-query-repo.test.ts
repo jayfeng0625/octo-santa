@@ -183,5 +183,19 @@ describe("SqliteNotificationQueryRepo", () => {
       expect(result.length).toBe(3);
       db.close();
     });
+
+    // I2 — Gap#2: cross-process push delivery must NOT reach an unsubscribed member
+    // (the highest-risk ghost-leak surface).
+    it("excludes an unsubscribed member from delivery (I2)", () => {
+      const { db, channels, messages, notifQuery } = setup();
+      const ch = channels.create("general", "agent-a");
+      channels.addMember("agent-b", ch.id, 0);
+      messages.insertAndJoinSender(ch.id, "agent-a", "hello", []);
+      expect(notifQuery.getNewMessagesForAgent("agent-b", 0, 100).length).toBe(1);
+
+      channels.unsubscribeMember("agent-b", ch.id);
+      expect(notifQuery.getNewMessagesForAgent("agent-b", 0, 100).length).toBe(0);
+      db.close();
+    });
   });
 });

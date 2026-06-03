@@ -1,6 +1,6 @@
 import { describe, it, expect, afterEach } from "bun:test";
 import { createDb } from "../src/storage/sqlite/db";
-import { runMigrations, type Migration } from "../src/storage/sqlite/migrations";
+import { runMigrations, allMigrations, type Migration } from "../src/storage/sqlite/migrations";
 import { cleanupDb, testDbPath } from "./helpers/db";
 
 const TEST_DB = testDbPath("migrations");
@@ -178,6 +178,52 @@ describe("name-based migrations", () => {
 
     const msgCols = db.query("PRAGMA table_info(messages)").all() as { name: string }[];
     expect(msgCols.map(c => c.name)).toContain("mentions");
+
+    db.close();
+  });
+});
+
+// I2 — Gap#2: messaging_007 adds the `subscribed` membership flag to cursors via a
+// plain ADD COLUMN. cursors is an FK CHILD (no table rebuild, no foreign_keys=OFF), so
+// the FK-parent rebuild landmine does not apply — but we still prove it COMMITs cleanly
+// against a POPULATED db and backfills existing rows to 1.
+describe("messaging_007 subscribed membership column (I2)", () => {
+  const M007 = "messaging_007_membership_subscribed";
+
+  it("adds `subscribed` to a populated cursors table and backfills existing rows to 1", () => {
+    cleanupDb(TEST_DB);
+    const db = createDb(TEST_DB);
+
+    // Migrate everything EXCEPT 007, then populate a member (cursor row).
+    const pre007 = allMigrations.filter((m) => m.name !== M007);
+    runMigrations(db, pre007);
+    db.run("INSERT INTO agents (id, created_at, last_seen_at) VALUES ('agent-a', 0, 0)");
+    db.run(
+      "INSERT INTO channels (name, created_by, created_at) VALUES ('general', 'agent-a', 0)"
+    );
+    const chId = (db.query("SELECT id FROM channels WHERE name = 'general'").get() as {
+      id: number;
+    }).id;
+    db.run(
+      "INSERT INTO cursors (agent_id, channel_id, last_read_message_id) VALUES ('agent-a', ?, 0)",
+      [chId]
+    );
+
+    // Now apply 007 against the POPULATED db — must COMMIT cleanly.
+    const result = runMigrations(db, allMigrations);
+    expect(result.applied).toContain(M007);
+    expect(result.driftDetected).toEqual([]);
+
+    const cols = (db.query("PRAGMA table_info(cursors)").all() as { name: string }[]).map(
+      (c) => c.name
+    );
+    expect(cols).toContain("subscribed");
+
+    // Existing row backfilled to 1 (current members stay members).
+    const row = db
+      .query("SELECT subscribed FROM cursors WHERE agent_id = 'agent-a' AND channel_id = ?")
+      .get(chId) as { subscribed: number };
+    expect(row.subscribed).toBe(1);
 
     db.close();
   });

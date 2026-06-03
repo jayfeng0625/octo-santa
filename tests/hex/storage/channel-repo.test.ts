@@ -178,4 +178,45 @@ describe("SqliteChannelRepo", () => {
     expect(result.allowed).toBe(true);
     db.close();
   });
+
+  // I2 — Gap#2: `subscribed` membership flag. Unsubscribed members vanish from the
+  // membership-read surface but keep their read position (stop-only resume).
+  describe("subscribed membership flag (I2)", () => {
+    it("getMembers and getMemberCount exclude unsubscribed members", () => {
+      const { db, agents, channels } = setup();
+      agents.register("agent-b", process.pid);
+      const ch = channels.create("general", "agent-a");
+      channels.addMember("agent-a", ch.id, 0);
+      channels.addMember("agent-b", ch.id, 0);
+      expect(channels.getMemberCount(ch.id)).toBe(2);
+      expect(channels.getMembers(ch.id).map((m) => m.id).sort()).toEqual([
+        "agent-a",
+        "agent-b",
+      ]);
+
+      channels.unsubscribeMember("agent-b", ch.id);
+
+      // Vanishes by PRESENCE/ABSENCE — both queries filter independently.
+      expect(channels.getMemberCount(ch.id)).toBe(1);
+      expect(channels.getMembers(ch.id).map((m) => m.id)).toEqual(["agent-a"]);
+      db.close();
+    });
+
+    it("re-subscribe reactivates (subscribed 0→1) and preserves read position", () => {
+      const { db, channels } = setup();
+      const ch = channels.create("general", "agent-a");
+      channels.addMember("agent-a", ch.id, 5); // joined at position 5
+      channels.unsubscribeMember("agent-a", ch.id);
+      expect(channels.getMemberCount(ch.id)).toBe(0);
+
+      // Re-subscribe with a DIFFERENT initial cursor — must NOT reset the held position.
+      channels.addMember("agent-a", ch.id, 0);
+      expect(channels.getMemberCount(ch.id)).toBe(1);
+      const pos = db
+        .query("SELECT last_read_message_id FROM cursors WHERE agent_id = 'agent-a' AND channel_id = ?")
+        .get(ch.id) as { last_read_message_id: number };
+      expect(pos.last_read_message_id).toBe(5);
+      db.close();
+    });
+  });
 });

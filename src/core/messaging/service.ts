@@ -219,6 +219,18 @@ export class MessagingService {
     this.channels.addMember(agentId, channel.id, 0);
   }
 
+  /**
+   * I2 — Gap#2: stop-only unsubscribe (spec §2.4). Stops membership + delivery but PRESERVES
+   * the read position so a later re-subscribe resumes from the held cursor (not full backlog).
+   */
+  unsubscribe(agentId: string, channelName: string): void {
+    this.requireRegistered(agentId);
+    assertDmAccess(channelName, agentId);
+    const channel = this.channels.findByName(channelName);
+    if (!channel) throw new Error(`Channel "${channelName}" does not exist`);
+    this.channels.unsubscribeMember(agentId, channel.id);
+  }
+
   send(agentId: string, channelName: string, content: string, options?: SendOptions): Message {
     if (!content.trim()) throw new Error("message content must not be empty");
     this.requireRegistered(agentId);

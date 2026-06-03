@@ -623,4 +623,65 @@ describe("MessagingService", () => {
       expect(svc.replayMessages("nonexistent", 0, 50)).toEqual([]);
     });
   });
+
+  // I2 — Gap#2: subscribed membership flag + ghost-leak fix. Assert membership via
+  // PRESENCE/ABSENCE (the projected `active` is LIVENESS, not membership).
+  describe("unsubscribe / subscribed membership (I2)", () => {
+    it("an unsubscribed agent vanishes from members, count, and the pull-drain", () => {
+      const { svc } = setup();
+      svc.register("alice");
+      svc.createChannel("alice", "general");
+      svc.subscribe("alice", "general");
+      svc.register("bob");
+      svc.subscribe("bob", "general");
+      svc.send("alice", "general", "hello");
+
+      expect(svc.listMembers("general").map((m) => m.agent_id).sort()).toEqual([
+        "alice",
+        "bob",
+      ]);
+
+      svc.unsubscribe("bob", "general");
+
+      expect(svc.listMembers("general").map((m) => m.agent_id)).toEqual(["alice"]);
+      // readAllUnread drains via listForAgent — the unsubscribed channel must not appear.
+      expect(svc.readAllUnread("bob").find((u) => u.channel === "general")).toBeUndefined();
+    });
+
+    it("re-subscribe restores membership and resumes from the held position", () => {
+      const { svc } = setup();
+      svc.register("alice");
+      svc.createChannel("alice", "general");
+      svc.subscribe("alice", "general");
+      svc.register("bob");
+      svc.subscribe("bob", "general");
+      const m1 = svc.send("alice", "general", "one");
+      svc.advanceCursor("bob", "general", m1.id);
+      svc.unsubscribe("bob", "general");
+      svc.send("alice", "general", "two");
+
+      svc.subscribe("bob", "general");
+      // Position preserved (resumes from m1, NOT reset to a full-backlog 0).
+      expect(svc.getCursorPosition("bob", "general")).toBe(m1.id);
+      expect(svc.listMembers("general").map((m) => m.agent_id).sort()).toEqual([
+        "alice",
+        "bob",
+      ]);
+    });
+
+    it("sending does NOT reactivate a previously-unsubscribed agent (RULED)", () => {
+      const { svc } = setup();
+      svc.register("alice");
+      svc.createChannel("alice", "general");
+      svc.subscribe("alice", "general");
+      svc.register("bob");
+      svc.subscribe("bob", "general");
+      svc.unsubscribe("bob", "general");
+      expect(svc.listMembers("general").map((m) => m.agent_id)).toEqual(["alice"]);
+
+      // bob posts while unsubscribed — stays subscribed=0 (sender upsert is DO NOTHING).
+      svc.send("bob", "general", "still here");
+      expect(svc.listMembers("general").map((m) => m.agent_id)).toEqual(["alice"]);
+    });
+  });
 });

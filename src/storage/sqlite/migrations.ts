@@ -163,6 +163,18 @@ const messagingMigrations: Migration[] = [
       UPDATE channels SET max_hops = ${DEFAULT_MAX_HOPS} WHERE max_hops = 50;
     `,
   },
+  {
+    // I2 — Gap#2: membership `subscribed` flag (subscribed=1 active, 0 = unsubscribed but
+    // cursor held for stop-only resume). `cursors` is an FK CHILD (channel_id → channels.id),
+    // so this is a plain additive ALTER — NO table rebuild, NO foreign_keys=OFF. The
+    // FK-PARENT rebuild landmine (reference_sqlite_fk_parent_table_rebuild_trap) does NOT
+    // apply here: that trap is specific to rebuilding `channels` (the FK parent). Existing
+    // rows backfill to 1 — current members stay members; only unsubscribe ever writes 0.
+    name: "messaging_007_membership_subscribed",
+    up: `
+      ALTER TABLE cursors ADD COLUMN subscribed INTEGER NOT NULL DEFAULT 1;
+    `,
+  },
 ];
 
 const brainMigrations: Migration[] = [

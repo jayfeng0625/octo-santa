@@ -38,6 +38,8 @@ export interface ChannelRepository {
   create(name: string, createdBy: string, maxHops?: number): Channel;
   list(): Channel[];
   addMember(agentId: string, channelId: number, initialCursorId: number): void;
+  /** Stop-only unsubscribe (I2): subscribed=0; cursor/position preserved for resume. */
+  unsubscribeMember(agentId: string, channelId: number): void;
   getMembers(channelId: number): Agent[];
   getMemberCount(channelId: number): number;
   renameWithAnnouncement(

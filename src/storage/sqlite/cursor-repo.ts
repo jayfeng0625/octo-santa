@@ -6,6 +6,9 @@ import { withRetrySync } from "./db";
 export class SqliteCursorRepo implements CursorRepository {
   constructor(private db: Database) {}
 
+  // I2 — Gap#2 EXEMPT: specific-agent position read, keyed (agent,channel). NOT a
+  // membership enumeration — deliberately NOT filtered by `subscribed`, so an unsubscribed
+  // agent's held position survives for stop-only resume (filtering here would corrupt it).
   get(agentId: string, channelId: number): number {
     const row = this.db
       .query(
@@ -35,13 +38,15 @@ export class SqliteCursorRepo implements CursorRepository {
   }
 
   listForAgent(agentId: string): CursorWithChannel[] {
+    // I2 — Gap#2: membership-driving read (powers readAllUnread's pull-drain), so it
+    // filters subscribed=1 — an unsubscribed channel must not auto-drain (pull-side ghost).
     return this.db
       .query(
         `SELECT cr.channel_id as channelId, ch.name as channelName,
                 cr.last_read_message_id as lastReadMessageId
          FROM cursors cr
          JOIN channels ch ON cr.channel_id = ch.id
-         WHERE cr.agent_id = ?`
+         WHERE cr.agent_id = ? AND cr.subscribed = 1`
       )
       .all(agentId) as CursorWithChannel[];
   }

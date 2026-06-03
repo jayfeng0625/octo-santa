@@ -23,9 +23,11 @@ export class SqliteNotificationQueryRepo {
   ): MessageWithChannel[] {
     return this.db
       .query(
+        // I2 — Gap#2: cm.subscribed=1 gates cross-process push delivery — an unsubscribed
+        // member must NOT receive (highest-risk ghost-leak surface).
         `SELECT m.*, c.name AS channel_name
          FROM messages m
-         JOIN cursors cm ON cm.channel_id = m.channel_id AND cm.agent_id = ?
+         JOIN cursors cm ON cm.channel_id = m.channel_id AND cm.agent_id = ? AND cm.subscribed = 1
          JOIN channels c ON c.id = m.channel_id
          WHERE m.id > ? AND m.agent_id != ?
          ORDER BY m.id ASC

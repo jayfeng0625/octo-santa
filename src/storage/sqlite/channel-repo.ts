@@ -29,28 +29,44 @@ export class SqliteChannelRepo implements ChannelRepository {
 
   addMember(agentId: string, channelId: number, initialCursorId: number): void {
     withRetrySync(() => {
+      // I2 — Gap#2: re-subscribe REACTIVATES (subscribed 0→1) while preserving the held
+      // read position — DO UPDATE touches only `subscribed`, never last_read_message_id
+      // (stop-only resume, spec §2.4). A brand-new row rides the column default (1).
       this.db.run(
         `INSERT INTO cursors (agent_id, channel_id, last_read_message_id) VALUES (?, ?, ?)
-         ON CONFLICT(agent_id, channel_id) DO NOTHING`,
+         ON CONFLICT(agent_id, channel_id) DO UPDATE SET subscribed = 1`,
         [agentId, channelId, initialCursorId]
       );
     });
   }
 
+  // I2 — Gap#2: stop-only unsubscribe (sole writer of subscribed=0). Drops membership/
+  // delivery but PRESERVES the cursor so re-subscribe resumes from the held position.
+  unsubscribeMember(agentId: string, channelId: number): void {
+    withRetrySync(() => {
+      this.db.run(
+        "UPDATE cursors SET subscribed = 0 WHERE agent_id = ? AND channel_id = ?",
+        [agentId, channelId]
+      );
+    });
+  }
+
   getMembers(channelId: number): Agent[] {
+    // I2 — Gap#2: membership-read surface filters subscribed=1 (unsubscribed → ghost leak).
     return this.db
       .query(
         `SELECT a.* FROM cursors cr
          JOIN agents a ON cr.agent_id = a.id
-         WHERE cr.channel_id = ?
+         WHERE cr.channel_id = ? AND cr.subscribed = 1
          ORDER BY a.id`
       )
       .all(channelId) as Agent[];
   }
 
   getMemberCount(channelId: number): number {
+    // I2 — Gap#2: its OWN subscribed=1 filter (separate COUNT, not folded into getMembers).
     const row = this.db
-      .query("SELECT COUNT(*) as count FROM cursors WHERE channel_id = ?")
+      .query("SELECT COUNT(*) as count FROM cursors WHERE channel_id = ? AND subscribed = 1")
       .get(channelId) as { count: number };
     return row.count;
   }
