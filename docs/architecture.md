@@ -13,9 +13,9 @@ independently swappable.
 ## North Star
 
 octo-santa is a local-first agent collaboration framework. Agents on the same
-machine discover each other, communicate through channels, and share domain
-knowledge — without servers, accounts, or network access. A single SQLite file
-(`messages.db`) is the entire backend.
+machine discover each other and communicate through channels — without servers,
+accounts, or network access. A single SQLite file (`messages.db`) is the entire
+backend.
 
 Full north star and strategic roadmap live in the
 [octo-santa-roadmaps](../octo-santa-roadmaps) repo. This section captures what
@@ -77,10 +77,7 @@ src/
     messaging/
       service.ts                 ← MessagingService — orchestrates messaging operations
       types.ts                   ← Agent, Channel, Message, etc.
-    brain/
-      service.ts                 ← BrainService — orchestrates brain/domain operations
-      types.ts                   ← BrainDoc, Domain, DomainExpert, etc.
-    ports.ts                     ← All port interfaces (repositories, notification, brain store)
+    ports.ts                     ← All port interfaces (repositories, notification)
     utils.ts                     ← Pure domain utilities (validation, mention parsing, liveness)
 
   storage/                       ← Storage adapters
@@ -89,13 +86,12 @@ src/
       channel-repo.ts
       message-repo.ts
       cursor-repo.ts
-      domain-repo.ts
       notification-query-repo.ts ← Internal class for cross-process poller queries
       index.ts                   ← Factory: createSqliteRepos(db)
       db.ts                      ← createDb(), withRetrySync()
       migrations.ts              ← Schema migrations
-    fs-brain-store/
-      store.ts                   ← Filesystem BrainStore (markdown scanning)
+    yaml-profiles/
+      store.ts                   ← YamlProfileStore (agent profile persistence)
 
   transports/                    ← Transport adapters (how external clients connect)
     mcp-stdio/
@@ -130,8 +126,6 @@ The core defines interfaces that adapters implement:
 | `ChannelRepository` | Channel CRUD, membership, rename with announcement |
 | `MessageRepository` | Message insert, cursor-advancing reads, history reads |
 | `CursorRepository` | Read cursor tracking per agent per channel |
-| `DomainRepository` | Brain domain registration and claiming |
-| `BrainStore` | Markdown document scanning and reading |
 | `NotificationPort` | Push delivery contract (transport-agnostic) |
 | `NotificationDispatch` | Event-driven dispatch — core calls on `send()` |
 
@@ -142,17 +136,13 @@ No polling interfaces live in core.
 
 ### Services
 
-Two services orchestrate business logic through port interfaces:
+**`MessagingService`** orchestrates business logic through port interfaces —
+registration, channels, messaging, DMs, mentions, cursor management. On `send()`,
+resolves mention targets and invokes `NotificationDispatch` for in-process
+event-driven push.
 
-**`MessagingService`** — registration, channels, messaging, DMs, mentions, cursor
-management. On `send()`, resolves mention targets and invokes `NotificationDispatch`
-for in-process event-driven push.
-
-**`BrainService`** — brain document indexing/reading, domain registration/claiming,
-expert discovery.
-
-Services are process-scoped singletons. They hold `process.pid` for agent ownership
-checks.
+The service is a process-scoped singleton. It holds `process.pid` for agent
+ownership checks.
 
 ### Domain Utilities (`core/utils.ts`)
 
@@ -233,8 +223,8 @@ sole push mechanism after the dispatcher is removed.**
 
 The MCP transport adapter runs a heartbeat timer that calls
 `agentRepo.heartbeatOrReclaim()` every 10 seconds. This updates `last_seen_at` in
-storage. The service uses `isAgentActive()` to filter agents in `listAgents()`,
-`listMembers()`, and `findExperts()`. Liveness is transport-independent.
+storage. The service uses `isAgentActive()` to filter agents in `listAgents()`
+and `listMembers()`. Liveness is transport-independent.
 
 ### 3. Agent Registration and Disconnect
 
@@ -249,12 +239,7 @@ Service creates the DM channel, subscribes both agents, and sends the message �
 all storage writes. Each party's process picks up the new message from SQLite via
 its poller.
 
-### 5. Brain Domain Discovery
-
-Service handles `claimDomain()` (write) and `findExperts()` (read + liveness
-filter). Transport adapters just expose the tools.
-
-### 6. Cursor Tracking
+### 5. Cursor Tracking
 
 Service manages read cursors via repos. `readForwardAndAdvance()` atomically reads
 and advances the cursor. The notification poller maintains its own high-water mark
@@ -271,15 +256,13 @@ cross-process message bus.
 The composition root (`src/main.ts`) wires everything top-down:
 
 1. **Storage** — create DB, run migrations, create all repos + notification query class
-2. **Brain store** — read config, create filesystem store
-3. **Notification dispatcher** — create in-process dispatcher
-4. **Core services** — inject repos and dispatcher into `MessagingService`
-5. **Domain registration** — register domain metadata if configured
-6. **Transport adapter** — register MCP tools, set up agent binding with:
+2. **Notification dispatcher** — create in-process dispatcher
+3. **Core services** — inject repos and dispatcher into `MessagingService`
+4. **Transport adapter** — register MCP tools, set up agent binding with:
    - `registerNotificationHandler` / `unregisterNotificationHandler` (dispatcher)
    - `startPoller` factory (creates and starts cross-process poller on agent bind)
    - Heartbeat timer (10s interval)
-7. **Connect** — start stdio transport, set up disconnect handler
+5. **Connect** — start stdio transport, set up disconnect handler
 
 The poller starts lazily — only when an agent registers and binds. On disconnect,
 the poller is stopped and the agent's handler is unregistered from the dispatcher.
@@ -289,7 +272,7 @@ the poller is stopped and the agent's handler is unregistered from the dispatche
 ### New Transport (e.g., JSON-RPC over HTTP)
 
 1. Create `src/transports/jsonrpc-http/adapter.ts`
-2. Map JSON-RPC methods to `MessagingService` / `BrainService` calls
+2. Map JSON-RPC methods to `MessagingService` calls
 3. Add wiring in `main.ts` — same services, different transport
 4. Use the cross-process poller for notification delivery — the in-process
    dispatcher is being removed (see §Honest Accounting)

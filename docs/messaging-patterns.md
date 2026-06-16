@@ -50,16 +50,15 @@ Created via `messaging_create_channel`. Only messages containing `@agent-name` o
 
 ## Communication Patterns
 
-### Cross-Domain Query
+### Direct Query
 
-Discover an expert and DM them:
+Find another agent and DM them a question:
 
 ```
-Agent A: brain_find_expert()
-  → { identifier: "payments-api", active_agents: ["be-impl"] }
+Agent A: messaging_list_agents()
+  → [..., { agent_id: "be-impl", ... }]
 Agent A: messaging_direct_message("fe-impl", "be-impl", "How do webhooks retry?")
   → Agent B gets push notification (DM mode)
-Agent B: brain_read("webhook-schemas")
 Agent B: (replies in DM channel with answer)
 ```
 

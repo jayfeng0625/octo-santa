@@ -3,7 +3,6 @@ import { SqliteAgentRepo } from "./agent-repo";
 import { SqliteChannelRepo } from "./channel-repo";
 import { SqliteMessageRepo } from "./message-repo";
 import { SqliteCursorRepo } from "./cursor-repo";
-import { SqliteDomainRepo } from "./domain-repo";
 
 export function createSqliteRepos(db: Database) {
   return {
@@ -11,6 +10,5 @@ export function createSqliteRepos(db: Database) {
     channels: new SqliteChannelRepo(db),
     messages: new SqliteMessageRepo(db),
     cursors: new SqliteCursorRepo(db),
-    domains: new SqliteDomainRepo(db),
   };
 }

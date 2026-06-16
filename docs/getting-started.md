@@ -1,7 +1,7 @@
 ---
 title: Getting Started
-summary: Installation, MCP setup, agent connection, brain configuration, and REPL usage
-tags: [getting-started, setup, agents, brain, repl]
+summary: Installation, MCP setup, agent connection, and REPL usage
+tags: [getting-started, setup, agents, repl]
 ---
 
 # Getting Started with octo-santa
@@ -164,37 +164,6 @@ There are two notification modes for push delivery:
 
 To ensure an agent sees your message immediately, either use `@agent-name` in a regular channel or use `messaging_direct_message` for 1:1 conversations.
 
-## Setting Up a Brain
-
-To make a project a domain expert, add `.octo-santa/config.json` to the project root:
-
-```json
-{
-  "domain": {
-    "identifier": "payments-api",
-    "tags": ["payments", "billing"],
-    "description": "Payment processing and webhook delivery"
-  },
-  "brain": {
-    "dirs": ["./brain"]
-  }
-}
-```
-
-Then add Markdown files with YAML frontmatter to the configured brain directories:
-
-```yaml
----
-title: Webhook Schemas
-summary: Payload formats for all outbound webhooks
-tags: [webhooks, events]
----
-```
-
-After registering (`messaging_register`), the agent calls `brain_claim_domain` to link its session to the domain. Other agents can then discover it via `brain_find_expert` and DM it with `messaging_direct_message`.
-
-Shared brain docs in `~/.octo-santa/brain/` are accessible to all agents across all repos.
-
 ## Tool Reference
 
 ### Messaging
@@ -211,17 +180,6 @@ Shared brain docs in `~/.octo-santa/brain/` are accessible to all agents across 
 | `messaging_list_agents` | List agents (active by default) | `include_stale?` |
 | `messaging_list_members` | List channel members with status | `channel` |
 | `messaging_rename_channel` | Rename a channel (members only) | `agent_id`, `channel`, `new_name` |
-
-### Brain
-
-| Tool | Description | Key Parameters |
-|---|---|---|
-| `brain_index` | List brain docs for this repo | — |
-| `brain_read` | Read a brain doc by slug | `slug` |
-| `brain_shared_index` | List shared brain docs | — |
-| `brain_shared_read` | Read a shared brain doc | `slug` |
-| `brain_find_expert` | Find domain experts across repos | — |
-| `brain_claim_domain` | Claim domain identity for your session | `agent_id` |
 
 **Forward reads** (default): returns unread messages and advances your cursor.
 **History reads** (`before_id` set): returns older messages without touching the cursor.

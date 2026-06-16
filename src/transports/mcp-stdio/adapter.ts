@@ -4,20 +4,15 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod";
 import type { MessagingService } from "../../core/messaging/service";
 import { DEFAULT_MAX_HOPS, MAX_HOPS_CAP } from "../../core/messaging/types";
-import type { BrainService } from "../../core/brain/service";
-import type { OctoSantaConfig, BrainDoc } from "../../core/brain/types";
 import type { NotificationPort, AgentRepository } from "../../core/ports";
 import type { NamedProfileFields } from "../../core/profiles/types";
 import { log } from "../../log";
-import { jsonResult, withAgent, formatBrainIndex } from "./helpers";
+import { jsonResult, withAgent } from "./helpers";
 import pkg from "../../../package.json";
 
 // --- Instructions builder ---
 
-export function buildInstructions(
-  config: OctoSantaConfig | null,
-  brainIndex?: BrainDoc[]
-): string {
+export function buildInstructions(): string {
   let instructions =
     "octo-santa messaging module is available. Call messaging_register with a " +
     "unique agent name (e.g. your role). If the name is taken, pick a different one.\n\n" +
@@ -49,34 +44,12 @@ export function buildInstructions(
     "- Do not use bash or scripts for communication\n\n" +
     "DISCOVERY: messaging_list_agents, messaging_list_members.";
 
-  const brainSuffix =
-    "Use brain_index to list local brain docs, brain_read to read one. " +
-    "Use brain_shared_index/brain_shared_read for shared docs in ~/.octo-santa/brain/. " +
-    "Use brain_find_expert to discover domain experts across repos. " +
-    "Use brain_claim_domain after messaging_register to become a queryable expert. " +
-    "Use messaging_direct_message to DM another agent.";
-
-  instructions += "\n\nBRAIN: ";
-  if (config?.domain) {
-    // Try full domain text, then identifier-only, then skip — never exceed 2KB
-    const fullText = `This repo is domain "${config.domain.identifier}" (${config.domain.description}). `;
-    const shortText = `This repo is domain "${config.domain.identifier}". `;
-    const base = instructions + brainSuffix;
-    if (Buffer.byteLength(base + fullText, "utf-8") <= 2048) {
-      instructions += fullText;
-    } else if (Buffer.byteLength(base + shortText, "utf-8") <= 2048) {
-      instructions += shortText;
-    }
-    // else: skip domain text entirely to stay within budget
-  }
-  instructions += brainSuffix;
-
-  // NON-PUSH CLIENTS block is appended AFTER the brain section intentionally.
+  // NON-PUSH CLIENTS block is appended at the end of the document intentionally.
   // Claude Code truncates server instructions at 2KB. End-of-doc placement means
   // that if truncation clips anything, it clips this tail — which Claude Code
   // (a push-tag client) does not need. Non-push clients (Codex, Gemini CLI,
   // OpenCode, most local-model clients) have no 2KB limit and receive the
-  // full block. Phase 0c will restructure this and reclaim budget.
+  // full block.
   instructions +=
     "\n\nNON-PUSH CLIENTS: This section overrides the BOUNDARIES prohibition on " +
     "polling loops — for messaging_listen only. If your MCP client does not " +
@@ -96,7 +69,7 @@ export function buildInstructions(
 }
 
 /** Tier 1 universal guidance — returned by messaging_get_instructions. */
-export const UNIVERSAL_GUIDANCE = buildInstructions(null);
+export const UNIVERSAL_GUIDANCE = buildInstructions();
 
 // --- Tool registration ---
 
@@ -321,99 +294,10 @@ export function registerMessagingTools(
   });
 }
 
-export function registerBrainTools(
-  server: McpServer,
-  brain: BrainService,
-  config: OctoSantaConfig | null,
-  hasBrain: boolean,
-  onAgentId?: (agentId: string) => { commit: (resolvedName?: string) => void }
-): void {
-  server.registerTool("brain_index", {
-    description:
-      "List brain documents for this repo (from .octo-santa/config.json brain.dirs and brain.files)",
-  }, async () => {
-    if (!hasBrain) return { content: [{ type: "text" as const, text: "" }] };
-    const docs = brain.index();
-    if (docs.length === 0) return { content: [{ type: "text" as const, text: "" }] };
-    const index = formatBrainIndex(docs);
-    return { content: [{ type: "text" as const, text: index }] };
-  });
-
-  server.registerTool("brain_read", {
-    description: "Read a brain document by slug",
-    inputSchema: {
-      slug: z
-        .string()
-        .trim()
-        .min(1)
-        .regex(/^[\w-]+$/, "Slug must contain only letters, digits, underscores, or hyphens")
-        .describe("Document slug (filename without .md)"),
-    },
-  }, async ({ slug }) => {
-    if (!hasBrain) throw new Error("No brain configured");
-    const content = brain.read(slug);
-    return { content: [{ type: "text" as const, text: content }] };
-  });
-
-  server.registerTool("brain_shared_index", {
-    description: "List shared brain documents from ~/.octo-santa/brain/",
-  }, async () => {
-    const docs = brain.sharedIndex();
-    if (docs.length === 0) return { content: [{ type: "text" as const, text: "" }] };
-    const index = formatBrainIndex(docs);
-    return { content: [{ type: "text" as const, text: index }] };
-  });
-
-  server.registerTool("brain_shared_read", {
-    description: "Read a shared brain document by slug",
-    inputSchema: {
-      slug: z
-        .string()
-        .trim()
-        .min(1)
-        .regex(/^[\w-]+$/, "Slug must contain only letters, digits, underscores, or hyphens")
-        .describe("Document slug (filename without .md)"),
-    },
-  }, async ({ slug }) => {
-    const content = brain.sharedRead(slug);
-    return { content: [{ type: "text" as const, text: content }] };
-  });
-
-  server.registerTool("brain_find_expert", {
-    description:
-      "Find domain experts across all connected repos. Returns domains with active agent sessions.",
-  }, async () => {
-    return jsonResult(brain.findExperts());
-  });
-
-  server.registerTool("brain_claim_domain", {
-    description:
-      "Claim this repo's domain identity for your agent session. Requires prior messaging_register.",
-    inputSchema: {
-      agent_id: z
-        .string()
-        .trim()
-        .min(1)
-        .describe("Your registered agent name"),
-    },
-  }, async ({ agent_id }) => {
-    return withAgent(onAgentId, agent_id, () => {
-      brain.claimDomain(agent_id);
-      return jsonResult({
-        claimed: config?.domain?.identifier ?? null,
-        agent_id,
-      });
-    });
-  });
-}
-
 // --- Main adapter ---
 
 export interface McpStdioOpts {
   messaging: MessagingService;
-  brain: BrainService;
-  config: OctoSantaConfig | null;
-  brainIndex?: BrainDoc[];
   registerNotificationHandler: (
     agentId: string,
     port: NotificationPort
@@ -423,15 +307,12 @@ export interface McpStdioOpts {
   /** Factory invoked once per session when an agent binds. Returns a handle with stop(). */
   startPoller: (port: NotificationPort, agentId: string, baseName?: string) => { stop(): void };
   heartbeatIntervalMs?: number;
-  onDisconnect: (agentId: string, pid: number) => void;
+  onDisconnect: (agentId: string) => void;
 }
 
 export async function startMcpStdio(opts: McpStdioOpts): Promise<void> {
   const {
     messaging,
-    brain,
-    config,
-    brainIndex,
     registerNotificationHandler,
     unregisterNotificationHandler,
     agents,
@@ -440,15 +321,13 @@ export async function startMcpStdio(opts: McpStdioOpts): Promise<void> {
     onDisconnect,
   } = opts;
 
-  const hasBrain = !!(config?.brain?.dirs || config?.brain?.files);
-
   const mcpServer = new McpServer(
     { name: "octo-santa", version: pkg.version },
     {
       capabilities: {
         experimental: { "claude/channel": {} },
       },
-      instructions: buildInstructions(config, brainIndex),
+      instructions: buildInstructions(),
     }
   );
 
@@ -493,11 +372,10 @@ export async function startMcpStdio(opts: McpStdioOpts): Promise<void> {
     };
   }
 
-  const sessionInstructions = buildInstructions(config, brainIndex);
+  const sessionInstructions = buildInstructions();
   registerMessagingTools(mcpServer, messaging, onAgentId, (profile) => {
     boundProfile = profile;
   }, sessionInstructions, agents);
-  registerBrainTools(mcpServer, brain, config, hasBrain, onAgentId);
 
   const transport = new StdioServerTransport();
   await mcpServer.connect(transport);
@@ -509,24 +387,15 @@ export async function startMcpStdio(opts: McpStdioOpts): Promise<void> {
       if (boundAgentId) unregisterNotificationHandler(boundAgentId);
     } finally {
       if (boundAgentId) {
-        onDisconnect(boundAgentId, process.pid);
+        onDisconnect(boundAgentId);
       }
     }
   };
 
   // Bootstrap nudge — prompt agent to register before any tool call
-  let bootstrapMsg =
+  const bootstrapMsg =
     "octo-santa messaging module is available. Call messaging_register with a unique agent name (e.g. your role), then create or subscribe to channels to start receiving push notifications. If the name is taken, pick a different one. " +
     "If profiles are configured, your name may be resolved to a pool slot (e.g. 'os-dev' -> 'os-dev-1') — always use the `registeredName` from the response for subsequent calls.";
-  if (config?.domain) {
-    bootstrapMsg +=
-      `\n\nBrain module active — this repo is domain "${config.domain.identifier}" (${config.domain.description}). ` +
-      "After messaging_register, call brain_claim_domain to become a queryable expert.";
-  }
-  if (brainIndex && brainIndex.length > 0) {
-    const index = formatBrainIndex(brainIndex);
-    bootstrapMsg += `\n\nBrain index:\n${index}`;
-  }
   await mcpServer.server.notification({
     method: "notifications/claude/channel",
     params: { content: bootstrapMsg, meta: { type: "bootstrap" } },
