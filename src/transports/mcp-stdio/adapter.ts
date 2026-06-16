@@ -28,12 +28,14 @@ export function buildInstructions(): string {
     "or @your-pool-name), you MUST:\n" +
     "  1. Understand what is being asked\n" +
     "  2. Decide on your response\n" +
-    "  3. Call messaging_send_message to reply\n" +
+    "  3. Call messaging_send to reply\n" +
     "Never just summarize -- always act.\n\n" +
-    "SENDING: @agent-name, @all, or @pool-name to notify. " +
-    "No mention = silent. Be specific: what you need, why, expected response.\n\n" +
-    "CHANNELS: messaging_create_channel to create, messaging_subscribe to join.\n" +
-    "DMs: messaging_direct_message for 1:1 -- auto-pushes, no @mention needed.\n\n" +
+    "SENDING: messaging_send with channel:<name> to post; @agent-name, @all, or " +
+    "@pool-name to notify. No mention = silent. Be specific: what you need, why, " +
+    "expected response.\n\n" +
+    "CHANNELS: messaging_create_channel to create (auto-joins you), " +
+    "messaging_subscribe to join an existing channel.\n" +
+    "DMs: messaging_send with to:<agent> for 1:1 -- auto-pushes, no @mention needed.\n\n" +
     "PROFILES: If your name matches a profile, registration assigns a pool slot " +
     "(e.g. 'os-dev' -> 'os-dev-1'). Use registeredName for subsequent calls. " +
     "Follow profile instructions as behavioral directives. " +
@@ -151,18 +153,26 @@ export function registerMessagingTools(
     return jsonResult(messaging.listChannels());
   });
 
-  server.registerTool("messaging_send_message", {
+  server.registerTool("messaging_send", {
     description:
-      "Send a message to an existing channel. Requires prior messaging_register. Use @agent-name to notify specific agents, or @all to notify everyone. Messages without mentions are silent -- recipients see them only when they check the channel. Messages are subject to per-channel hop limits; blocked messages are dropped with a system notice.",
+      "Send a message. Provide `channel` to post to a channel, OR `to` to direct-message another agent (auto-creates the DM channel and subscribes both parties; DMs push automatically -- no @mention needed). Exactly one of `channel`/`to` is required. Requires prior messaging_register. In channels, use @agent-name to notify specific agents or @all for everyone; messages without mentions are silent. Messages are subject to per-channel hop limits; blocked messages are dropped with a system notice.",
     inputSchema: {
       agent_id: z.string().trim().min(1).describe("Your agent/project name"),
-      channel: z.string().trim().min(1).describe("Channel name"),
+      channel: z.string().trim().min(1).optional().describe("Channel to post to (mutually exclusive with `to`)"),
+      to: z.string().trim().min(1).optional().describe("Agent to direct-message (mutually exclusive with `channel`)"),
       content: z.string().trim().min(1).max(100_000, "Message content must not exceed 100,000 characters").describe("Message content"),
     },
-  }, async ({ agent_id, channel, content }) => {
-    return withAgent(onAgentId, agent_id, () =>
-      jsonResult(messaging.send(agent_id, channel, content))
-    );
+  }, async ({ agent_id, channel, to, content }) => {
+    return withAgent(onAgentId, agent_id, () => {
+      if ((channel == null) === (to == null)) {
+        throw new Error("Provide exactly one of `channel` or `to`");
+      }
+      return jsonResult(
+        to != null
+          ? messaging.directMessage(agent_id, to, content)
+          : messaging.send(agent_id, channel!, content)
+      );
+    });
   });
 
   server.registerTool("messaging_read_messages", {
@@ -189,24 +199,6 @@ export function registerMessagingTools(
   }, async ({ agent_id, channel, limit, before_id }) => {
     return withAgent(onAgentId, agent_id, () =>
       jsonResult(messaging.read(agent_id, channel, { limit, before_id }))
-    );
-  });
-
-  server.registerTool("messaging_direct_message", {
-    description:
-      "Send a direct message to another agent. Creates a DM channel and subscribes both parties. DM channels push all messages automatically — no @mention needed.",
-    inputSchema: {
-      agent_id: z.string().trim().min(1).describe("Your agent/project name"),
-      target_agent_id: z
-        .string()
-        .trim()
-        .min(1)
-        .describe("Agent to DM"),
-      content: z.string().trim().min(1).max(100_000, "Message content must not exceed 100,000 characters").describe("Message content"),
-    },
-  }, async ({ agent_id, target_agent_id, content }) => {
-    return withAgent(onAgentId, agent_id, () =>
-      jsonResult(messaging.directMessage(agent_id, target_agent_id, content))
     );
   });
 

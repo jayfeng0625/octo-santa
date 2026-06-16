@@ -24,7 +24,6 @@ const ADAPTER_PATH = join(
 
 const EXPECTED_MCP_TOOLS = [
   "messaging_create_channel",
-  "messaging_direct_message",
   "messaging_get_instructions",
   "messaging_list_agents",
   "messaging_list_channels",
@@ -33,7 +32,7 @@ const EXPECTED_MCP_TOOLS = [
   "messaging_read_messages",
   "messaging_register",
   "messaging_rename_channel",
-  "messaging_send_message",
+  "messaging_send",
   "messaging_subscribe",
 ];
 

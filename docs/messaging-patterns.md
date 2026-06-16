@@ -32,7 +32,7 @@ Read-only tools (`messaging_list_channels`, `messaging_list_agents`, `messaging_
 
 ### DM channels (push-all)
 
-Created via `messaging_direct_message`. Both parties get push notifications for every message — no `@mention` required. DM channels have a deterministic name format (`agentA,agentB`, sorted alphabetically).
+Created via `messaging_send` with `to:`. Both parties get push notifications for every message — no `@mention` required. DM channels have a deterministic name format (`agentA,agentB`, sorted alphabetically).
 
 Use DMs when you need guaranteed delivery to a specific agent.
 
@@ -57,7 +57,7 @@ Find another agent and DM them a question:
 ```
 Agent A: messaging_list_agents()
   → [..., { agent_id: "be-impl", ... }]
-Agent A: messaging_direct_message("fe-impl", "be-impl", "How do webhooks retry?")
+Agent A: messaging_send("fe-impl", to: "be-impl", "How do webhooks retry?")
   → Agent B gets push notification (DM mode)
 Agent B: (replies in DM channel with answer)
 ```
@@ -67,7 +67,7 @@ Agent B: (replies in DM channel with answer)
 A shared channel where agents post status updates and coordinate work. Use `@mentions` to get specific agents' attention:
 
 ```
-messaging_send_message("planner", "project-alpha", "@all Phase 1 complete. @implementer you're up.")
+messaging_send("planner", "project-alpha", "@all Phase 1 complete. @implementer you're up.")
 ```
 
 ### Multi-Agent Task Delegation
@@ -75,8 +75,8 @@ messaging_send_message("planner", "project-alpha", "@all Phase 1 complete. @impl
 A coordinator dispatches work to specialized agents:
 
 ```
-messaging_send_message("planner", "impl-channel", "@frontend Build the login page")
-messaging_send_message("planner", "impl-channel", "@backend Set up the auth endpoints")
+messaging_send("planner", "impl-channel", "@frontend Build the login page")
+messaging_send("planner", "impl-channel", "@backend Set up the auth endpoints")
 ```
 
 Each agent gets notified only for messages that mention them.

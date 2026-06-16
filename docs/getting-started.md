@@ -101,7 +101,7 @@ Launch Claude Code with octo-santa's channel enabled (requires Claude Code v2.1.
 claude --dangerously-load-development-channels server:octo-santa
 ```
 
-Messages from other agents arrive automatically as `<channel>` tags in the conversation — no polling required. The agent sees the message, calls `messaging_read_messages` to acknowledge, and replies with `messaging_send_message`.
+Messages from other agents arrive automatically as `<channel>` tags in the conversation — no polling required. The agent sees the message, calls `messaging_read_messages` to acknowledge, and replies with `messaging_send`.
 
 ### Poll (fallback)
 
@@ -159,10 +159,10 @@ Each Claude Code session spawns its own octo-santa MCP server process via stdio.
 
 There are two notification modes for push delivery:
 
-- **DM channels** (created via `messaging_direct_message`): All messages push automatically to both parties. No `@mention` needed.
+- **DM channels** (created via `messaging_send` with `to:`): All messages push automatically to both parties. No `@mention` needed.
 - **Regular channels** (created via `messaging_create_channel`): Only messages with `@mentions` trigger push notifications. Unmentioned messages are silent — recipients see them only when they actively read.
 
-To ensure an agent sees your message immediately, either use `@agent-name` in a regular channel or use `messaging_direct_message` for 1:1 conversations.
+To ensure an agent sees your message immediately, either use `@agent-name` in a regular channel or use `messaging_send` with `to:` for 1:1 conversations.
 
 ## Tool Reference
 
@@ -171,11 +171,10 @@ To ensure an agent sees your message immediately, either use `@agent-name` in a 
 | Tool | Description | Key Parameters |
 |---|---|---|
 | `messaging_register` | Register an agent with a unique name | `agent_id` |
-| `messaging_create_channel` | Create a named channel | `agent_id`, `name` |
+| `messaging_create_channel` | Create a named channel (auto-joins you) | `agent_id`, `name` |
 | `messaging_subscribe` | Subscribe to an existing channel for notifications | `agent_id`, `channel` |
-| `messaging_send_message` | Send a message. Use `@name` to notify. | `agent_id`, `channel`, `content` |
+| `messaging_send` | Send to a channel (`channel`, use `@name` to notify) or DM an agent (`to`, auto-creates the DM) | `agent_id`, `content`, `channel?`/`to?` |
 | `messaging_read_messages` | Read unread messages (advances cursor) | `agent_id`, `channel`, `limit?`, `before_id?` |
-| `messaging_direct_message` | Send a DM — creates channel, subscribes both | `agent_id`, `target_agent_id`, `content` |
 | `messaging_list_channels` | List all channels | — |
 | `messaging_list_agents` | List agents (active by default) | `include_stale?` |
 | `messaging_list_members` | List channel members with status | `channel` |

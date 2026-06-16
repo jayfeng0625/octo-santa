@@ -68,7 +68,7 @@ describe("agent binding enforcement", () => {
 
     let threw = false;
     try {
-      await handlers.messaging_send_message!({
+      await handlers.messaging_send!({
         agent_id: "agent-b",
         channel: "coordination",
         content: "should not persist",
@@ -150,7 +150,7 @@ describe("agent binding enforcement", () => {
     await handlers.messaging_register!({ agent_id: "agent-a" });
     await handlers.messaging_create_channel!({ agent_id: "agent-a", name: "coordination" });
 
-    const result = await handlers.messaging_send_message!({
+    const result = await handlers.messaging_send!({
       agent_id: "agent-a",
       channel: "coordination",
       content: "hello",
@@ -164,7 +164,7 @@ describe("agent binding enforcement", () => {
     const { db, handlers } = setup();
     await handlers.messaging_register!({ agent_id: "agent-a" });
     await handlers.messaging_create_channel!({ agent_id: "agent-a", name: "ch" });
-    await handlers.messaging_send_message!({ agent_id: "agent-a", channel: "ch", content: "hi" });
+    await handlers.messaging_send!({ agent_id: "agent-a", channel: "ch", content: "hi" });
 
     const result = await handlers.messaging_list_members!({ channel: "ch" });
     const members = JSON.parse(result.content[0].text);
@@ -201,6 +201,61 @@ describe("agent binding enforcement", () => {
     const agents = JSON.parse(result.content[0].text);
     expect(agents.length).toBe(1);
     expect(agents[0].id).toBe("agent-a");
+    db.close();
+  });
+});
+
+describe("messaging_send tool — channel vs DM modes", () => {
+  it("DM mode (to:) creates the DM channel and delivers to both parties", async () => {
+    const { db, handlers } = setup();
+    await handlers.messaging_register!({ agent_id: "agent-a" });
+    // Seed the target agent directly — the binding session is locked to agent-a.
+    const now = Date.now();
+    db.run(
+      "INSERT INTO agents (id, created_at, last_seen_at, pid, registered_at) VALUES (?, ?, ?, ?, ?)",
+      ["agent-b", now, now, process.pid, now]
+    );
+
+    const result = await handlers.messaging_send!({ agent_id: "agent-a", to: "agent-b", content: "hey b" });
+    expect(JSON.parse(result.content[0].text).content).toBe("hey b");
+
+    const members = await handlers.messaging_list_members!({ channel: "agent-a,agent-b" });
+    const ids = JSON.parse(members.content[0].text).map((m: any) => m.agent_id).sort();
+    expect(ids).toEqual(["agent-a", "agent-b"]);
+    db.close();
+  });
+
+  it("rejects when neither channel nor to is provided", async () => {
+    const { db, handlers } = setup();
+    await handlers.messaging_register!({ agent_id: "agent-a" });
+
+    let err: unknown;
+    try {
+      await handlers.messaging_send!({ agent_id: "agent-a", content: "orphan" });
+    } catch (e) {
+      err = e;
+    }
+    expect(String(err)).toContain("exactly one of");
+    db.close();
+  });
+
+  it("rejects when both channel and to are provided", async () => {
+    const { db, handlers } = setup();
+    await handlers.messaging_register!({ agent_id: "agent-a" });
+    await handlers.messaging_create_channel!({ agent_id: "agent-a", name: "ch" });
+    const now = Date.now();
+    db.run(
+      "INSERT INTO agents (id, created_at, last_seen_at, pid, registered_at) VALUES (?, ?, ?, ?, ?)",
+      ["agent-b", now, now, process.pid, now]
+    );
+
+    let err: unknown;
+    try {
+      await handlers.messaging_send!({ agent_id: "agent-a", channel: "ch", to: "agent-b", content: "both" });
+    } catch (e) {
+      err = e;
+    }
+    expect(String(err)).toContain("exactly one of");
     db.close();
   });
 });

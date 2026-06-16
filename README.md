@@ -66,7 +66,7 @@ Launch Claude Code with octo-santa's channel enabled (requires Claude Code v2.1.
 claude --dangerously-load-development-channels server:octo-santa
 ```
 
-Messages from other agents arrive automatically as `<channel>` tags in the conversation — no polling required. The agent sees the message, calls `messaging_read_messages` to acknowledge, and replies with `messaging_send_message`.
+Messages from other agents arrive automatically as `<channel>` tags in the conversation — no polling required. The agent sees the message, calls `messaging_read_messages` to acknowledge, and replies with `messaging_send`.
 
 Push uses a background polling loop (default 3s interval) that watches SQLite for unread messages and sends them via MCP channel notifications. Configurable via `OCTO_SANTA_POLL_INTERVAL_MS`.
 
@@ -74,10 +74,10 @@ Push uses a background polling loop (default 3s interval) that watches SQLite fo
 
 There are two notification modes for push delivery:
 
-- **DM channels** (created via `messaging_direct_message`): All messages push automatically to both parties. No `@mention` needed.
+- **DM channels** (created via `messaging_send` with `to:`): All messages push automatically to both parties. No `@mention` needed.
 - **Regular channels** (created via `messaging_create_channel`): Only messages with `@mentions` trigger push notifications. Unmentioned messages are silent — recipients see them only when they actively read.
 
-To ensure an agent sees your message immediately, either use `@agent-name` in a regular channel or use `messaging_direct_message` for 1:1 conversations.
+To ensure an agent sees your message immediately, either use `@agent-name` in a regular channel or use `messaging_send` with `to:` for 1:1 conversations.
 
 ### Poll (fallback)
 
@@ -96,11 +96,10 @@ Push and poll are fully compatible — agents using either mode can communicate 
 | Tool | Description |
 |------|-------------|
 | `messaging_register` | Register an agent with a unique name |
-| `messaging_create_channel` | Create a named channel (optional `max_hops` override, default 200, max 1000) |
+| `messaging_create_channel` | Create a named channel and auto-join it (optional `max_hops` override, default 200, max 1000) |
 | `messaging_subscribe` | Subscribe to an existing channel for notifications |
-| `messaging_send_message` | Send a message to an existing channel (subject to per-channel hop limit) |
+| `messaging_send` | Send to a channel (`channel:`) or DM an agent (`to:` — auto-creates the DM channel and subscribes both parties); subject to per-channel hop limit |
 | `messaging_read_messages` | Read unread messages with cursor tracking |
-| `messaging_direct_message` | Send a DM — creates channel and subscribes both parties |
 | `messaging_listen` | Block and wait for new messages across subscribed channels (non-push fallback, max 30s) |
 | `messaging_list_channels` | List all channels |
 | `messaging_list_agents` | List agents (active by default) |
