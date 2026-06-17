@@ -85,9 +85,9 @@ export function registerMessagingTools(
 ): void {
   server.registerTool("messaging_register", {
     description:
-      "Register this agent with a unique name to start receiving messages. " +
-      "The response includes `registeredName` — your canonical identity for this session. " +
-      "Always use `registeredName` for subsequent calls.",
+      "Register this agent under a unique name to start receiving messages. " +
+      "The response's `registeredName` is your canonical identity for this session — " +
+      "use it for all later calls.",
     inputSchema: {
       agent_id: z
         .string()
@@ -116,7 +116,7 @@ export function registerMessagingTools(
 
   server.registerTool("messaging_create_channel", {
     description:
-      "Create a named messaging channel. Use messaging_subscribe to join it afterward.",
+      "Create a named channel and auto-join it as a member.",
     inputSchema: {
       agent_id: z.string().trim().min(1).describe("Your agent/project name"),
       name: z.string().trim().min(1).max(128, "Channel name must not exceed 128 characters").regex(/^[\w.,@#-]+$/, "Channel name must contain only letters, digits, underscores, hyphens, dots, commas, @ or #").describe("Channel name"),
@@ -155,7 +155,7 @@ export function registerMessagingTools(
 
   server.registerTool("messaging_send", {
     description:
-      "Send a message. Provide `channel` to post to a channel, OR `to` to direct-message another agent (auto-creates the DM channel and subscribes both parties; DMs push automatically -- no @mention needed). Exactly one of `channel`/`to` is required. Requires prior messaging_register. In channels, use @agent-name to notify specific agents or @all for everyone; messages without mentions are silent. Messages are subject to per-channel hop limits; blocked messages are dropped with a system notice.",
+      "Send a message: set `channel` to post to a channel, or `to` to DM an agent (auto-creates the DM and pushes to both -- no @mention needed). Provide exactly one. In channels, @agent-name or @all notifies; no mention is silent. Subject to per-channel hop limits.",
     inputSchema: {
       agent_id: z.string().trim().min(1).describe("Your agent/project name"),
       channel: z.string().trim().min(1).optional().describe("Channel to post to (mutually exclusive with `to`)"),
@@ -177,7 +177,7 @@ export function registerMessagingTools(
 
   server.registerTool("messaging_read_messages", {
     description:
-      "Read unread messages from a channel (or query history with before_id). Requires prior messaging_register and channel membership.",
+      "Read unread messages from a channel, or fetch older history with before_id. Requires channel membership.",
     inputSchema: {
       agent_id: z.string().trim().min(1).describe("Your agent/project name"),
       channel: z.string().trim().min(1).describe("Channel name"),
@@ -204,7 +204,7 @@ export function registerMessagingTools(
 
   server.registerTool("messaging_list_agents", {
     description:
-      "List agents. Defaults to active agents only. Use include_stale to see all agents including disconnected ones.",
+      "List agents — active only by default; set include_stale to include disconnected ones.",
     inputSchema: {
       include_stale: z
         .boolean()
@@ -220,7 +220,7 @@ export function registerMessagingTools(
 
   server.registerTool("messaging_list_members", {
     description:
-      "List channel members with active/inactive status. Uses exact process liveness — may temporarily differ from push notification behavior after crashes.",
+      "List a channel's members with their active/inactive status.",
     inputSchema: {
       channel: z.string().trim().min(1).describe("Channel name"),
     },
@@ -251,7 +251,7 @@ export function registerMessagingTools(
   });
 
   server.registerTool("messaging_rename_channel", {
-    description: "Rename a channel. You must be a member of the channel.",
+    description: "Rename a channel. You must be a member.",
     inputSchema: {
       agent_id: z.string().trim().min(1).describe("Your agent/project name"),
       channel: z.string().trim().min(1).describe("Current channel name"),
@@ -264,7 +264,7 @@ export function registerMessagingTools(
   });
 
   server.registerTool("messaging_listen", {
-    description: "Block and wait for new messages across all subscribed channels. Returns `{channels, timed_out}` where each channel entry includes its messages inline — no follow-up messaging_read_messages needed in the steady-state poll loop. Use this for agent polling loops instead of repeatedly calling messaging_read_messages.",
+    description: "Block until new messages arrive on any subscribed channel (or until timeout). Returns `{channels, timed_out}` with each channel's messages inline — no follow-up read needed. Use for poll loops on non-push clients instead of repeatedly calling messaging_read_messages.",
     inputSchema: {
       agent_id: z.string().trim().min(1).describe("Your registered agent name"),
       timeout_ms: z.number().int().optional().describe("Max wait time in ms (default 10000, max 30000)"),
