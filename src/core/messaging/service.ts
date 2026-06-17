@@ -208,7 +208,10 @@ export class MessagingService {
       throw new Error("maxHops must be at least 1");
     }
     this.requireRegistered(agentId);
-    return this.channels.create(name, agentId, maxHops);
+    const channel = this.channels.create(name, agentId, maxHops);
+    // Creator auto-joins the channel they create — no separate subscribe needed.
+    this.channels.addMember(agentId, channel.id, 0);
+    return channel;
   }
 
   subscribe(agentId: string, channelName: string): void {
@@ -270,7 +273,7 @@ export class MessagingService {
     const members = this.channels.getMembers(channel.id);
     if (!members.find((m) => m.id === agentId)) {
       throw new Error(
-        `Not a member of channel "${channelName}". Join via messaging_subscribe, messaging_send_message, or messaging_direct_message.`
+        `Not a member of channel "${channelName}". Join via messaging_subscribe or messaging_send.`
       );
     }
     if (opts?.before_id !== undefined) {

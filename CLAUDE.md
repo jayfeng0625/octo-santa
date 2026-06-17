@@ -11,7 +11,7 @@ Hexagonal architecture (ports and adapters). See `docs/architecture.md` for full
 ```
 src/
   core/           ← Domain logic + port interfaces. No infrastructure imports.
-  storage/        ← Storage adapters (SQLite, filesystem brain store)
+  storage/        ← Storage adapters (SQLite, YAML profiles)
   transports/     ← Transport adapters (MCP stdio, REPL)
   notifications/  ← Notification adapters (dispatch + cross-process poller)
   main.ts         ← Composition root — wires everything together

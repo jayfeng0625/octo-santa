@@ -6,10 +6,7 @@ import { runMigrations, allMigrations } from "./storage/sqlite/migrations";
 import { createSqliteRepos } from "./storage/sqlite";
 import { SqliteNotificationQueryRepo } from "./storage/sqlite/notification-query-repo";
 import { createNotificationPoller } from "./notifications/poller/poller";
-import { createFsBrainStore, readConfig } from "./storage/fs-brain-store/store";
-import { resolveRepoCwd } from "./storage/fs-brain-store/resolve-cwd";
 import { MessagingService } from "./core/messaging/service";
-import { BrainService } from "./core/brain/service";
 import { startMcpStdio } from "./transports/mcp-stdio/adapter";
 import { createNotificationDispatcher } from "./notifications/dispatch/dispatcher";
 import { YamlProfileStore } from "./storage/yaml-profiles/store";
@@ -20,8 +17,6 @@ function expandHome(p: string): string {
 }
 
 async function main() {
-  const cwd = resolveRepoCwd();
-
   // 1. Database
   const dbPath = expandHome(
     process.env.OCTO_SANTA_DB ?? join(homedir(), ".octo-santa", "messages.db")
@@ -33,20 +28,16 @@ async function main() {
   const repos = createSqliteRepos(db);
   const notificationQueries = new SqliteNotificationQueryRepo(db);
 
-  // 3. Config + brain store
-  const config = readConfig(cwd);
-  const brainStore = createFsBrainStore(cwd, config?.brain);
-
-  // 4. Notification dispatcher
+  // 3. Notification dispatcher
   const dispatcher = createNotificationDispatcher();
 
-  // 4b. Profile store
+  // 3b. Profile store
   const profilesDir = expandHome(
     process.env.OCTO_SANTA_PROFILES_DIR ?? "~/.octo-santa/profiles"
   );
   const profiles = new YamlProfileStore(profilesDir);
 
-  // 5. Services
+  // 4. Services
   const messaging = new MessagingService(
     repos.agents,
     repos.channels,
@@ -57,29 +48,11 @@ async function main() {
     profiles
   );
 
-  const brain = new BrainService(
-    brainStore,
-    repos.domains,
-    repos.agents,
-    config,
-    process.pid
-  );
-
-  // 6. Domain registration at startup
-  brain.registerDomain(cwd);
-
-  // 7. Compute brain index for bootstrap message
-  const hasBrain = !!(config?.brain?.dirs || config?.brain?.files);
-  const brainIndex = hasBrain ? brainStore.scanDocs() : undefined;
-
-  // 8. Start MCP stdio transport
+  // 5. Start MCP stdio transport
   const heartbeatIntervalMs = Number(process.env.OCTO_SANTA_HEARTBEAT_INTERVAL_MS) || 10_000;
 
   await startMcpStdio({
     messaging,
-    brain,
-    config,
-    brainIndex,
     registerNotificationHandler: dispatcher.register.bind(dispatcher),
     unregisterNotificationHandler: dispatcher.unregister.bind(dispatcher),
     agents: repos.agents,
@@ -95,9 +68,8 @@ async function main() {
       return poller;
     },
     heartbeatIntervalMs,
-    onDisconnect: (agentId, pid) => {
+    onDisconnect: (agentId) => {
       messaging.unregister(agentId);
-      brain.onDisconnect(agentId, pid);
     },
   });
 }

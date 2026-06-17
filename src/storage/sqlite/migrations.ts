@@ -177,7 +177,12 @@ const messagingMigrations: Migration[] = [
   // column entirely — none exists since 0.7.3 (commit 36ba3e5).
 ];
 
-const brainMigrations: Migration[] = [
+// RETIRED FEATURE — the brain/domain feature and its tools were removed, but this
+// migration is retained as immutable history. Existing DBs already applied it; the
+// runner validates checksums of applied migrations, so the entry must stay byte-for-
+// byte. The `domains`/`domain_claims` tables are now orphaned (no code reads them) and
+// harmless. Do not delete or edit this migration.
+const legacyBrainMigrations: Migration[] = [
   {
     name: "brain_001_domains_and_claims",
     up: `
@@ -209,4 +214,4 @@ const systemMigrations: Migration[] = [
   },
 ];
 
-export const allMigrations: Migration[] = [...messagingMigrations, ...brainMigrations, ...systemMigrations];
+export const allMigrations: Migration[] = [...messagingMigrations, ...legacyBrainMigrations, ...systemMigrations];

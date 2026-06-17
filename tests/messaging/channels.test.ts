@@ -50,15 +50,19 @@ describe("createChannel", () => {
     db.close();
   });
 
-  it("does not auto-subscribe the creator (no cursor created)", () => {
+  it("auto-subscribes the creator as a member", () => {
     const { db, svc } = setup();
-    svc.createChannel("octo-santa", "no-cursor-ch");
+    const channel = svc.createChannel("octo-santa", "auto-join-ch");
 
-    const channel = db.query("SELECT id FROM channels WHERE name = ?").get("no-cursor-ch") as { id: number };
+    // Creator is a member immediately — no separate messaging_subscribe needed.
+    const members = svc.listMembers("auto-join-ch");
+    expect(members.map((m) => m.agent_id)).toContain("octo-santa");
+
+    // Membership is tracked by a cursor row.
     const cursor = db.query(
       "SELECT * FROM cursors WHERE agent_id = ? AND channel_id = ?"
     ).get("octo-santa", channel.id);
-    expect(cursor).toBeNull();
+    expect(cursor).not.toBeNull();
 
     db.close();
   });

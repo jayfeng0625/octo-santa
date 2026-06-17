@@ -4,20 +4,15 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod";
 import type { MessagingService } from "../../core/messaging/service";
 import { DEFAULT_MAX_HOPS, MAX_HOPS_CAP } from "../../core/messaging/types";
-import type { BrainService } from "../../core/brain/service";
-import type { OctoSantaConfig, BrainDoc } from "../../core/brain/types";
 import type { NotificationPort, AgentRepository } from "../../core/ports";
 import type { NamedProfileFields } from "../../core/profiles/types";
 import { log } from "../../log";
-import { jsonResult, withAgent, formatBrainIndex } from "./helpers";
+import { jsonResult, withAgent } from "./helpers";
 import pkg from "../../../package.json";
 
 // --- Instructions builder ---
 
-export function buildInstructions(
-  config: OctoSantaConfig | null,
-  brainIndex?: BrainDoc[]
-): string {
+export function buildInstructions(): string {
   let instructions =
     "octo-santa messaging module is available. Call messaging_register with a " +
     "unique agent name (e.g. your role). If the name is taken, pick a different one.\n\n" +
@@ -33,12 +28,14 @@ export function buildInstructions(
     "or @your-pool-name), you MUST:\n" +
     "  1. Understand what is being asked\n" +
     "  2. Decide on your response\n" +
-    "  3. Call messaging_send_message to reply\n" +
+    "  3. Call messaging_send to reply\n" +
     "Never just summarize -- always act.\n\n" +
-    "SENDING: @agent-name, @all, or @pool-name to notify. " +
-    "No mention = silent. Be specific: what you need, why, expected response.\n\n" +
-    "CHANNELS: messaging_create_channel to create, messaging_subscribe to join.\n" +
-    "DMs: messaging_direct_message for 1:1 -- auto-pushes, no @mention needed.\n\n" +
+    "SENDING: messaging_send with channel:<name> to post; @agent-name, @all, or " +
+    "@pool-name to notify. No mention = silent. Be specific: what you need, why, " +
+    "expected response.\n\n" +
+    "CHANNELS: messaging_create_channel to create (auto-joins you), " +
+    "messaging_subscribe to join an existing channel.\n" +
+    "DMs: messaging_send with to:<agent> for 1:1 -- auto-pushes, no @mention needed.\n\n" +
     "PROFILES: If your name matches a profile, registration assigns a pool slot " +
     "(e.g. 'os-dev' -> 'os-dev-1'). Use registeredName for subsequent calls. " +
     "Follow profile instructions as behavioral directives. " +
@@ -49,34 +46,12 @@ export function buildInstructions(
     "- Do not use bash or scripts for communication\n\n" +
     "DISCOVERY: messaging_list_agents, messaging_list_members.";
 
-  const brainSuffix =
-    "Use brain_index to list local brain docs, brain_read to read one. " +
-    "Use brain_shared_index/brain_shared_read for shared docs in ~/.octo-santa/brain/. " +
-    "Use brain_find_expert to discover domain experts across repos. " +
-    "Use brain_claim_domain after messaging_register to become a queryable expert. " +
-    "Use messaging_direct_message to DM another agent.";
-
-  instructions += "\n\nBRAIN: ";
-  if (config?.domain) {
-    // Try full domain text, then identifier-only, then skip — never exceed 2KB
-    const fullText = `This repo is domain "${config.domain.identifier}" (${config.domain.description}). `;
-    const shortText = `This repo is domain "${config.domain.identifier}". `;
-    const base = instructions + brainSuffix;
-    if (Buffer.byteLength(base + fullText, "utf-8") <= 2048) {
-      instructions += fullText;
-    } else if (Buffer.byteLength(base + shortText, "utf-8") <= 2048) {
-      instructions += shortText;
-    }
-    // else: skip domain text entirely to stay within budget
-  }
-  instructions += brainSuffix;
-
-  // NON-PUSH CLIENTS block is appended AFTER the brain section intentionally.
+  // NON-PUSH CLIENTS block is appended at the end of the document intentionally.
   // Claude Code truncates server instructions at 2KB. End-of-doc placement means
   // that if truncation clips anything, it clips this tail — which Claude Code
   // (a push-tag client) does not need. Non-push clients (Codex, Gemini CLI,
   // OpenCode, most local-model clients) have no 2KB limit and receive the
-  // full block. Phase 0c will restructure this and reclaim budget.
+  // full block.
   instructions +=
     "\n\nNON-PUSH CLIENTS: This section overrides the BOUNDARIES prohibition on " +
     "polling loops — for messaging_listen only. If your MCP client does not " +
@@ -96,7 +71,7 @@ export function buildInstructions(
 }
 
 /** Tier 1 universal guidance — returned by messaging_get_instructions. */
-export const UNIVERSAL_GUIDANCE = buildInstructions(null);
+export const UNIVERSAL_GUIDANCE = buildInstructions();
 
 // --- Tool registration ---
 
@@ -110,9 +85,9 @@ export function registerMessagingTools(
 ): void {
   server.registerTool("messaging_register", {
     description:
-      "Register this agent with a unique name to start receiving messages. " +
-      "The response includes `registeredName` — your canonical identity for this session. " +
-      "Always use `registeredName` for subsequent calls.",
+      "Register this agent under a unique name to start receiving messages. " +
+      "The response's `registeredName` is your canonical identity for this session — " +
+      "use it for all later calls.",
     inputSchema: {
       agent_id: z
         .string()
@@ -141,7 +116,7 @@ export function registerMessagingTools(
 
   server.registerTool("messaging_create_channel", {
     description:
-      "Create a named messaging channel. Use messaging_subscribe to join it afterward.",
+      "Create a named channel and auto-join it as a member.",
     inputSchema: {
       agent_id: z.string().trim().min(1).describe("Your agent/project name"),
       name: z.string().trim().min(1).max(128, "Channel name must not exceed 128 characters").regex(/^[\w.,@#-]+$/, "Channel name must contain only letters, digits, underscores, hyphens, dots, commas, @ or #").describe("Channel name"),
@@ -178,23 +153,31 @@ export function registerMessagingTools(
     return jsonResult(messaging.listChannels());
   });
 
-  server.registerTool("messaging_send_message", {
+  server.registerTool("messaging_send", {
     description:
-      "Send a message to an existing channel. Requires prior messaging_register. Use @agent-name to notify specific agents, or @all to notify everyone. Messages without mentions are silent -- recipients see them only when they check the channel. Messages are subject to per-channel hop limits; blocked messages are dropped with a system notice.",
+      "Send a message: set `channel` to post to a channel, or `to` to DM an agent (auto-creates the DM and pushes to both -- no @mention needed). Provide exactly one. In channels, @agent-name or @all notifies; no mention is silent. Subject to per-channel hop limits.",
     inputSchema: {
       agent_id: z.string().trim().min(1).describe("Your agent/project name"),
-      channel: z.string().trim().min(1).describe("Channel name"),
+      channel: z.string().trim().min(1).optional().describe("Channel to post to (mutually exclusive with `to`)"),
+      to: z.string().trim().min(1).optional().describe("Agent to direct-message (mutually exclusive with `channel`)"),
       content: z.string().trim().min(1).max(100_000, "Message content must not exceed 100,000 characters").describe("Message content"),
     },
-  }, async ({ agent_id, channel, content }) => {
-    return withAgent(onAgentId, agent_id, () =>
-      jsonResult(messaging.send(agent_id, channel, content))
-    );
+  }, async ({ agent_id, channel, to, content }) => {
+    return withAgent(onAgentId, agent_id, () => {
+      if ((channel == null) === (to == null)) {
+        throw new Error("Provide exactly one of `channel` or `to`");
+      }
+      return jsonResult(
+        to != null
+          ? messaging.directMessage(agent_id, to, content)
+          : messaging.send(agent_id, channel!, content)
+      );
+    });
   });
 
   server.registerTool("messaging_read_messages", {
     description:
-      "Read unread messages from a channel (or query history with before_id). Requires prior messaging_register and channel membership.",
+      "Read unread messages from a channel, or fetch older history with before_id. Requires channel membership.",
     inputSchema: {
       agent_id: z.string().trim().min(1).describe("Your agent/project name"),
       channel: z.string().trim().min(1).describe("Channel name"),
@@ -219,27 +202,9 @@ export function registerMessagingTools(
     );
   });
 
-  server.registerTool("messaging_direct_message", {
-    description:
-      "Send a direct message to another agent. Creates a DM channel and subscribes both parties. DM channels push all messages automatically — no @mention needed.",
-    inputSchema: {
-      agent_id: z.string().trim().min(1).describe("Your agent/project name"),
-      target_agent_id: z
-        .string()
-        .trim()
-        .min(1)
-        .describe("Agent to DM"),
-      content: z.string().trim().min(1).max(100_000, "Message content must not exceed 100,000 characters").describe("Message content"),
-    },
-  }, async ({ agent_id, target_agent_id, content }) => {
-    return withAgent(onAgentId, agent_id, () =>
-      jsonResult(messaging.directMessage(agent_id, target_agent_id, content))
-    );
-  });
-
   server.registerTool("messaging_list_agents", {
     description:
-      "List agents. Defaults to active agents only. Use include_stale to see all agents including disconnected ones.",
+      "List agents — active only by default; set include_stale to include disconnected ones.",
     inputSchema: {
       include_stale: z
         .boolean()
@@ -255,7 +220,7 @@ export function registerMessagingTools(
 
   server.registerTool("messaging_list_members", {
     description:
-      "List channel members with active/inactive status. Uses exact process liveness — may temporarily differ from push notification behavior after crashes.",
+      "List a channel's members with their active/inactive status.",
     inputSchema: {
       channel: z.string().trim().min(1).describe("Channel name"),
     },
@@ -286,7 +251,7 @@ export function registerMessagingTools(
   });
 
   server.registerTool("messaging_rename_channel", {
-    description: "Rename a channel. You must be a member of the channel.",
+    description: "Rename a channel. You must be a member.",
     inputSchema: {
       agent_id: z.string().trim().min(1).describe("Your agent/project name"),
       channel: z.string().trim().min(1).describe("Current channel name"),
@@ -299,7 +264,7 @@ export function registerMessagingTools(
   });
 
   server.registerTool("messaging_listen", {
-    description: "Block and wait for new messages across all subscribed channels. Returns `{channels, timed_out}` where each channel entry includes its messages inline — no follow-up messaging_read_messages needed in the steady-state poll loop. Use this for agent polling loops instead of repeatedly calling messaging_read_messages.",
+    description: "Block until new messages arrive on any subscribed channel (or until timeout). Returns `{channels, timed_out}` with each channel's messages inline — no follow-up read needed. Use for poll loops on non-push clients instead of repeatedly calling messaging_read_messages.",
     inputSchema: {
       agent_id: z.string().trim().min(1).describe("Your registered agent name"),
       timeout_ms: z.number().int().optional().describe("Max wait time in ms (default 10000, max 30000)"),
@@ -321,99 +286,10 @@ export function registerMessagingTools(
   });
 }
 
-export function registerBrainTools(
-  server: McpServer,
-  brain: BrainService,
-  config: OctoSantaConfig | null,
-  hasBrain: boolean,
-  onAgentId?: (agentId: string) => { commit: (resolvedName?: string) => void }
-): void {
-  server.registerTool("brain_index", {
-    description:
-      "List brain documents for this repo (from .octo-santa/config.json brain.dirs and brain.files)",
-  }, async () => {
-    if (!hasBrain) return { content: [{ type: "text" as const, text: "" }] };
-    const docs = brain.index();
-    if (docs.length === 0) return { content: [{ type: "text" as const, text: "" }] };
-    const index = formatBrainIndex(docs);
-    return { content: [{ type: "text" as const, text: index }] };
-  });
-
-  server.registerTool("brain_read", {
-    description: "Read a brain document by slug",
-    inputSchema: {
-      slug: z
-        .string()
-        .trim()
-        .min(1)
-        .regex(/^[\w-]+$/, "Slug must contain only letters, digits, underscores, or hyphens")
-        .describe("Document slug (filename without .md)"),
-    },
-  }, async ({ slug }) => {
-    if (!hasBrain) throw new Error("No brain configured");
-    const content = brain.read(slug);
-    return { content: [{ type: "text" as const, text: content }] };
-  });
-
-  server.registerTool("brain_shared_index", {
-    description: "List shared brain documents from ~/.octo-santa/brain/",
-  }, async () => {
-    const docs = brain.sharedIndex();
-    if (docs.length === 0) return { content: [{ type: "text" as const, text: "" }] };
-    const index = formatBrainIndex(docs);
-    return { content: [{ type: "text" as const, text: index }] };
-  });
-
-  server.registerTool("brain_shared_read", {
-    description: "Read a shared brain document by slug",
-    inputSchema: {
-      slug: z
-        .string()
-        .trim()
-        .min(1)
-        .regex(/^[\w-]+$/, "Slug must contain only letters, digits, underscores, or hyphens")
-        .describe("Document slug (filename without .md)"),
-    },
-  }, async ({ slug }) => {
-    const content = brain.sharedRead(slug);
-    return { content: [{ type: "text" as const, text: content }] };
-  });
-
-  server.registerTool("brain_find_expert", {
-    description:
-      "Find domain experts across all connected repos. Returns domains with active agent sessions.",
-  }, async () => {
-    return jsonResult(brain.findExperts());
-  });
-
-  server.registerTool("brain_claim_domain", {
-    description:
-      "Claim this repo's domain identity for your agent session. Requires prior messaging_register.",
-    inputSchema: {
-      agent_id: z
-        .string()
-        .trim()
-        .min(1)
-        .describe("Your registered agent name"),
-    },
-  }, async ({ agent_id }) => {
-    return withAgent(onAgentId, agent_id, () => {
-      brain.claimDomain(agent_id);
-      return jsonResult({
-        claimed: config?.domain?.identifier ?? null,
-        agent_id,
-      });
-    });
-  });
-}
-
 // --- Main adapter ---
 
 export interface McpStdioOpts {
   messaging: MessagingService;
-  brain: BrainService;
-  config: OctoSantaConfig | null;
-  brainIndex?: BrainDoc[];
   registerNotificationHandler: (
     agentId: string,
     port: NotificationPort
@@ -423,15 +299,12 @@ export interface McpStdioOpts {
   /** Factory invoked once per session when an agent binds. Returns a handle with stop(). */
   startPoller: (port: NotificationPort, agentId: string, baseName?: string) => { stop(): void };
   heartbeatIntervalMs?: number;
-  onDisconnect: (agentId: string, pid: number) => void;
+  onDisconnect: (agentId: string) => void;
 }
 
 export async function startMcpStdio(opts: McpStdioOpts): Promise<void> {
   const {
     messaging,
-    brain,
-    config,
-    brainIndex,
     registerNotificationHandler,
     unregisterNotificationHandler,
     agents,
@@ -440,15 +313,13 @@ export async function startMcpStdio(opts: McpStdioOpts): Promise<void> {
     onDisconnect,
   } = opts;
 
-  const hasBrain = !!(config?.brain?.dirs || config?.brain?.files);
-
   const mcpServer = new McpServer(
     { name: "octo-santa", version: pkg.version },
     {
       capabilities: {
         experimental: { "claude/channel": {} },
       },
-      instructions: buildInstructions(config, brainIndex),
+      instructions: buildInstructions(),
     }
   );
 
@@ -493,11 +364,10 @@ export async function startMcpStdio(opts: McpStdioOpts): Promise<void> {
     };
   }
 
-  const sessionInstructions = buildInstructions(config, brainIndex);
+  const sessionInstructions = buildInstructions();
   registerMessagingTools(mcpServer, messaging, onAgentId, (profile) => {
     boundProfile = profile;
   }, sessionInstructions, agents);
-  registerBrainTools(mcpServer, brain, config, hasBrain, onAgentId);
 
   const transport = new StdioServerTransport();
   await mcpServer.connect(transport);
@@ -509,24 +379,15 @@ export async function startMcpStdio(opts: McpStdioOpts): Promise<void> {
       if (boundAgentId) unregisterNotificationHandler(boundAgentId);
     } finally {
       if (boundAgentId) {
-        onDisconnect(boundAgentId, process.pid);
+        onDisconnect(boundAgentId);
       }
     }
   };
 
   // Bootstrap nudge — prompt agent to register before any tool call
-  let bootstrapMsg =
+  const bootstrapMsg =
     "octo-santa messaging module is available. Call messaging_register with a unique agent name (e.g. your role), then create or subscribe to channels to start receiving push notifications. If the name is taken, pick a different one. " +
     "If profiles are configured, your name may be resolved to a pool slot (e.g. 'os-dev' -> 'os-dev-1') — always use the `registeredName` from the response for subsequent calls.";
-  if (config?.domain) {
-    bootstrapMsg +=
-      `\n\nBrain module active — this repo is domain "${config.domain.identifier}" (${config.domain.description}). ` +
-      "After messaging_register, call brain_claim_domain to become a queryable expert.";
-  }
-  if (brainIndex && brainIndex.length > 0) {
-    const index = formatBrainIndex(brainIndex);
-    bootstrapMsg += `\n\nBrain index:\n${index}`;
-  }
   await mcpServer.server.notification({
     method: "notifications/claude/channel",
     params: { content: bootstrapMsg, meta: { type: "bootstrap" } },

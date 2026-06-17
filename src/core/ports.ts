@@ -7,7 +7,6 @@ import type {
   HeartbeatResult,
   HopCheckResult,
 } from "./messaging/types";
-import type { BrainDoc, DomainWithClaims } from "./brain/types";
 import type { AgentProfile, ProfileFields, NamedProfileFields } from "./profiles/types";
 
 // --- Storage ports (core defines, adapters implement) ---
@@ -80,25 +79,6 @@ export interface MessageRepository {
 export interface CursorRepository {
   get(agentId: string, channelId: number): number;
   listForAgent(agentId: string): CursorWithChannel[];
-}
-
-export interface DomainRepository {
-  register(
-    identifier: string,
-    cwd: string,
-    tags: string[],
-    description: string
-  ): void;
-  claim(agentId: string, pid: number, domainIdentifier: string): void;
-  listWithClaims(): DomainWithClaims[];
-  clearClaims(agentId: string, pid: number): void;
-}
-
-export interface BrainStore {
-  scanDocs(): BrainDoc[];
-  readDoc(slug: string): string;
-  scanSharedDocs(): BrainDoc[];
-  readSharedDoc(slug: string): string;
 }
 
 // --- Notification port ---
