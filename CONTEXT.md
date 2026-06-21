@@ -57,8 +57,12 @@ _Avoid_: Context header
 ### Transport & Delivery
 
 **Transport**:
-A selectable push-delivery implementation, chosen per-process at MCP launch via the `--transport <name>` CLI flag. Each agent's MCP subprocess declares exactly one transport; there is no runtime negotiation. Defaults to [[Claude Channel]].
+A selectable push-delivery implementation chosen per-process at MCP launch (via the `--transport <name>` CLI flag for stdio-hosted transports). Each transport owns its own [[Message Bus]] — transports are isolated stores, not views over one shared store. Defaults to [[Claude Channel]].
 _Avoid_: Channel (overloaded with messaging channels), backend, driver
+
+**Message Bus**:
+The shared store backing a single [[Transport]] through which its agents discover each other and exchange messages. There is one bus per transport; an agent can only communicate with agents on the **same** transport. Cross-transport messaging is unsupported by design — agents must start on the same transport type to interoperate.
+_Avoid_: Backend, database (the bus is a role the store plays, not the engine)
 
 **Claude Channel**:
 The default [[Transport]]: a Claude-Code-specific push mechanism delivering messages as `notifications/claude/channel` server notifications over MCP stdio, advertised via the `experimental: { "claude/channel": {} }` capability. Only Claude Code surfaces these; non-Claude MCP hosts (and many enterprise hosts) do not, which is why an alternative transport is needed.
