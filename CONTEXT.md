@@ -68,6 +68,18 @@ _Avoid_: Backend, database (the bus is a role the store plays, not the engine)
 The default [[Transport]]: a Claude-Code-specific push mechanism delivering messages as `notifications/claude/channel` server notifications over MCP stdio, advertised via the `experimental: { "claude/channel": {} }` capability. Only Claude Code surfaces these; non-Claude MCP hosts (and many enterprise hosts) do not, which is why an alternative transport is needed.
 _Avoid_: Claude push, channel notification
 
+**Cloudflare Transport**:
+The alternative [[Transport]], implemented as a Cloudflare MCP server over Streamable HTTP and backed by a [[Bus Durable Object]]. Runs locally on Miniflare (`wrangler dev`) and deploys to Cloudflare for messaging across a private network — the reach stdio cannot provide. Infrastructure (durability, hibernation, networking, auth, deploy) is delegated to Cloudflare; octo-santa builds only messaging capabilities on top.
+_Avoid_: HTTP transport (the defining trait is the Cloudflare/DO stack, not just HTTP), worker transport
+
+**Bus Durable Object**:
+The single Durable Object instance that *is* the entire [[Message Bus]] for the [[Cloudflare Transport]]. It owns the DO-SQLite store and holds every connected agent's live stream in memory, fanning messages out synchronously — collapsing octo-santa's N-process model into one process, so this transport needs no cross-process poller. Channel-sharded DOs are a deferred scale-out, not the current shape.
+_Avoid_: Hub DO, session DO (those name a different, rejected topology)
+
+**Context Injection**:
+Getting a delivered message in front of the [[Augmented LLM]] as part of its conversation. Distinct from transport delivery: a [[Transport]] moves bytes to the client, but injection requires the message to enter the model's context. On hosts that don't surface server notifications (Codex, OpenCode, Gemini CLI, most enterprise hosts), the only ubiquitous injection path is a **tool result** — the agent calls a blocking `receive` tool and its result enters context.
+_Avoid_: Delivery (delivery is the transport hop; injection is the context hop), push
+
 ## Relationships
 
 - An **Agent** is composed of an **Augmented LLM** inside a **Wrapper**
