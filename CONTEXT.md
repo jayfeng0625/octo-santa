@@ -80,6 +80,16 @@ _Avoid_: Hub DO, session DO (those name a different, rejected topology)
 Getting a delivered message in front of the [[Augmented LLM]] as part of its conversation. Distinct from transport delivery: a [[Transport]] moves bytes to the client, but injection requires the message to enter the model's context. On hosts that don't surface server notifications (Codex, OpenCode, Gemini CLI, most enterprise hosts), the only ubiquitous injection path is a **tool result** — the agent calls a blocking `receive` tool and its result enters context.
 _Avoid_: Delivery (delivery is the transport hop; injection is the context hop), push
 
+### Messaging Interface
+
+**Messaging Tool Surface**:
+The five MCP verbs octo-santa exposes to clients — `register`, `send`, `receive`, `discover`, `instructions` — shared across all transports. Distinct from the [[Curated Tool Surface]]: the messaging tool surface is what an MCP client (or a [[Wrapper]]) consumes; the curated tool surface is what a [[Wrapper]] re-exposes to its [[Augmented LLM]]. A direct host with no wrapper puts this surface in front of the LLM directly.
+_Avoid_: MCP tools (ambiguous), messaging_* tools (the legacy 12-tool naming)
+
+**Correlation Id**:
+An identifier carried on a `send` (`reply_to`) and surfaced on a received message (`correlation_id`) that links a reply to the request it answers, making request/reply machine-matchable. The structured form of the [[Curated Tool Surface]]'s `consult` action.
+_Avoid_: Message id (identifies the message itself, not the request/reply link), thread id
+
 ## Relationships
 
 - An **Agent** is composed of an **Augmented LLM** inside a **Wrapper**
