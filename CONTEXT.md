@@ -54,6 +54,16 @@ _Avoid_: Base prompt
 A small, request-time section prepended after the static core containing current state (available channels, agent roster). Kept minimal to maximize cache hit ratio.
 _Avoid_: Context header
 
+### Transport & Delivery
+
+**Transport**:
+A selectable push-delivery implementation, chosen per-process at MCP launch via the `--transport <name>` CLI flag. Each agent's MCP subprocess declares exactly one transport; there is no runtime negotiation. Defaults to [[Claude Channel]].
+_Avoid_: Channel (overloaded with messaging channels), backend, driver
+
+**Claude Channel**:
+The default [[Transport]]: a Claude-Code-specific push mechanism delivering messages as `notifications/claude/channel` server notifications over MCP stdio, advertised via the `experimental: { "claude/channel": {} }` capability. Only Claude Code surfaces these; non-Claude MCP hosts (and many enterprise hosts) do not, which is why an alternative transport is needed.
+_Avoid_: Claude push, channel notification
+
 ## Relationships
 
 - An **Agent** is composed of an **Augmented LLM** inside a **Wrapper**
