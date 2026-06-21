@@ -1,0 +1,59 @@
+{
+  "name": "bonai-dev/engineering-skills",
+  "version": "2026.6.5",
+  "summary": "Engineering skills for daily code work — Notion-first, language-agnostic",
+  "private": true,
+  "skills": {
+    "ask-matt": {
+      "path": "skills/ask-matt/SKILL.md"
+    },
+    "setup-bonai-skills": {
+      "path": "skills/setup-bonai-skills/SKILL.md"
+    },
+    "tdd": {
+      "path": "skills/tdd/SKILL.md"
+    },
+    "implement": {
+      "path": "skills/implement/SKILL.md"
+    },
+    "diagnose": {
+      "path": "skills/diagnose/SKILL.md"
+    },
+    "triage-issue": {
+      "path": "skills/triage-issue/SKILL.md"
+    },
+    "domain-modeling": {
+      "path": "skills/domain-modeling/SKILL.md"
+    },
+    "codebase-design": {
+      "path": "skills/codebase-design/SKILL.md"
+    },
+    "grill-with-docs": {
+      "path": "skills/grill-with-docs/SKILL.md"
+    },
+    "prototype": {
+      "path": "skills/prototype/SKILL.md"
+    },
+    "triage": {
+      "path": "skills/triage/SKILL.md"
+    },
+    "resolving-merge-conflicts": {
+      "path": "skills/resolving-merge-conflicts/SKILL.md"
+    },
+    "to-issues": {
+      "path": "skills/to-issues/SKILL.md"
+    },
+    "to-prd": {
+      "path": "skills/to-prd/SKILL.md"
+    },
+    "improve-codebase-architecture": {
+      "path": "skills/improve-codebase-architecture/SKILL.md"
+    },
+    "zoom-out": {
+      "path": "skills/zoom-out/SKILL.md"
+    },
+    "thermo-nuclear-code-quality-review": {
+      "path": "skills/thermo-nuclear-code-quality-review/SKILL.md"
+    }
+  }
+}

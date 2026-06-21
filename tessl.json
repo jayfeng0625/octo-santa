@@ -1,0 +1,9 @@
+{
+  "name": "octo-santa",
+  "mode": "vendored",
+  "dependencies": {
+    "bonai-dev/engineering-skills": {
+      "version": "2026.6.5"
+    }
+  }
+}
