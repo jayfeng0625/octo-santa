@@ -35,10 +35,6 @@ describe("isAgentActive", () => {
       last_seen_at: Date.now(),
       pid: null,
       registered_at: null,
-      base_name: null,
-      persona: null,
-      objective: null,
-      instructions: null,
     };
     expect(isAgentActive(agent)).toBe(false);
   });
@@ -50,10 +46,6 @@ describe("isAgentActive", () => {
       last_seen_at: Date.now(),
       pid: 999999, // almost certainly dead
       registered_at: Date.now(),
-      base_name: null,
-      persona: null,
-      objective: null,
-      instructions: null,
     };
     expect(isAgentActive(agent)).toBe(false);
   });
@@ -65,10 +57,6 @@ describe("isAgentActive", () => {
       last_seen_at: Date.now() - 20 * 60 * 1000, // 20 minutes ago (> 15 min window)
       pid: process.pid, // alive
       registered_at: Date.now() - 20 * 60 * 1000,
-      base_name: null,
-      persona: null,
-      objective: null,
-      instructions: null,
     };
     expect(isAgentActive(agent)).toBe(false);
   });

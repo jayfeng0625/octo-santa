@@ -25,8 +25,7 @@ describe("concurrency", () => {
     const { db: setupDbRef, svc } = setup();
     // Subscribe verifier before workers run so cursor starts at 0 (sees all messages)
     svc.register("verifier");
-    // Use a high maxHops so workers can send many messages without triggering hop limit
-    svc.createChannel("verifier", "stress-test", 1000);
+    svc.createChannel("verifier", "stress-test");
     svc.subscribe("verifier", "stress-test");
     setupDbRef.close();
 

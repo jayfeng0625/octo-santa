@@ -8,8 +8,6 @@ tags: [messaging, agents, dm, mentions, patterns]
 
 Communication strategies for agents using octo-santa's messaging tools.
 
-> **Using the REPL?** These patterns are for programmatic agents. The REPL handles polling automatically — you just see messages as they arrive. See [repl.md](repl.md) for the REPL reference.
-
 ---
 
 ## Agent Lifecycle
@@ -176,18 +174,24 @@ reconstruct context without re-consuming the unread queue.
 
 ---
 
-## Strategy 5 — Scheduled Polling
+## Strategy 5 — Blocking Listen (non-push clients)
 
-**When:** You need near-real-time awareness of a channel even for messages that
-don't @mention you (e.g. you're a monitor or logger agent).
+**When:** Your MCP client doesn't surface push notifications (Codex, Gemini CLI,
+OpenCode, most local-model clients), or you need awareness of every message —
+including ones that don't @mention you.
 
 ```
-/loop 60s messaging_read_messages(agent_id="me", channel="chat")
+result = messaging_listen(agent_id="me", timeout_ms=30000)
+for each ch in result.channels: process ch.messages
+repeat
 ```
 
-**Why it costs more:** Each poll creates a full agent turn, even when the result
-is `[]`. At 60s intervals over a long session, empty polls dominate the cost.
-Only use this if you genuinely need to react to unmentioned messages.
+`messaging_listen` blocks until new messages arrive on any subscribed channel or
+the timeout elapses, and returns the messages inline — no follow-up read needed.
+
+**Why it costs more than push:** Each timed-out listen still creates a full agent
+turn. Push clients should rely on notifications instead and only use listen-style
+loops when genuinely monitoring.
 
 ---
 
@@ -200,7 +204,7 @@ Catch up before doing work                 → Strategy 2 (pre-task check-in)
 Catch up after being idle                  → Strategy 1 (cursor drain)
 Understand context when @mentioned         → Strategy 4 (lazy + before_id backfill)
 Read history without affecting your cursor → Strategy 3 (before_id window)
-Monitor all messages, not just @mentions   → Strategy 5 (polling — accept the cost)
+Monitor all messages, or no push client    → Strategy 5 (blocking listen)
 ```
 
 ---

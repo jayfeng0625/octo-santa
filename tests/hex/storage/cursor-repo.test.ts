@@ -26,12 +26,6 @@ function setup() {
 afterEach(() => cleanupDb(TEST_DB));
 
 describe("SqliteCursorRepo", () => {
-  it("get returns 0 when no cursor exists", () => {
-    const { db, cursors, channelId } = setup();
-    expect(cursors.get("agent-a", channelId)).toBe(0);
-    db.close();
-  });
-
   it("listForAgent returns subscribed channels with cursor positions", () => {
     const { db, cursors, messages, channelId } = setup();
     // Seed agent-a's cursor through the production write path: another agent

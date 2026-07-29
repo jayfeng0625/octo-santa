@@ -67,25 +67,4 @@ describe("SqliteMessageRepo", () => {
     db.close();
   });
 
-  it("readSince returns messages after sinceId excluding agent", () => {
-    const { db, messages, channelId } = setup();
-    messages.insertAndJoinSender(channelId, "agent-a", "msg-1", []);
-    messages.insertAndJoinSender(channelId, "agent-b", "msg-2", []);
-    const read = messages.readSince(channelId, 0, 100, "agent-a");
-    expect(read.length).toBe(1);
-    expect(read[0]!.content).toBe("msg-2");
-    db.close();
-  });
-
-  it("readRecent returns latest N messages in chronological order", () => {
-    const { db, messages, channelId } = setup();
-    messages.insertAndJoinSender(channelId, "agent-a", "msg-1", []);
-    messages.insertAndJoinSender(channelId, "agent-b", "msg-2", []);
-    messages.insertAndJoinSender(channelId, "agent-a", "msg-3", []);
-    const recent = messages.readRecent(channelId, 2);
-    expect(recent.length).toBe(2);
-    expect(recent[0]!.content).toBe("msg-2");
-    expect(recent[1]!.content).toBe("msg-3");
-    db.close();
-  });
 });

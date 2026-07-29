@@ -1,23 +1,9 @@
-// scripts/smoke-non-push.ts
-//
-// Non-push MCP client smoke test (Phase 1 success criterion #4).
-//
-// Spawns two real MCP stdio server processes (sharing a temp SQLite DB) and
-// drives them as if from a non-push client — using messaging_listen in place
-// of pushed <channel> tags. Verifies the inline-delivery listen-poll flow:
-//
-//   1. register as os-listen-tester
-//   2. subscribe to a test channel
-//   3. messaging_listen (5s timeout) with no traffic  → timed_out: true
-//   4. second process sends a message to the channel
-//   5. messaging_listen again                          → channels non-empty,
-//      messages arrive inline under channels[].messages (no follow-up
-//      messaging_read_messages needed). A subsequent messaging_listen
-//      times out, proving the cursor advanced and the same batch is not
-//      re-served.
+// Non-push MCP client smoke test. Spawns two real MCP stdio server processes
+// sharing a temp SQLite DB and drives them as a non-push client would — using
+// messaging_listen in place of pushed <channel> tags — to verify the
+// inline-delivery listen-poll flow end to end.
 //
 // Run: bun run scripts/smoke-non-push.ts
-// Exit code 0 on success, 1 on failure.
 
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
@@ -87,12 +73,12 @@ async function main(): Promise<void> {
     log("instructions", `${bytes} B, NON-PUSH CLIENTS block present`);
 
     // Step 1: register
-    const reg = await callJson<{ registeredName: string }>(
+    const reg = await callJson<{ id: string }>(
       tester,
       "messaging_register",
       { agent_id: "os-listen-tester" }
     );
-    log("step1", `registered as ${reg.registeredName}`);
+    log("step1", `registered as ${reg.id}`);
 
     await callJson(sender, "messaging_register", { agent_id: "os-listen-sender" });
 
@@ -123,16 +109,15 @@ async function main(): Promise<void> {
     log("step3", `listen timed out after ${idleDt}ms, channels=[]`);
 
     // Step 4: sender sends a message to the channel
-    const sent = await callJson<{ id: number }>(sender, "messaging_send_message", {
+    const sent = await callJson<{ id: number }>(sender, "messaging_send", {
       agent_id: "os-listen-sender",
       channel: "smoke-listen",
       content: "hello from non-push smoke test @os-listen-tester",
     });
     log("step4", `sender posted message id=${sent.id}`);
 
-    // Step 5a: listen again → channel entry with the message INLINE (no
-    // separate messaging_read_messages call needed; that is the steady-state
-    // non-push contract after os-pm's decision A on msg 1807).
+    // Step 5a: listen again → channel entry with the message inline (no
+    // separate messaging_read_messages call needed).
     const t1 = Date.now();
     const hit = await callJson<{
       channels: Array<{ channel: string; messages: Array<{ id: number; content: string }> }>;
@@ -175,7 +160,7 @@ async function main(): Promise<void> {
       `cursor proof: follow-up listen timed out after ${drainDt}ms (inline batch not re-served)`
     );
 
-    console.log("\n✓ non-push smoke test passed — Phase 1 criterion #4 verified");
+    console.log("\n✓ non-push smoke test passed");
   } finally {
     await tester?.close().catch(() => {});
     await sender?.close().catch(() => {});

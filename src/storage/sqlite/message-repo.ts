@@ -6,12 +6,6 @@ import { withRetrySync } from "./db";
 export class SqliteMessageRepo implements MessageRepository {
   constructor(private readonly db: Database) {}
 
-  /**
-   * Immediate transaction: INSERT message + upsert sender cursor to 0
-   * (ON CONFLICT DO NOTHING — preserves existing cursor so sender doesn't
-   * lose their read position if they've already been reading).
-   * Mentions passed as pre-extracted string array, stored as JSON.
-   */
   insertAndJoinSender(
     channelId: number,
     agentId: string,
@@ -29,8 +23,8 @@ export class SqliteMessageRepo implements MessageRepository {
 
       const lastId = this.db.query("SELECT last_insert_rowid() as id").get() as { id: number };
 
-      // Upsert cursor for sender: ON CONFLICT DO NOTHING preserves existing cursor
-      // so sender doesn't skip unread messages from others.
+      // ON CONFLICT DO NOTHING preserves an existing cursor so the sender
+      // doesn't skip unread messages from others.
       this.db.run(
         `INSERT INTO cursors (agent_id, channel_id, last_read_message_id)
          VALUES (?, ?, 0)
@@ -51,10 +45,8 @@ export class SqliteMessageRepo implements MessageRepository {
     return withRetrySync(() => doInsert.immediate());
   }
 
-  /**
-   * Immediate transaction: read cursor internally, fetch messages WHERE id > cursor
-   * AND agent_id != agentId, advance cursor. Fully atomic.
-   */
+  // Read-cursor + fetch + cursor-advance in one immediate transaction so a
+  // concurrent reader in another process cannot double-consume the batch.
   readForwardAndAdvance(agentId: string, channelId: number, limit: number): Message[] {
     const doRead = this.db.transaction(() => {
       const cursorRow = this.db
@@ -88,10 +80,6 @@ export class SqliteMessageRepo implements MessageRepository {
     return withRetrySync(() => doRead.immediate());
   }
 
-  /**
-   * DESC query + reverse for chronological order.
-   * No cursor involvement — used for history scrollback.
-   */
   readBefore(
     channelId: number,
     beforeId: number,
@@ -107,40 +95,5 @@ export class SqliteMessageRepo implements MessageRepository {
       )
       .all(channelId, beforeId, excludeAgent, limit) as Message[];
     return rows.reverse();
-  }
-
-  /**
-   * DESC query + reverse for chronological order.
-   * Any author (no excludeAgent). For REPL /history.
-   */
-  readRecent(channelId: number, limit: number): Message[] {
-    const rows = this.db
-      .query(
-        `SELECT * FROM messages
-         WHERE channel_id = ?
-         ORDER BY id DESC
-         LIMIT ?`
-      )
-      .all(channelId, limit) as Message[];
-    return rows.reverse();
-  }
-
-  /**
-   * SELECT * WHERE id > sinceId AND agent_id != excludeAgent ORDER BY id ASC
-   */
-  readSince(
-    channelId: number,
-    sinceId: number,
-    limit: number,
-    excludeAgent: string
-  ): Message[] {
-    return this.db
-      .query(
-        `SELECT * FROM messages
-         WHERE channel_id = ? AND id > ? AND agent_id != ?
-         ORDER BY id ASC
-         LIMIT ?`
-      )
-      .all(channelId, sinceId, excludeAgent, limit) as Message[];
   }
 }

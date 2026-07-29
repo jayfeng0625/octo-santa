@@ -1,4 +1,3 @@
-// src/core/utils.ts
 import type { Agent } from "./messaging/types";
 
 const AGENT_NAME_RE = /^[\w-]+$/;
@@ -6,7 +5,6 @@ const RESERVED_AGENT_NAMES = new Set(["all", "here", "_system"]);
 const DM_CHANNEL_RE = /^([\w-]+),([\w-]+)$/;
 const MENTION_RE = /@([\w-]+)/g;
 
-/** Staleness threshold for PID reuse detection (15 minutes). */
 export const PID_STALE_MS = 15 * 60 * 1000;
 
 export function dmChannelName(a: string, b: string): string {
@@ -25,10 +23,7 @@ export function isDmChannel(channelName: string): boolean {
   return parseDmChannelName(channelName) !== null;
 }
 
-export function assertDmAccess(
-  channelName: string,
-  agentId: string
-): void {
+export function assertDmAccess(channelName: string, agentId: string): void {
   const p = parseDmChannelName(channelName);
   if (!p) return;
   if (agentId !== p.lo && agentId !== p.hi) {
@@ -52,8 +47,7 @@ export function validateAgentName(agentId: string): void {
 
 export function extractMentions(
   content: string,
-  validAgentIds: string[],
-  profileBaseNames?: Set<string>
+  validAgentIds: string[]
 ): string[] {
   const matches = content.matchAll(MENTION_RE);
   const validSet = new Set(validAgentIds);
@@ -65,10 +59,6 @@ export function extractMentions(
     if (name === "all" || name === "here") {
       hasBroadcast = true;
     } else if (validSet.has(name)) {
-      // Direct agent ID — preferred over base name
-      result.add(name);
-    } else if (profileBaseNames?.has(name)) {
-      // Pool base name mention — stored as-is; expanded at dispatch time
       result.add(name);
     }
   }
@@ -83,12 +73,12 @@ export function isProcessAlive(pid: number): boolean {
     return true;
   } catch (error) {
     const errno = error as NodeJS.ErrnoException;
+    // EPERM means the process exists but belongs to another user.
     if (errno.code === "EPERM") return true;
     return false;
   }
 }
 
-/** Minimal liveness fields needed to decide whether an agent session is active. */
 export type AgentLiveness = Pick<Agent, "pid" | "last_seen_at">;
 
 export function isAgentActive(agent: AgentLiveness): boolean {

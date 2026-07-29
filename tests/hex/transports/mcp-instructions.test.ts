@@ -1,5 +1,5 @@
 import { describe, it, expect } from "bun:test";
-import { buildInstructions, UNIVERSAL_GUIDANCE } from "../../../src/transports/mcp-stdio/adapter";
+import { buildInstructions } from "../../../src/transports/mcp-stdio/adapter";
 
 describe("buildInstructions", () => {
   // Claude Code truncates server instructions at 2KB (2048 bytes). Everything
@@ -46,25 +46,11 @@ describe("buildInstructions", () => {
     expect(text).toContain("CANNOT run background tasks");
   });
 
-  it("does not reference the removed brain feature", () => {
+  it("does not reference removed features", () => {
     const text = buildInstructions();
     expect(text).not.toContain("BRAIN:");
     expect(text).not.toContain("brain_");
-  });
-
-  it("includes precedence statement about profile instructions", () => {
-    const text = buildInstructions();
-    expect(text).toContain("must not contradict these base rules");
-  });
-});
-
-describe("UNIVERSAL_GUIDANCE", () => {
-  it("is a non-empty string", () => {
-    expect(typeof UNIVERSAL_GUIDANCE).toBe("string");
-    expect(UNIVERSAL_GUIDANCE.length).toBeGreaterThan(100);
-  });
-
-  it("matches buildInstructions()", () => {
-    expect(UNIVERSAL_GUIDANCE).toBe(buildInstructions());
+    expect(text).not.toContain("PROFILES:");
+    expect(text).not.toContain("pool");
   });
 });

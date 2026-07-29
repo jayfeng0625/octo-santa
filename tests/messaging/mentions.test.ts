@@ -65,55 +65,10 @@ describe("extractMentions", () => {
   });
 });
 
-describe("extractMentions — profileBaseNames param", () => {
-  it("recognizes a pool base name as a valid mention", () => {
-    // "os-dev" is not in validAgentIds but IS a profile base name
+describe("extractMentions — unknown names", () => {
+  it("ignores mentions that match no registered agent", () => {
     expect(
-      extractMentions(
-        "hey @os-dev check this",
-        ["os-dev-1", "os-dev-2"],
-        new Set(["os-dev"])
-      )
-    ).toEqual(["os-dev"]);
-  });
-
-  it("prefers direct agent ID over base name when both match", () => {
-    // "os-dev-1" is both in validAgentIds and could be confused — but base names
-    // are separate from agent IDs; here "os-dev" is the base name, "os-dev-1" is
-    // the direct agent — if someone mentions @os-dev-1, it should be a direct mention
-    expect(
-      extractMentions(
-        "hey @os-dev-1 check this",
-        ["os-dev-1", "os-dev-2"],
-        new Set(["os-dev"])
-      )
-    ).toEqual(["os-dev-1"]);
-  });
-
-  it("handles mixed mentions: base name and direct agent ID", () => {
-    expect(
-      extractMentions(
-        "@os-dev and @os-dev-1 both see this",
-        ["os-dev-1", "os-dev-2"],
-        new Set(["os-dev"])
-      )
-    ).toEqual(["os-dev", "os-dev-1"]);
-  });
-
-  it("backward compat: works without profileBaseNames param (undefined)", () => {
-    // Existing behavior unchanged when third param omitted
-    expect(
-      extractMentions("@alice check this", ["alice", "bob"])
-    ).toEqual(["alice"]);
-  });
-
-  it("backward compat: profileBaseNames=undefined — base names not recognized", () => {
-    expect(
-      extractMentions(
-        "hey @os-dev check this",
-        ["os-dev-1"],
-        undefined
-      )
+      extractMentions("hey @os-dev check this", ["os-dev-1"])
     ).toEqual([]);
   });
 });

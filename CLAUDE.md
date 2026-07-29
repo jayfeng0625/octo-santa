@@ -11,8 +11,8 @@ Hexagonal architecture (ports and adapters). See `docs/architecture.md` for full
 ```
 src/
   core/           ← Domain logic + port interfaces. No infrastructure imports.
-  storage/        ← Storage adapters (SQLite, YAML profiles)
-  transports/     ← Transport adapters (MCP stdio, REPL)
+  storage/        ← Storage adapter (SQLite)
+  transports/     ← Transport adapter (MCP stdio)
   notifications/  ← Notification adapters (dispatch + cross-process poller)
   main.ts         ← Composition root — wires everything together
 ```
@@ -32,9 +32,9 @@ Each agent runs as its own OS process (MCP subprocess). There is no shared memor
   need to communicate, it goes through the shared database.
 - **Cross-process delivery requires polling.** Event-driven dispatch only works in-process.
   Don't design notification/delivery mechanisms that assume sender and receiver share memory.
-- **Push is currently best-effort; adapters own push reliability.** Core dispatches push
+- **Push is best-effort; adapters own push reliability.** Core dispatches push
   statelessly. As transports mature (MCP 2.0, message queues), adapter-level push reliability
-  improves without core changes. Pull (`read_messages` / future `messaging_listen`) is always
+  improves without core changes. Pull (`messaging_read_messages` / `messaging_listen`) is always
   available as fallback. Messages are never lost — SQLite persistence is the invariant.
 - **Always verify cross-process.** Any design touching notification, delivery, or agent-to-agent
   communication must work when sender and receiver are in different processes.

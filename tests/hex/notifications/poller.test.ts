@@ -235,59 +235,6 @@ describe("createNotificationPoller", () => {
       expect(calls.length).toBe(0);
     });
 
-    it("notifies pool instance when pool base-name is mentioned", async () => {
-      // os-dev-1 is bound with baseName "os-dev"; message mentions "os-dev"
-      const msg = makeMessage({
-        id: 1,
-        channel_name: "general",
-        agent_id: "agent-b",
-        content: "hey @os-dev",
-        mentions: '["os-dev"]',
-      });
-
-      const queryFns = makeQueryFns([msg], 0);
-      const { port, calls } = makeNotificationPort();
-      const poller = createNotificationPoller({
-        ...queryFns,
-        port,
-        agentId: "os-dev-1",
-        baseName: "os-dev",
-      });
-
-      poller.start();
-      await poller._tick();
-      poller.stop();
-
-      expect(calls.length).toBe(1);
-      expect(calls[0]!.content).toBe("hey @os-dev");
-    });
-
-    it("does not notify pool instance when base-name is not provided and only pool mention is used", async () => {
-      // os-dev-1 without baseName — @os-dev mention should not match
-      const msg = makeMessage({
-        id: 1,
-        channel_name: "general",
-        agent_id: "agent-b",
-        content: "hey @os-dev",
-        mentions: '["os-dev"]',
-      });
-
-      const queryFns = makeQueryFns([msg], 0);
-      const { port, calls } = makeNotificationPort();
-      const poller = createNotificationPoller({
-        ...queryFns,
-        port,
-        agentId: "os-dev-1",
-        // no baseName
-      });
-
-      poller.start();
-      await poller._tick();
-      poller.stop();
-
-      expect(calls.length).toBe(0);
-    });
-
     it("skips messages with malformed mentions JSON in regular channels", async () => {
       const msg = makeMessage({
         id: 1,

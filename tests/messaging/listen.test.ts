@@ -33,7 +33,7 @@ function setup() {
     };
   }
 
-  registerMessagingTools(mockServer, svc, onAgentId, undefined, undefined, repos.agents);
+  registerMessagingTools(mockServer, svc, onAgentId, repos.agents);
   return { db, svc, handlers };
 }
 

@@ -3,7 +3,6 @@ import { SqliteChannelRepo } from "../../../src/storage/sqlite/channel-repo";
 import { SqliteAgentRepo } from "../../../src/storage/sqlite/agent-repo";
 import { createDb } from "../../../src/storage/sqlite/db";
 import { runMigrations, allMigrations } from "../../../src/storage/sqlite/migrations";
-import { DEFAULT_MAX_HOPS } from "../../../src/core/messaging/types";
 import { cleanupDb } from "../../helpers/db";
 
 const TEST_DB = `/tmp/octo-santa-test-hex-channel-repo-${process.pid}.sqlite`;
@@ -50,7 +49,8 @@ describe("SqliteChannelRepo", () => {
     const { db, channels } = setup();
     const ch = channels.create("coordination", "agent-a");
     channels.addMember("agent-a", ch.id, 0);
-    expect(channels.getMemberCount(ch.id)).toBe(1);
+    const row = db.query("SELECT COUNT(*) as count FROM cursors WHERE channel_id = ?").get(ch.id) as { count: number };
+    expect(row.count).toBe(1);
     db.close();
   });
 
@@ -77,105 +77,11 @@ describe("SqliteChannelRepo", () => {
     db.close();
   });
 
-  it("create with default maxHops returns channel with DEFAULT_MAX_HOPS", () => {
+  it("renameWithAnnouncement rejects a taken name", () => {
     const { db, channels } = setup();
-    const ch = channels.create("test-channel", "agent-a");
-    expect(ch.max_hops).toBe(DEFAULT_MAX_HOPS);
-    expect(ch.hop_count).toBe(0);
-    db.close();
-  });
-
-  it("create with custom maxHops stores the provided value", () => {
-    const { db, channels } = setup();
-    const ch = channels.create("test-channel", "agent-a", 10);
-    expect(ch.max_hops).toBe(10);
-    expect(ch.hop_count).toBe(0);
-    db.close();
-  });
-
-  it("checkAndIncrementHop - allowed at 0/4", () => {
-    const { db, channels } = setup();
-    const ch = channels.create("hop-channel", "agent-a", 4);
-    const result = channels.checkAndIncrementHop(ch.id);
-    expect(result.allowed).toBe(true);
-    expect(result.hopCount).toBe(1);
-    expect(result.maxHops).toBe(4);
-    db.close();
-  });
-
-  it("checkAndIncrementHop - allowed at 3/4", () => {
-    const { db, channels } = setup();
-    const ch = channels.create("hop-channel", "agent-a", 4);
-    // Manually set hop_count to 3
-    db.run("UPDATE channels SET hop_count = 3 WHERE id = ?", [ch.id]);
-    const result = channels.checkAndIncrementHop(ch.id);
-    expect(result.allowed).toBe(true);
-    expect(result.hopCount).toBe(4);
-    expect(result.maxHops).toBe(4);
-    db.close();
-  });
-
-  it("checkAndIncrementHop - blocked at 4/4", () => {
-    const { db, channels } = setup();
-    const ch = channels.create("hop-channel", "agent-a", 4);
-    // Manually set hop_count to 4 (at limit)
-    db.run("UPDATE channels SET hop_count = 4 WHERE id = ?", [ch.id]);
-    const result = channels.checkAndIncrementHop(ch.id);
-    expect(result.allowed).toBe(false);
-    expect(result.hopCount).toBe(4);
-    expect(result.maxHops).toBe(4);
-    db.close();
-  });
-
-  it("checkAndIncrementHop - counter not incremented when blocked", () => {
-    const { db, channels } = setup();
-    const ch = channels.create("hop-channel", "agent-a", 4);
-    db.run("UPDATE channels SET hop_count = 4 WHERE id = ?", [ch.id]);
-    channels.checkAndIncrementHop(ch.id);
-    const row = db.query("SELECT hop_count FROM channels WHERE id = ?").get(ch.id) as { hop_count: number };
-    expect(row.hop_count).toBe(4);
-    db.close();
-  });
-
-  it("resetHopCount resets hop_count to 0", () => {
-    const { db, channels } = setup();
-    const ch = channels.create("hop-channel", "agent-a", 4);
-    db.run("UPDATE channels SET hop_count = 3 WHERE id = ?", [ch.id]);
-    channels.resetHopCount(ch.id);
-    const row = db.query("SELECT hop_count FROM channels WHERE id = ?").get(ch.id) as { hop_count: number };
-    expect(row.hop_count).toBe(0);
-    db.close();
-  });
-
-  it("bumpHopAllowance decrements hop_count by N", () => {
-    const { db, channels } = setup();
-    const ch = channels.create("hop-channel", "agent-a", 4);
-    db.run("UPDATE channels SET hop_count = 3 WHERE id = ?", [ch.id]);
-    const result = channels.bumpHopAllowance(ch.id, 2);
-    expect(result.hopCount).toBe(1);
-    expect(result.maxHops).toBe(4);
-    expect(result.allowed).toBe(true);
-    db.close();
-  });
-
-  it("bumpHopAllowance clamps hop_count to 0, not negative", () => {
-    const { db, channels } = setup();
-    const ch = channels.create("hop-channel", "agent-a", 4);
-    db.run("UPDATE channels SET hop_count = 2 WHERE id = ?", [ch.id]);
-    const result = channels.bumpHopAllowance(ch.id, 10);
-    expect(result.hopCount).toBe(0);
-    expect(result.allowed).toBe(true);
-    db.close();
-  });
-
-  it("bumpHopAllowance returns new state after decrement", () => {
-    const { db, channels } = setup();
-    const ch = channels.create("hop-channel", "agent-a", 5);
-    db.run("UPDATE channels SET hop_count = 5 WHERE id = ?", [ch.id]);
-    const result = channels.bumpHopAllowance(ch.id, 1);
-    expect(result.hopCount).toBe(4);
-    expect(result.maxHops).toBe(5);
-    expect(result.allowed).toBe(true);
+    channels.create("taken", "agent-a");
+    const ch = channels.create("old-name", "agent-a");
+    expect(() => channels.renameWithAnnouncement(ch.id, "taken", "agent-a")).toThrow("already exists");
     db.close();
   });
 });

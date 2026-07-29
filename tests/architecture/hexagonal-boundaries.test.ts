@@ -1,15 +1,14 @@
-// tests/architecture/hexagonal-boundaries.test.ts
-//
-// Architecture tests enforcing hexagonal boundary rules.
-// These guard the core domain from infrastructure imports and cross-adapter coupling.
-// Written before the refactor begins — they pass vacuously until src/core/ exists,
-// then actively enforce boundaries as code is extracted.
+// Architecture tests enforcing hexagonal boundary rules: core stays free of
+// infrastructure imports and adapters stay decoupled from each other.
 
 import { describe, it, expect } from "bun:test";
 import { projectFiles } from "archunit";
 import type { FileInfo } from "archunit";
 
 const CHECK_OPTS = { allowEmptyTests: true };
+// The first rule check scans the whole project, which can exceed bun's 5s
+// default when the suite runs in parallel.
+const RULE_TIMEOUT_MS = 20_000;
 
 // --- Helpers for custom import rules ---
 
@@ -37,7 +36,7 @@ describe("hexagonal architecture boundaries", () => {
 
       const violations = await rule.check(CHECK_OPTS);
       expect(violations).toEqual([]);
-    });
+    }, RULE_TIMEOUT_MS);
 
     it("core must not depend on transports layer", async () => {
       const rule = projectFiles()
@@ -48,7 +47,7 @@ describe("hexagonal architecture boundaries", () => {
 
       const violations = await rule.check(CHECK_OPTS);
       expect(violations).toEqual([]);
-    });
+    }, RULE_TIMEOUT_MS);
 
     it("core must not depend on notifications layer", async () => {
       const rule = projectFiles()
@@ -59,7 +58,7 @@ describe("hexagonal architecture boundaries", () => {
 
       const violations = await rule.check(CHECK_OPTS);
       expect(violations).toEqual([]);
-    });
+    }, RULE_TIMEOUT_MS);
   });
 
   // --- Core must not import infrastructure modules directly ---
@@ -76,7 +75,7 @@ describe("hexagonal architecture boundaries", () => {
 
       const violations = await rule.check(CHECK_OPTS);
       expect(violations).toEqual([]);
-    });
+    }, RULE_TIMEOUT_MS);
   });
 
   // --- No cross-adapter dependencies ---
@@ -91,7 +90,7 @@ describe("hexagonal architecture boundaries", () => {
 
       const violations = await rule.check(CHECK_OPTS);
       expect(violations).toEqual([]);
-    });
+    }, RULE_TIMEOUT_MS);
 
     it("storage must not depend on notifications", async () => {
       const rule = projectFiles()
@@ -102,7 +101,7 @@ describe("hexagonal architecture boundaries", () => {
 
       const violations = await rule.check(CHECK_OPTS);
       expect(violations).toEqual([]);
-    });
+    }, RULE_TIMEOUT_MS);
 
     it("transports must not depend on storage", async () => {
       const rule = projectFiles()
@@ -113,7 +112,7 @@ describe("hexagonal architecture boundaries", () => {
 
       const violations = await rule.check(CHECK_OPTS);
       expect(violations).toEqual([]);
-    });
+    }, RULE_TIMEOUT_MS);
 
     it("transports must not depend on notifications", async () => {
       const rule = projectFiles()
@@ -124,7 +123,7 @@ describe("hexagonal architecture boundaries", () => {
 
       const violations = await rule.check(CHECK_OPTS);
       expect(violations).toEqual([]);
-    });
+    }, RULE_TIMEOUT_MS);
 
     it("notifications must not depend on transports", async () => {
       const rule = projectFiles()
@@ -135,7 +134,7 @@ describe("hexagonal architecture boundaries", () => {
 
       const violations = await rule.check(CHECK_OPTS);
       expect(violations).toEqual([]);
-    });
+    }, RULE_TIMEOUT_MS);
 
     it("notifications must not depend on storage", async () => {
       const rule = projectFiles()
@@ -146,6 +145,6 @@ describe("hexagonal architecture boundaries", () => {
 
       const violations = await rule.check(CHECK_OPTS);
       expect(violations).toEqual([]);
-    });
+    }, RULE_TIMEOUT_MS);
   });
 });
