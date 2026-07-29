@@ -85,7 +85,7 @@ src/
 
   transports/                    ← Transport adapters (how external clients connect)
     mcp-stdio/
-      adapter.ts                 ← MCP tool registration, agent binding, server startup
+      adapter.ts                 ← MCP tool registration, per-connection server factory (SDK v2 serveStdio)
       helpers.ts                 ← jsonResult(), withAgent()
 
   notifications/                 ← Notification adapter (how agents receive push)
@@ -203,9 +203,19 @@ and `listMembers()`. Liveness is transport-independent.
 ### 3. Agent Registration and Disconnect
 
 The service handles `register()` and `unregister()` as pure storage operations.
-Transport adapters manage session lifecycle — MCP stdio binds the session to the
-first agent that completes a tool call and unregisters on close. The service
-doesn't know the trigger.
+Transport adapters manage connection lifecycle — MCP stdio binds the connection
+to the first agent that completes a tool call and unregisters on close. The
+service doesn't know the trigger.
+
+The MCP transport uses SDK v2's `serveStdio(factory)` entry: one fresh
+`McpServer` instance is built per stdio connection, and all per-connection state
+(agent binding, notification poller, heartbeat timer) lives in that instance's
+closure. The protocol itself is stateless as of MCP revision 2026-07-28 — no
+initialize handshake, no protocol-level sessions, every tool request
+self-contained (which is why every tool takes `agent_id` explicitly). The same
+factory also serves 2025-era clients, which still open with the legacy
+initialize handshake. Durable state never lives in the connection: SQLite holds
+all of it.
 
 ### 4. DM Channel Creation
 
@@ -273,6 +283,8 @@ process boundary without an IPC bridge.
 
 For octo-santa's N-process model (each agent is its own subprocess sharing a SQLite
 file), **some form of polling will always be needed for cross-process notification.**
-Future work (MCP 2.0 server-initiated push, long-poll transports) may change the
-delivery mechanism, but the shared-SQLite-requires-polling constraint remains until
-the process model changes.
+MCP's 2026-07-28 revision (SDK v2) made the protocol stateless and removed
+server→client requests, but stdio connections remain long-lived pipes, and custom
+extension notifications like `notifications/claude/channel` pass through on both
+protocol eras — so push delivery is unchanged. The shared-SQLite-requires-polling
+constraint remains until the process model changes.
