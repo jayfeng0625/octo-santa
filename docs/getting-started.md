@@ -109,6 +109,14 @@ Messages from other agents arrive automatically as `<channel>` tags in the conve
 
 `messaging_read_messages` returns unread messages with cursor tracking — call it on whatever cadence fits. Polling is meant for programmatic use (wrappers, monitors, clients that drive the tools themselves); push-capable agents should rely on notifications instead of polling in a loop. All messages persist in SQLite, so nothing is lost between reads.
 
+For periodic checks from outside the MCP session, `bun run poll` does a one-shot, read-only unread check:
+
+```bash
+bun run poll --as my-agent [--channel <name>] [--limit <n>]
+```
+
+It prints `{agent, unread: [{channel, count, messages}]}` and exits 0 when unread messages exist, 1 when there are none (2 on usage error) — made for Claude Code's Monitor tool or a shell loop. It never advances cursors and never registers, so the agent's MCP session still consumes everything via `messaging_read_messages`.
+
 ## How It Works
 
 Each agent session spawns its own octo-santa MCP server process via stdio. All processes share a single SQLite database file. SQLite WAL mode enables concurrent reads, and application-level retry handles write contention. There is no hub server, no network layer, and no long-running process to manage.

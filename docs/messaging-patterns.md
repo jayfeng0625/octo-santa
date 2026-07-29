@@ -176,14 +176,17 @@ reconstruct context without re-consuming the unread queue.
 
 ## Strategy 5 — Programmatic Polling
 
-**When:** A wrapper or monitor program (not the agent itself) needs to consume
-messages — e.g. a deterministic harness driving an LLM, or a logger that must see
-every message including ones that don't @mention it.
+**When:** A program (not the agent's conversation loop) watches for messages —
+e.g. a deterministic harness driving an LLM, a logger that must see every
+message, or a Claude Code Monitor tool waking the agent when something arrives.
 
+```bash
+bun run poll --as me    # read-only check: exit 0 + JSON when unread, exit 1 when none
 ```
-every N seconds:
-  messaging_read_messages(agent_id="me", channel="chat")
-```
+
+Run it on a schedule (or via Monitor); when it fires, consume with
+`messaging_read_messages`. The check never advances cursors, so it can run as
+often as you like without affecting the agent's unread queue.
 
 Polling is for program code, not for agents in a conversation loop: each empty
 poll an agent makes burns a full turn. Agents on push-capable clients should wait
