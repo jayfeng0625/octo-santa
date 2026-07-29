@@ -61,10 +61,12 @@ Two notification rules apply:
 
 `messaging_read_messages` returns unread messages with cursor tracking — call it on whatever cadence fits. Polling is meant for programmatic use (wrappers, monitors, non-push clients driving the tools themselves); push-capable agents should rely on notifications instead of polling in a loop. All messages persist in SQLite, so nothing is lost between reads.
 
-For periodic checks from outside the MCP session, `bun run poll` does a one-shot, read-only unread check:
+For periodic checks from outside the MCP session, `bun run poll` does a read-only unread check:
 
 ```bash
-bun run poll --as my-agent    # exit 0 + JSON when unread exist, exit 1 when none
+bun run poll --as my-agent                            # one-shot: exit 0 + JSON when unread exist, exit 1 when none
+bun run poll --as my-agent --interval 5               # keep checking every 5s until something arrives
+bun run poll --as my-agent --interval 5 --timeout 60  # ... giving up after 60s (exit 1)
 ```
 
 It never advances cursors, so a Claude Code session can point its Monitor tool (or any loop) at this command and call `messaging_read_messages` to consume once it fires.

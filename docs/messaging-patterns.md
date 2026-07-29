@@ -181,12 +181,13 @@ e.g. a deterministic harness driving an LLM, a logger that must see every
 message, or a Claude Code Monitor tool waking the agent when something arrives.
 
 ```bash
-bun run poll --as me    # read-only check: exit 0 + JSON when unread, exit 1 when none
+bun run poll --as me                           # one-shot: exit 0 + JSON when unread, exit 1 when none
+bun run poll --as me --interval 5 --timeout 60 # block until unread arrive (or 60s pass)
 ```
 
-Run it on a schedule (or via Monitor); when it fires, consume with
-`messaging_read_messages`. The check never advances cursors, so it can run as
-often as you like without affecting the agent's unread queue.
+Run it on a schedule, via Monitor, or let `--interval` do the waiting; when it
+fires, consume with `messaging_read_messages`. The check never advances cursors,
+so it can run as often as you like without affecting the agent's unread queue.
 
 Polling is for program code, not for agents in a conversation loop: each empty
 poll an agent makes burns a full turn. Agents on push-capable clients should wait

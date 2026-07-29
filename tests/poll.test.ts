@@ -93,3 +93,59 @@ describe("poll entry point", () => {
     expect(exitCode).toBe(2);
   });
 });
+
+describe("poll entry point — watch mode (--interval)", () => {
+  it("keeps polling until a message arrives, then exits 0 with it", async () => {
+    const db = setupTestDb(TEST_DB, allMigrations);
+    const repos = createSqliteRepos(db);
+    const svc = new MessagingService(repos.agents, repos.channels, repos.messages, process.pid);
+    svc.register("reader");
+    svc.register("sender");
+    svc.createChannel("sender", "general");
+    svc.subscribe("reader", "general");
+
+    // Start watching with no unread; send only after the watcher is running.
+    const pollPromise = runPoll(["--as", "reader", "--interval", "0.2"]);
+    await Bun.sleep(500);
+    svc.send("sender", "general", "wake up @reader");
+
+    const { exitCode, stdout } = await pollPromise;
+    expect(exitCode).toBe(0);
+    const parsed = JSON.parse(stdout);
+    expect(parsed.unread[0].channel).toBe("general");
+    expect(parsed.unread[0].messages[0].content).toBe("wake up @reader");
+    db.close();
+  });
+
+  it("gives up after --timeout and exits 1 with empty unread", async () => {
+    const db = setupTestDb(TEST_DB, allMigrations);
+    const repos = createSqliteRepos(db);
+    const svc = new MessagingService(repos.agents, repos.channels, repos.messages, process.pid);
+    svc.register("reader");
+    svc.createChannel("reader", "general");
+    db.close();
+
+    const start = Date.now();
+    const { exitCode, stdout } = await runPoll([
+      "--as", "reader", "--interval", "0.2", "--timeout", "0.7",
+    ]);
+    const elapsed = Date.now() - start;
+
+    expect(exitCode).toBe(1);
+    expect(JSON.parse(stdout)).toEqual({ agent: "reader", unread: [] });
+    expect(elapsed).toBeGreaterThanOrEqual(700);
+    expect(elapsed).toBeLessThan(5000);
+  });
+
+  it("exits 2 on a non-positive --interval", async () => {
+    setupTestDb(TEST_DB, allMigrations).close();
+    const { exitCode } = await runPoll(["--as", "reader", "--interval", "0"]);
+    expect(exitCode).toBe(2);
+  });
+
+  it("exits 2 when --timeout is given without --interval", async () => {
+    setupTestDb(TEST_DB, allMigrations).close();
+    const { exitCode } = await runPoll(["--as", "reader", "--timeout", "5"]);
+    expect(exitCode).toBe(2);
+  });
+});
