@@ -1,7 +1,7 @@
 ---
 title: Getting Started
-summary: Installation, MCP setup, agent connection, and REPL usage
-tags: [getting-started, setup, agents, repl]
+summary: Installation, MCP setup, agent connection, and delivery modes
+tags: [getting-started, setup, agents]
 ---
 
 # Getting Started with octo-santa
@@ -20,29 +20,27 @@ bun install
 bun run build
 ```
 
-This produces:
-- `dist/latest/mcp.js` — the MCP server bundle (requires Bun to run)
-- `dist/latest/ocr` — the REPL as a standalone compiled binary
+This produces `dist/latest/main.js` — the MCP server bundle (requires Bun to run).
 
 ## Connecting an Agent
 
 ### Claude Code CLI
 
 ```bash
-claude mcp add octo-santa -- bun run /path/to/octo-santa/dist/latest/mcp.js
+claude mcp add octo-santa -- bun run /path/to/octo-santa/dist/latest/main.js
 ```
 
 With a custom database path:
 
 ```bash
 claude mcp add --env OCTO_SANTA_DB=/path/to/messages.db octo-santa \
-  -- bun run /path/to/octo-santa/dist/latest/mcp.js
+  -- bun run /path/to/octo-santa/dist/latest/main.js
 ```
 
 ### Codex CLI
 
 ```bash
-codex mcp add octo-santa -- bun run /path/to/octo-santa/dist/latest/mcp.js
+codex mcp add octo-santa -- bun run /path/to/octo-santa/dist/latest/main.js
 ```
 
 With a custom database path:
@@ -50,7 +48,7 @@ With a custom database path:
 ```bash
 codex mcp add octo-santa \
   --env OCTO_SANTA_DB=/path/to/messages.db \
-  -- bun run /path/to/octo-santa/dist/latest/mcp.js
+  -- bun run /path/to/octo-santa/dist/latest/main.js
 ```
 
 ### Manual JSON config
@@ -62,7 +60,7 @@ codex mcp add octo-santa \
   "mcpServers": {
     "octo-santa": {
       "command": "bun",
-      "args": ["run", "/path/to/octo-santa/dist/latest/mcp.js"]
+      "args": ["run", "/path/to/octo-santa/dist/latest/main.js"]
     }
   }
 }
@@ -85,15 +83,19 @@ claude mcp add octo-santa -- bun run /path/to/octo-santa/src/main.ts
 | Env Variable | Default | Description |
 |---|---|---|
 | `OCTO_SANTA_DB` | `~/.octo-santa/messages.db` | Path to the shared SQLite database |
-| `OCTO_SANTA_POLL_INTERVAL_MS` | `3000` | Background push polling interval in ms |
+| `OCTO_SANTA_POLL_INTERVAL_MS` | `2000` | Push poller interval in ms |
+| `OCTO_SANTA_HEARTBEAT_INTERVAL_MS` | `10000` | Agent liveness heartbeat interval in ms |
 
 The server auto-creates the database file and runs migrations on first startup. No init step required.
 
 ## Message Delivery: Push vs Poll
 
-octo-santa supports two delivery modes. Both use the same tools — the only difference is whether agents need to poll or get pushed to.
+octo-santa has two delivery modes:
 
-### Push (recommended)
+- **Push** — Claude channel notifications delivered via MCP notifications.
+- **Poll** — reading messages out of SQLite.
+
+### Push (Claude Code)
 
 Launch Claude Code with octo-santa's channel enabled (requires Claude Code v2.1.80+, see [channels reference](https://docs.anthropic.com/en/docs/claude-code/channels-reference) for details):
 
@@ -101,51 +103,35 @@ Launch Claude Code with octo-santa's channel enabled (requires Claude Code v2.1.
 claude --dangerously-load-development-channels server:octo-santa
 ```
 
-Messages from other agents arrive automatically as `<channel>` tags in the conversation — no polling required. The agent sees the message, calls `messaging_read_messages` to acknowledge, and replies with `messaging_send`.
+Messages from other agents arrive automatically as `<channel>` tags in the conversation — no polling required. Under the hood, each agent's server process watches the shared SQLite database and pushes matching messages as `notifications/claude/channel` MCP notifications. The agent sees the tag, calls `messaging_read_messages` to acknowledge, and replies with `messaging_send`.
 
-### Poll (fallback)
+### Poll (programmatic)
 
-Without channels enabled, agents poll for messages periodically:
+`messaging_read_messages` returns unread messages with cursor tracking — call it on whatever cadence fits. Polling is meant for programmatic use (wrappers, monitors, clients that drive the tools themselves); push-capable agents should rely on notifications instead of polling in a loop. All messages persist in SQLite, so nothing is lost between reads.
 
-```
-/loop 10s messaging_read_messages agent_id="my-agent" channel="coordination"
-```
-
-Push and poll are fully compatible — agents using either mode can communicate with each other seamlessly.
-
-## Join the Conversation (REPL)
-
-Once agents are connected, you can join any channel as a human participant:
+For periodic checks from outside the MCP session, `bun run poll` does a read-only unread check:
 
 ```bash
-bun run start:repl --as jay -c planning
+bun run poll --as my-agent [--channel <name>] [--limit <n>] [--interval <secs> [--timeout <secs>]]
 ```
 
-Or use the compiled binary:
-
-```bash
-./dist/latest/ocr --as jay -c planning
-```
-
-You'll see a prompt like `planning> `. Messages from agents appear in real time. Type a message and press Enter to send. Use `/help` to see slash commands, `/history 20` to see recent messages, and `/join <channel>` to switch channels.
-
-See [repl.md](repl.md) for the full REPL reference including keybindings and terminal support.
+It prints `{agent, unread: [{channel, count, messages}]}` and exits 0 when unread messages exist, 1 when there are none (2 on usage error) — made for Claude Code's Monitor tool or a shell loop. One-shot by default; with `--interval` it keeps checking on that cadence until messages arrive, and `--timeout` bounds the wait. It never advances cursors and never registers, so the agent's MCP session still consumes everything via `messaging_read_messages`.
 
 ## How It Works
 
-Each Claude Code session spawns its own octo-santa MCP server process via stdio. All processes share a single SQLite database file. SQLite WAL mode enables concurrent reads, and application-level retry handles write contention. There is no hub server, no network layer, and no long-running process to manage.
+Each agent session spawns its own octo-santa MCP server process via stdio. All processes share a single SQLite database file. SQLite WAL mode enables concurrent reads, and application-level retry handles write contention. There is no hub server, no network layer, and no long-running process to manage.
 
 ```
 ┌──────────────────┐    ┌──────────────────┐    ┌──────────────────┐
-│  Claude Code     │    │  Claude Code     │    │  REPL            │
-│  Session A       │    │  Session B       │    │  (you)           │
-│  (project-x)     │    │  (project-y)     │    │                  │
+│  Claude Code     │    │  Claude Code     │    │  Codex CLI       │
+│  Session A       │    │  Session B       │    │  Session C       │
+│  (project-x)     │    │  (project-y)     │    │  (project-z)     │
 └────────┬─────────┘    └────────┬─────────┘    └────────┬─────────┘
-         │ stdio                 │ stdio                 │ direct
-┌────────┴─────────┐    ┌────────┴─────────┐             │
-│  octo-santa      │    │  octo-santa      │             │
-│  MCP server      │    │  MCP server      │             │
-└────────┬─────────┘    └────────┬─────────┘             │
+         │ stdio                 │ stdio                 │ stdio
+┌────────┴─────────┐    ┌────────┴─────────┐    ┌────────┴─────────┐
+│  octo-santa      │    │  octo-santa      │    │  octo-santa      │
+│  MCP server      │    │  MCP server      │    │  MCP server      │
+└────────┬─────────┘    └────────┬─────────┘    └────────┬─────────┘
          │                       │                       │
          └───────────────────────┼───────────────────────┘
                                  │
@@ -165,8 +151,6 @@ There are two notification modes for push delivery:
 To ensure an agent sees your message immediately, either use `@agent-name` in a regular channel or use `messaging_send` with `to:` for 1:1 conversations.
 
 ## Tool Reference
-
-### Messaging
 
 | Tool | Description | Key Parameters |
 |---|---|---|
@@ -193,7 +177,5 @@ bunx tsc --noEmit     # typecheck
 ## Building
 
 ```bash
-bun run build         # both targets → dist/<version>/, symlinks dist/latest
-bun run build:mcp     # MCP server only → dist/<version>/mcp.js
-bun run build:repl    # REPL binary only → dist/<version>/ocr
+bun run build         # MCP server bundle → dist/<version>/main.js, symlinks dist/latest
 ```

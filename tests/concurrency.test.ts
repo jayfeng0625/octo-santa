@@ -12,7 +12,7 @@ const projectRoot = process.cwd();
 function setup() {
   const db = setupTestDb(TEST_DB, allMigrations);
   const repos = createSqliteRepos(db);
-  const svc = new MessagingService(repos.agents, repos.channels, repos.messages, repos.cursors, process.pid);
+  const svc = new MessagingService(repos.agents, repos.channels, repos.messages, process.pid);
   return { db, svc };
 }
 
@@ -25,8 +25,7 @@ describe("concurrency", () => {
     const { db: setupDbRef, svc } = setup();
     // Subscribe verifier before workers run so cursor starts at 0 (sees all messages)
     svc.register("verifier");
-    // Use a high maxHops so workers can send many messages without triggering hop limit
-    svc.createChannel("verifier", "stress-test", 1000);
+    svc.createChannel("verifier", "stress-test");
     svc.subscribe("verifier", "stress-test");
     setupDbRef.close();
 
@@ -44,7 +43,7 @@ describe("concurrency", () => {
       const db = createDb("${TEST_DB}");
       runMigrations(db, allMigrations);
       const repos = createSqliteRepos(db);
-      const svc = new MessagingService(repos.agents, repos.channels, repos.messages, repos.cursors, process.pid);
+      const svc = new MessagingService(repos.agents, repos.channels, repos.messages, process.pid);
 
       const agentId = process.argv[2];
       const count = parseInt(process.argv[3]);
@@ -87,7 +86,7 @@ describe("concurrency", () => {
     const db = createDb(TEST_DB);
     runMigrations(db, allMigrations);
     const repos = createSqliteRepos(db);
-    const verifySvc = new MessagingService(repos.agents, repos.channels, repos.messages, repos.cursors, process.pid);
+    const verifySvc = new MessagingService(repos.agents, repos.channels, repos.messages, process.pid);
     // Cursor was already created at 0 before workers ran — just read
     const allMessages = verifySvc.read("verifier", "stress-test", { limit: 1000 });
     expect(allMessages).toHaveLength(NUM_AGENTS * MESSAGES_PER_AGENT);
@@ -107,7 +106,7 @@ describe("concurrency", () => {
       const db = createDb("${TEST_DB}");
       runMigrations(db, allMigrations);
       const repos = createSqliteRepos(db);
-      const svc = new MessagingService(repos.agents, repos.channels, repos.messages, repos.cursors, process.pid);
+      const svc = new MessagingService(repos.agents, repos.channels, repos.messages, process.pid);
       const agentId = process.argv[2];
       svc.register(agentId);
       svc.createChannel(agentId, "init"); // idempotent — one winner creates it
@@ -149,7 +148,7 @@ describe("concurrency", () => {
 
     // Register verifier with proper PID and create cursor at 0 to read all messages
     const repos = createSqliteRepos(db);
-    const verifySvc = new MessagingService(repos.agents, repos.channels, repos.messages, repos.cursors, process.pid);
+    const verifySvc = new MessagingService(repos.agents, repos.channels, repos.messages, process.pid);
     verifySvc.register("verifier");
     const channel = db.query("SELECT id FROM channels WHERE name = ?").get("init") as { id: number };
     db.run("INSERT INTO cursors (agent_id, channel_id, last_read_message_id) VALUES (?, ?, 0) ON CONFLICT DO NOTHING", ["verifier", channel.id]);

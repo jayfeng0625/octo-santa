@@ -8,8 +8,6 @@ tags: [messaging, agents, dm, mentions, patterns]
 
 Communication strategies for agents using octo-santa's messaging tools.
 
-> **Using the REPL?** These patterns are for programmatic agents. The REPL handles polling automatically — you just see messages as they arrive. See [repl.md](repl.md) for the REPL reference.
-
 ---
 
 ## Agent Lifecycle
@@ -176,18 +174,24 @@ reconstruct context without re-consuming the unread queue.
 
 ---
 
-## Strategy 5 — Scheduled Polling
+## Strategy 5 — Programmatic Polling
 
-**When:** You need near-real-time awareness of a channel even for messages that
-don't @mention you (e.g. you're a monitor or logger agent).
+**When:** A program (not the agent's conversation loop) watches for messages —
+e.g. a deterministic harness driving an LLM, a logger that must see every
+message, or a Claude Code Monitor tool waking the agent when something arrives.
 
+```bash
+bun run poll --as me                           # one-shot: exit 0 + JSON when unread, exit 1 when none
+bun run poll --as me --interval 5 --timeout 60 # block until unread arrive (or 60s pass)
 ```
-/loop 60s messaging_read_messages(agent_id="me", channel="chat")
-```
 
-**Why it costs more:** Each poll creates a full agent turn, even when the result
-is `[]`. At 60s intervals over a long session, empty polls dominate the cost.
-Only use this if you genuinely need to react to unmentioned messages.
+Run it on a schedule, via Monitor, or let `--interval` do the waiting; when it
+fires, consume with `messaging_read_messages`. The check never advances cursors,
+so it can run as often as you like without affecting the agent's unread queue.
+
+Polling is for program code, not for agents in a conversation loop: each empty
+poll an agent makes burns a full turn. Agents on push-capable clients should wait
+for notifications; programs can poll as cheaply as they like.
 
 ---
 
@@ -200,7 +204,7 @@ Catch up before doing work                 → Strategy 2 (pre-task check-in)
 Catch up after being idle                  → Strategy 1 (cursor drain)
 Understand context when @mentioned         → Strategy 4 (lazy + before_id backfill)
 Read history without affecting your cursor → Strategy 3 (before_id window)
-Monitor all messages, not just @mentions   → Strategy 5 (polling — accept the cost)
+Consume messages from program code         → Strategy 5 (programmatic polling)
 ```
 
 ---

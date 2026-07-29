@@ -3,7 +3,6 @@ import { MessagingService } from "../../../src/core/messaging/service";
 import { createSqliteRepos } from "../../../src/storage/sqlite";
 import { createDb } from "../../../src/storage/sqlite/db";
 import { runMigrations, allMigrations } from "../../../src/storage/sqlite/migrations";
-import { createNotificationDispatcher } from "../../../src/notifications/dispatch/dispatcher";
 import { cleanupDb } from "../../helpers/db";
 
 const TEST_DB = `/tmp/octo-santa-test-hex-messaging-svc-${process.pid}.sqlite`;
@@ -13,14 +12,11 @@ function setup() {
   const db = createDb(TEST_DB);
   runMigrations(db, allMigrations);
   const repos = createSqliteRepos(db);
-  const dispatcher = createNotificationDispatcher();
   const svc = new MessagingService(
     repos.agents,
     repos.channels,
     repos.messages,
-    repos.cursors,
-    process.pid,
-    dispatcher
+    process.pid
   );
   return { db, repos, svc };
 }
@@ -322,53 +318,6 @@ describe("MessagingService", () => {
     });
   });
 
-  // ── readRecent ─────────────────────────────────────────────────
-
-  describe("readRecent", () => {
-    it("returns chronological messages from all authors", () => {
-      const { svc } = setup();
-
-      svc.register("alice");
-      svc.register("bob");
-
-      const ch = svc.createChannel("alice", "general");
-      svc.subscribe("alice", "general");
-      svc.subscribe("bob", "general");
-
-      svc.send("alice", "general", "message 1");
-      svc.send("bob", "general", "message 2");
-      svc.send("alice", "general", "message 3");
-
-      const recent = svc.readRecent("general", 10);
-      expect(recent.length).toBe(3);
-      // Should be in chronological order
-      expect(recent[0]!.content).toBe("message 1");
-      expect(recent[0]!.agent_id).toBe("alice");
-      expect(recent[1]!.content).toBe("message 2");
-      expect(recent[1]!.agent_id).toBe("bob");
-      expect(recent[2]!.content).toBe("message 3");
-      expect(recent[2]!.agent_id).toBe("alice");
-    });
-
-    it("respects limit parameter", () => {
-      const { svc } = setup();
-
-      svc.register("alice");
-      const ch = svc.createChannel("alice", "general");
-      svc.subscribe("alice", "general");
-
-      svc.send("alice", "general", "msg 1");
-      svc.send("alice", "general", "msg 2");
-      svc.send("alice", "general", "msg 3");
-
-      const recent = svc.readRecent("general", 2);
-      expect(recent.length).toBe(2);
-      // Should be the last 2, in chronological order
-      expect(recent[0]!.content).toBe("msg 2");
-      expect(recent[1]!.content).toBe("msg 3");
-    });
-  });
-
   // ── read edge cases ────────────────────────────────────────────
 
   describe("read edge cases", () => {
@@ -476,66 +425,6 @@ describe("MessagingService", () => {
       expect(() =>
         svc.send("eve", "alice,bob", "eavesdrop")
       ).toThrow('DM channel "alice,bob" is private to alice and bob');
-    });
-  });
-
-  // ── pollNewMessages ────────────────────────────────────────────
-
-  describe("pollNewMessages", () => {
-    it("returns messages since a given ID", () => {
-      const { svc } = setup();
-
-      svc.register("alice");
-      svc.register("bob");
-      svc.createChannel("alice", "general");
-      svc.subscribe("alice", "general");
-      svc.subscribe("bob", "general");
-
-      const msg1 = svc.send("alice", "general", "first");
-      svc.send("bob", "general", "second");
-      svc.send("alice", "general", "third");
-
-      // Poll since msg1 for bob — should exclude bob's own messages
-      const newMsgs = svc.pollNewMessages("general", msg1.id, "bob");
-      expect(newMsgs.length).toBe(1);
-      expect(newMsgs[0]!.content).toBe("third");
-    });
-
-    it("returns empty for non-existent channel", () => {
-      const { svc } = setup();
-      const result = svc.pollNewMessages("nonexistent", 0, "alice");
-      expect(result).toEqual([]);
-    });
-  });
-
-  // ── getCursorPosition ──────────────────────────────────────────
-
-  describe("getCursorPosition", () => {
-    it("returns cursor position after reading", () => {
-      const { svc } = setup();
-
-      svc.register("alice");
-      svc.register("bob");
-      const ch = svc.createChannel("alice", "general");
-      svc.subscribe("alice", "general");
-      svc.subscribe("bob", "general");
-
-      const msg = svc.send("bob", "general", "hello");
-
-      // Before reading, cursor is at subscribe position (maxId at time of subscribe)
-      // Alice subscribed before any messages, so her cursor should be 0
-      // But subscribe sets cursor to maxId at subscribe time — messages were sent after
-
-      // After reading, cursor should advance
-      svc.read("alice", "general");
-      const pos = svc.getCursorPosition("alice", "general");
-      expect(pos).toBe(msg.id);
-    });
-
-    it("returns 0 for non-existent cursor", () => {
-      const { svc } = setup();
-      const pos = svc.getCursorPosition("nobody", "nonexistent");
-      expect(pos).toBe(0);
     });
   });
 

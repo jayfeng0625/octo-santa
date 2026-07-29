@@ -1,8 +1,7 @@
 import type { Database } from "bun:sqlite";
 import type { AgentRepository } from "../../core/ports";
-import type { ProfileFields, NamedProfileFields } from "../../core/profiles/types";
 import type { Agent, HeartbeatResult } from "../../core/messaging/types";
-import { isAgentActive, PID_STALE_MS } from "../../core/utils";
+import { isAgentActive } from "../../core/utils";
 import { withRetrySync } from "./db";
 
 export class SqliteAgentRepo implements AgentRepository {
@@ -12,61 +11,7 @@ export class SqliteAgentRepo implements AgentRepository {
     return (this.db.query("SELECT * FROM agents WHERE id = ?").get(id) as Agent) ?? null;
   }
 
-  findByBaseName(baseName: string): Agent[] {
-    return this.db
-      .query("SELECT * FROM agents WHERE base_name = ? ORDER BY id")
-      .all(baseName) as Agent[];
-  }
-
-  /**
-   * Private helper: performs INSERT/ON CONFLICT upsert without wrapping in its own transaction.
-   * The caller (register or registerWithProfile) must wrap this in an EXCLUSIVE transaction.
-   * When profileFields is omitted, sets base_name/persona/objective to NULL (clears stale data).
-   */
-  private _upsertAgent(
-    agentId: string,
-    pid: number,
-    profileFields?: NamedProfileFields
-  ): void {
-    const now = Date.now();
-    if (profileFields) {
-      this.db
-        .query(
-          `INSERT INTO agents (id, created_at, last_seen_at, pid, registered_at, base_name, persona, objective, instructions)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-           ON CONFLICT(id) DO UPDATE SET
-             last_seen_at = excluded.last_seen_at,
-             pid = excluded.pid,
-             registered_at = excluded.registered_at,
-             base_name = excluded.base_name,
-             persona = excluded.persona,
-             objective = excluded.objective,
-             instructions = excluded.instructions`
-        )
-        .run(agentId, now, now, pid, now, profileFields.baseName, profileFields.persona, profileFields.objective, profileFields.instructions);
-    } else {
-      this.db
-        .query(
-          `INSERT INTO agents (id, created_at, last_seen_at, pid, registered_at, base_name, persona, objective, instructions)
-           VALUES (?, ?, ?, ?, ?, NULL, NULL, NULL, NULL)
-           ON CONFLICT(id) DO UPDATE SET
-             last_seen_at = excluded.last_seen_at,
-             pid = excluded.pid,
-             registered_at = excluded.registered_at,
-             base_name = excluded.base_name,
-             persona = excluded.persona,
-             objective = excluded.objective,
-             instructions = excluded.instructions`
-        )
-        .run(agentId, now, now, pid, now);
-    }
-  }
-
-  register(
-    agentId: string,
-    pid: number,
-    profileFields?: NamedProfileFields
-  ): Agent {
+  register(agentId: string, pid: number): Agent {
     const doRegister = this.db.transaction(() => {
       const existing = this.findById(agentId);
 
@@ -78,87 +23,18 @@ export class SqliteAgentRepo implements AgentRepository {
         }
       }
 
-      this._upsertAgent(agentId, pid, profileFields);
+      const now = Date.now();
+      this.db
+        .query(
+          `INSERT INTO agents (id, created_at, last_seen_at, pid, registered_at)
+           VALUES (?, ?, ?, ?, ?)
+           ON CONFLICT(id) DO UPDATE SET
+             last_seen_at = excluded.last_seen_at,
+             pid = excluded.pid,
+             registered_at = excluded.registered_at`
+        )
+        .run(agentId, now, now, pid, now);
       return this.findById(agentId)!;
-    });
-
-    return withRetrySync(() => doRegister.exclusive());
-  }
-
-  registerWithProfile(
-    baseName: string,
-    pid: number,
-    maxInstances: number,
-    profileFields: ProfileFields
-  ): { agent: Agent; registeredName: string; instanceNumber: number | null } {
-    const doRegister = this.db.transaction(() => {
-      const existing = this.findByBaseName(baseName);
-
-      // Same-PID idempotency: if this PID already owns a slot, return it
-      const ownedSlot = existing.find((a) => a.pid === pid);
-      if (ownedSlot) {
-        const instanceNumber =
-          maxInstances === 1 ? null : extractInstanceNumber(ownedSlot.id, baseName);
-        return {
-          agent: ownedSlot,
-          registeredName: ownedSlot.id,
-          instanceNumber,
-        };
-      }
-
-      if (maxInstances === 1) {
-        // Singleton: registered name equals base name
-        const current = existing[0] ?? null;
-        if (current && current.pid !== null && current.pid !== pid) {
-          if (isAgentActive(current)) {
-            throw new Error(
-              `Agent "${baseName}" is already active (pid ${current.pid}). Max instances: 1.`
-            );
-          }
-        }
-        this._upsertAgent(baseName, pid, { baseName, ...profileFields });
-        const agent = this.findById(baseName)!;
-        return { agent, registeredName: baseName, instanceNumber: null };
-      }
-
-      // Pool: scan existing slots to find dead ones or next available
-      const liveSlots = new Set<number>();
-      const deadSlots: Array<{ slot: number; agentId: string }> = [];
-
-      for (const a of existing) {
-        const slot = extractInstanceNumber(a.id, baseName);
-        if (slot === null) continue;
-        const isDead = !isSlotOccupied(a);
-        if (isDead) {
-          deadSlots.push({ slot, agentId: a.id });
-        } else {
-          liveSlots.add(slot);
-        }
-      }
-
-      // Prefer reclaiming the lowest dead slot; otherwise use next unused slot number
-      deadSlots.sort((a, b) => a.slot - b.slot);
-
-      let chosenSlot: number;
-      if (deadSlots.length > 0) {
-        chosenSlot = deadSlots[0]!.slot;
-      } else if (liveSlots.size < maxInstances) {
-        chosenSlot = 1;
-        while (liveSlots.has(chosenSlot)) chosenSlot++;
-      } else {
-        const activeList = existing
-          .filter((a) => isSlotOccupied(a))
-          .map((a) => `${a.id} (pid ${a.pid})`)
-          .join(", ");
-        throw new Error(
-          `Agent pool "${baseName}" is at capacity (${maxInstances}/${maxInstances} instances). Active instances: ${activeList}`
-        );
-      }
-
-      const registeredName = `${baseName}-${chosenSlot}`;
-      this._upsertAgent(registeredName, pid, { baseName, ...profileFields });
-      const agent = this.findById(registeredName)!;
-      return { agent, registeredName, instanceNumber: chosenSlot };
     });
 
     return withRetrySync(() => doRegister.exclusive());
@@ -168,23 +44,20 @@ export class SqliteAgentRepo implements AgentRepository {
     const doHeartbeat = this.db.transaction((): HeartbeatResult => {
       const now = Date.now();
 
-      // (1) Try UPDATE WHERE pid=? — happy path heartbeat
       const result = this.db
         .query("UPDATE agents SET last_seen_at = ? WHERE id = ? AND pid = ?")
         .run(now, agentId, pid);
 
       if (result.changes > 0) return "ok";
 
-      // (2) 0 rows updated — check current owner
       const current = this.findById(agentId);
       if (!current) return "lost";
 
-      // If current owner is alive, we lost the agent
       if (isAgentActive(current)) {
         return "lost";
       }
 
-      // (3) Current owner is stale — CAS reclaim
+      // Current owner is stale — compare-and-swap reclaim against its pid.
       const reclaim = this.db
         .query(
           "UPDATE agents SET pid = ?, registered_at = ?, last_seen_at = ? WHERE id = ? AND pid = ?"
@@ -211,35 +84,4 @@ export class SqliteAgentRepo implements AgentRepository {
     });
     withRetrySync(() => doClear.exclusive());
   }
-}
-
-/**
- * Extracts the numeric slot suffix from a pool agent ID.
- * e.g. extractInstanceNumber("worker-2", "worker") → 2
- * Returns null if the ID doesn't match the expected pool pattern.
- */
-function extractInstanceNumber(agentId: string, baseName: string): number | null {
-  const prefix = `${baseName}-`;
-  if (!agentId.startsWith(prefix)) return null;
-  const suffix = agentId.slice(prefix.length);
-  const n = parseInt(suffix, 10);
-  if (isNaN(n) || n <= 0 || String(n) !== suffix) return null;
-  return n;
-}
-
-/**
- * Decides whether a pool slot is occupied using ONLY committed DB state
- * (last_seen_at recency) — deliberately NOT isProcessAlive.
- *
- * A racer that claimed a slot microseconds ago may have already exited by the
- * time the next racer reads it. isAgentActive() would then see the dead process
- * and report the freshly-claimed slot as free, so the next racer picks the same
- * slot and silently overwrites it via ON CONFLICT(id) DO UPDATE — the
- * duplicate-slot race in issue #18. Recency is monotonic under the serialized
- * EXCLUSIVE transaction, so it cannot regress mid-race. A crashed slot frees
- * once its last_seen_at ages past PID_STALE_MS.
- */
-function isSlotOccupied(agent: Pick<Agent, "pid" | "last_seen_at">): boolean {
-  if (agent.pid === null) return false;
-  return Date.now() - agent.last_seen_at <= PID_STALE_MS;
 }

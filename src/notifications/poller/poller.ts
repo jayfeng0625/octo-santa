@@ -12,10 +12,9 @@ export function createNotificationPoller(opts: {
   getMaxMessageId: () => number;
   port: NotificationPort;
   agentId: string;
-  baseName?: string;
   intervalMs?: number;
 }): { start(): void; stop(): void; _tick(): Promise<void> } {
-  const { getNewMessagesForAgent, getMaxMessageId, port, agentId, baseName, intervalMs = 2000 } = opts;
+  const { getNewMessagesForAgent, getMaxMessageId, port, agentId, intervalMs = 2000 } = opts;
   let hwm = 0;
   let timer: ReturnType<typeof setInterval> | null = null;
 
@@ -23,8 +22,7 @@ export function createNotificationPoller(opts: {
     try {
       const messages = getNewMessagesForAgent(agentId, hwm, 100);
       for (const msg of messages) {
-        const shouldNotify = shouldNotifyMessage(msg.channel_name, msg.mentions);
-        if (shouldNotify) {
+        if (shouldNotifyMessage(msg.channel_name, msg.mentions)) {
           const meta: NotificationMeta = {
             channel_name: msg.channel_name,
             sender: msg.agent_id,
@@ -49,7 +47,7 @@ export function createNotificationPoller(opts: {
     }
     try {
       const mentions: string[] = JSON.parse(mentionsJson);
-      return mentions.includes(agentId) || (baseName != null && mentions.includes(baseName)) || mentions.includes("*");
+      return mentions.includes(agentId) || mentions.includes("*");
     } catch {
       return false;
     }
@@ -70,7 +68,7 @@ export function createNotificationPoller(opts: {
         timer = null;
       }
     },
-    // Exposed for testing — allows direct tick invocation without relying on timer
+    // Exposed so tests can drive polls without the timer.
     _tick: tick,
   };
 }

@@ -10,7 +10,7 @@ function isSqliteBusyError(error: unknown): boolean {
   return false;
 }
 
-/** Synchronous — bun:sqlite transactions require sync callers. */
+// Synchronous because bun:sqlite transactions require sync callers.
 export function withRetrySync<T>(
   operation: () => T,
   maxRetries: number = 3,
@@ -43,12 +43,12 @@ export function createDb(dbPath: string): Database {
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
   const db = new Database(dbPath, { create: true });
 
-  // Set busy_timeout FIRST — this is a connection-level setting (cannot BUSY)
-  // and enables SQLite's internal retry for all subsequent operations
+  // busy_timeout must be set first: it is a connection-level setting that
+  // cannot itself hit BUSY, and it enables SQLite's internal retry for
+  // everything after it.
   db.run("PRAGMA busy_timeout = 5000");
-  // WAL mode requires an exclusive lock the first time a DB is created;
-  // concurrent openers may get SQLITE_BUSY before busy_timeout is honoured
-  // by this pragma, so we retry via withRetrySync.
+  // Switching to WAL takes an exclusive lock the first time a DB is created,
+  // so concurrent openers can get SQLITE_BUSY before busy_timeout applies.
   withRetrySync(() => db.run("PRAGMA journal_mode = WAL"), 10, 50);
   db.run("PRAGMA synchronous = NORMAL");
   db.run("PRAGMA foreign_keys = ON");

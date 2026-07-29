@@ -1,7 +1,6 @@
 import { Database } from "bun:sqlite";
 import { createHash } from "crypto";
 import { withRetrySync } from "./db";
-import { DEFAULT_MAX_HOPS } from "../../core/messaging/types";
 
 export interface Migration {
   name: string;
@@ -20,7 +19,6 @@ function computeChecksum(sql: string): string {
 export function runMigrations(db: Database, migrations: Migration[]): MigrationResult {
   const sorted = [...migrations].sort((a, b) => a.name.localeCompare(b.name));
 
-  // Validate no duplicate names
   const names = sorted.map((m) => m.name);
   const dupes = names.filter((n, i) => names.indexOf(n) !== i);
   if (dupes.length > 0) {
@@ -31,7 +29,6 @@ export function runMigrations(db: Database, migrations: Migration[]): MigrationR
     db.run("BEGIN EXCLUSIVE");
 
     try {
-      // Bootstrap: create tracking table if it doesn't exist
       db.run(`
         CREATE TABLE IF NOT EXISTS schema_migrations (
           name TEXT PRIMARY KEY,
@@ -40,12 +37,12 @@ export function runMigrations(db: Database, migrations: Migration[]): MigrationR
         )
       `);
 
-      // One-time migration from PRAGMA user_version (for existing DBs)
+      // Databases created before checksum tracking recorded progress in
+      // PRAGMA user_version; seed those migrations as already applied once.
       const pragmaVersion = (db.query("PRAGMA user_version").get() as { user_version: number }).user_version;
       if (pragmaVersion > 0) {
         const existingCount = (db.query("SELECT COUNT(*) as count FROM schema_migrations").get() as { count: number }).count;
         if (existingCount === 0) {
-          // Seed only migrations up to the pragma version as already applied
           const alreadyApplied = sorted.slice(0, pragmaVersion);
           for (const m of alreadyApplied) {
             db.run(
@@ -55,7 +52,6 @@ export function runMigrations(db: Database, migrations: Migration[]): MigrationR
           }
           db.run("PRAGMA user_version = 0");
           db.run("COMMIT");
-          // Re-run to apply any migrations beyond the pragma version
           return runMigrations(db, migrations);
         }
       }
@@ -69,7 +65,6 @@ export function runMigrations(db: Database, migrations: Migration[]): MigrationR
         const existingChecksum = appliedMap.get(migration.name);
 
         if (existingChecksum !== undefined) {
-          // Already applied — validate checksum
           const currentChecksum = computeChecksum(migration.up);
           if (existingChecksum !== currentChecksum) {
             result.driftDetected.push(migration.name);
@@ -77,7 +72,6 @@ export function runMigrations(db: Database, migrations: Migration[]): MigrationR
           continue;
         }
 
-        // Apply migration
         db.run(migration.up);
         db.run(
           "INSERT INTO schema_migrations (name, checksum, applied_at) VALUES (?, ?, ?)",
@@ -135,6 +129,14 @@ const messagingMigrations: Migration[] = [
       ALTER TABLE messages ADD COLUMN mentions TEXT NOT NULL DEFAULT '[]';
     `,
   },
+];
+
+// Migrations for retired features (agent profiles, hop-limit safety rails, the
+// brain module). Retained as immutable history: existing databases already
+// applied them and the runner validates checksums of applied migrations, so
+// each entry must stay byte-for-byte. The columns/tables they created are
+// orphaned and harmless. Do not delete or edit.
+const legacyMigrations: Migration[] = [
   {
     name: "messaging_003_agent_profiles",
     up: `
@@ -160,29 +162,9 @@ const messagingMigrations: Migration[] = [
   {
     name: "messaging_006_raise_default_hop_limit",
     up: `
-      UPDATE channels SET max_hops = ${DEFAULT_MAX_HOPS} WHERE max_hops = 50;
+      UPDATE channels SET max_hops = 200 WHERE max_hops = 50;
     `,
   },
-  // NOTE: the channels.max_hops COLUMN default is still 50 (set by 005). 006 only
-  // backfilled existing rows — it does not change the column default, and we do not
-  // change it here. Doing so needs a full table rebuild (SQLite has no ALTER COLUMN
-  // SET DEFAULT), and `channels` is an FK parent of `messages`/`cursors`; a rebuild
-  // requires `PRAGMA foreign_keys=OFF`, which is a no-op inside the BEGIN EXCLUSIVE
-  // wrapper runMigrations uses (and `defer_foreign_keys` can't clear the deferred-
-  // violation counter the parent DROP creates) — so on a populated DB the rebuild's
-  // COMMIT throws and bricks startup. The column default is harmless: the only insert
-  // path, SqliteChannelRepo.create(), always supplies `maxHops ?? DEFAULT_MAX_HOPS`,
-  // so new channels get 200 (regression-locked by tests/hex/storage/channel-repo.test.ts
-  // "create with default maxHops"). The stale 50 only bites a code path that omits the
-  // column entirely — none exists since 0.7.3 (commit 36ba3e5).
-];
-
-// RETIRED FEATURE — the brain/domain feature and its tools were removed, but this
-// migration is retained as immutable history. Existing DBs already applied it; the
-// runner validates checksums of applied migrations, so the entry must stay byte-for-
-// byte. The `domains`/`domain_claims` tables are now orphaned (no code reads them) and
-// harmless. Do not delete or edit this migration.
-const legacyBrainMigrations: Migration[] = [
   {
     name: "brain_001_domains_and_claims",
     up: `
@@ -214,4 +196,4 @@ const systemMigrations: Migration[] = [
   },
 ];
 
-export const allMigrations: Migration[] = [...messagingMigrations, ...legacyBrainMigrations, ...systemMigrations];
+export const allMigrations: Migration[] = [...messagingMigrations, ...legacyMigrations, ...systemMigrations];
