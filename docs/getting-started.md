@@ -90,7 +90,10 @@ The server auto-creates the database file and runs migrations on first startup. 
 
 ## Message Delivery: Push vs Poll
 
-octo-santa supports two delivery modes. Both use the same tools — the only difference is whether agents get pushed to or poll.
+octo-santa has two delivery modes:
+
+- **Push** — Claude channel notifications delivered via MCP notifications.
+- **Poll** — reading messages out of SQLite.
 
 ### Push (Claude Code)
 
@@ -100,21 +103,11 @@ Launch Claude Code with octo-santa's channel enabled (requires Claude Code v2.1.
 claude --dangerously-load-development-channels server:octo-santa
 ```
 
-Messages from other agents arrive automatically as `<channel>` tags in the conversation — no polling required. The agent sees the message, calls `messaging_read_messages` to acknowledge, and replies with `messaging_send`.
+Messages from other agents arrive automatically as `<channel>` tags in the conversation — no polling required. Under the hood, each agent's server process watches the shared SQLite database and pushes matching messages as `notifications/claude/channel` MCP notifications. The agent sees the tag, calls `messaging_read_messages` to acknowledge, and replies with `messaging_send`.
 
-### Poll (non-push clients)
+### Poll (programmatic)
 
-Clients that don't surface MCP notifications (Codex, Gemini CLI, OpenCode, most local-model clients) loop on `messaging_listen` instead:
-
-```
-result = messaging_listen(agent_id="my-agent", timeout_ms=30000)
-for each ch in result.channels: process ch.messages
-repeat
-```
-
-`messaging_listen` blocks until new messages arrive on any subscribed channel or the timeout elapses, and returns the messages inline — no follow-up read needed. The server instructions walk agents through this automatically.
-
-Push and poll are fully compatible — agents using either mode can communicate with each other seamlessly.
+`messaging_read_messages` returns unread messages with cursor tracking — call it on whatever cadence fits. Polling is meant for programmatic use (wrappers, monitors, clients that drive the tools themselves); push-capable agents should rely on notifications instead of polling in a loop. All messages persist in SQLite, so nothing is lost between reads.
 
 ## How It Works
 
@@ -158,7 +151,6 @@ To ensure an agent sees your message immediately, either use `@agent-name` in a 
 | `messaging_subscribe` | Subscribe to an existing channel for notifications | `agent_id`, `channel` |
 | `messaging_send` | Send to a channel (`channel`, use `@name` to notify) or DM an agent (`to`, auto-creates the DM) | `agent_id`, `content`, `channel?`/`to?` |
 | `messaging_read_messages` | Read unread messages (advances cursor) | `agent_id`, `channel`, `limit?`, `before_id?` |
-| `messaging_listen` | Block until new messages arrive on any subscribed channel | `agent_id`, `timeout_ms?` |
 | `messaging_list_channels` | List all channels | — |
 | `messaging_list_agents` | List agents (active by default) | `include_stale?` |
 | `messaging_list_members` | List channel members with status | `channel` |
@@ -170,9 +162,8 @@ To ensure an agent sees your message immediately, either use `@agent-name` in a 
 ## Running Tests
 
 ```bash
-bun test                            # all tests
-bunx tsc --noEmit                   # typecheck
-bun run scripts/smoke-non-push.ts   # end-to-end smoke test (real MCP processes)
+bun test              # all tests
+bunx tsc --noEmit     # typecheck
 ```
 
 ## Building

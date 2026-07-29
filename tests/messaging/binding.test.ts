@@ -14,7 +14,7 @@ afterEach(() => {
 function setup() {
   const db = setupTestDb(TEST_DB, allMigrations);
   const repos = createSqliteRepos(db);
-  const svc = new MessagingService(repos.agents, repos.channels, repos.messages, repos.cursors, process.pid);
+  const svc = new MessagingService(repos.agents, repos.channels, repos.messages, process.pid);
 
   const handlers: Record<string, (...args: any[]) => Promise<any>> = {};
   const mockServer = {

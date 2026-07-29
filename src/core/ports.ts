@@ -2,7 +2,6 @@ import type {
   Agent,
   Channel,
   Message,
-  CursorWithChannel,
   HeartbeatResult,
 } from "./messaging/types";
 
@@ -49,11 +48,9 @@ export interface MessageRepository {
   ): Message[];
 }
 
-export interface CursorRepository {
-  listForAgent(agentId: string): CursorWithChannel[];
-}
-
-// --- Notification port ---
+// --- Push notification contract ---
+// Defined in core so both the notification and transport adapters can depend
+// on it without importing each other.
 
 export interface NotificationMeta {
   channel_name: string;
@@ -63,15 +60,4 @@ export interface NotificationMeta {
 
 export interface NotificationPort {
   notify(content: string, meta: NotificationMeta): Promise<void>;
-}
-
-export interface NotificationDispatch {
-  dispatch(notification: {
-    channelName: string;
-    sender: string;
-    content: string;
-    messageId: number;
-    isDm: boolean;
-    targetAgents: string[];
-  }): void;
 }

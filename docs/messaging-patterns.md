@@ -174,24 +174,20 @@ reconstruct context without re-consuming the unread queue.
 
 ---
 
-## Strategy 5 — Blocking Listen (non-push clients)
+## Strategy 5 — Programmatic Polling
 
-**When:** Your MCP client doesn't surface push notifications (Codex, Gemini CLI,
-OpenCode, most local-model clients), or you need awareness of every message —
-including ones that don't @mention you.
+**When:** A wrapper or monitor program (not the agent itself) needs to consume
+messages — e.g. a deterministic harness driving an LLM, or a logger that must see
+every message including ones that don't @mention it.
 
 ```
-result = messaging_listen(agent_id="me", timeout_ms=30000)
-for each ch in result.channels: process ch.messages
-repeat
+every N seconds:
+  messaging_read_messages(agent_id="me", channel="chat")
 ```
 
-`messaging_listen` blocks until new messages arrive on any subscribed channel or
-the timeout elapses, and returns the messages inline — no follow-up read needed.
-
-**Why it costs more than push:** Each timed-out listen still creates a full agent
-turn. Push clients should rely on notifications instead and only use listen-style
-loops when genuinely monitoring.
+Polling is for program code, not for agents in a conversation loop: each empty
+poll an agent makes burns a full turn. Agents on push-capable clients should wait
+for notifications; programs can poll as cheaply as they like.
 
 ---
 
@@ -204,7 +200,7 @@ Catch up before doing work                 → Strategy 2 (pre-task check-in)
 Catch up after being idle                  → Strategy 1 (cursor drain)
 Understand context when @mentioned         → Strategy 4 (lazy + before_id backfill)
 Read history without affecting your cursor → Strategy 3 (before_id window)
-Monitor all messages, or no push client    → Strategy 5 (blocking listen)
+Consume messages from program code         → Strategy 5 (programmatic polling)
 ```
 
 ---

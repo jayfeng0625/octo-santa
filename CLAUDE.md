@@ -13,7 +13,7 @@ src/
   core/           ← Domain logic + port interfaces. No infrastructure imports.
   storage/        ← Storage adapter (SQLite)
   transports/     ← Transport adapter (MCP stdio)
-  notifications/  ← Notification adapters (dispatch + cross-process poller)
+  notifications/  ← Notification adapter (SQLite watcher → MCP channel push)
   main.ts         ← Composition root — wires everything together
 ```
 
@@ -30,12 +30,13 @@ Each agent runs as its own OS process (MCP subprocess). There is no shared memor
 
 - **SQLite is the only cross-process bridge.** No IPC, no named pipes. If two processes
   need to communicate, it goes through the shared database.
-- **Cross-process delivery requires polling.** Event-driven dispatch only works in-process.
-  Don't design notification/delivery mechanisms that assume sender and receiver share memory.
-- **Push is best-effort; adapters own push reliability.** Core dispatches push
-  statelessly. As transports mature (MCP 2.0, message queues), adapter-level push reliability
-  improves without core changes. Pull (`messaging_read_messages` / `messaging_listen`) is always
-  available as fallback. Messages are never lost — SQLite persistence is the invariant.
+- **Cross-process delivery requires watching SQLite.** Don't design notification/delivery
+  mechanisms that assume sender and receiver share memory.
+- **Push is MCP channel notifications; poll is reading SQLite.** Each agent's server
+  process watches the shared database and pushes matching messages as
+  `notifications/claude/channel` MCP notifications. Push is best-effort;
+  `messaging_read_messages` is always available as poll fallback. Messages are never
+  lost — SQLite persistence is the invariant.
 - **Always verify cross-process.** Any design touching notification, delivery, or agent-to-agent
   communication must work when sender and receiver are in different processes.
 

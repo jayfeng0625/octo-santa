@@ -27,18 +27,6 @@ export interface ReadOptions {
   before_id?: number;
 }
 
-export interface CursorWithChannel {
-  channelId: number;
-  channelName: string;
-  lastReadMessageId: number;
-}
-
 export type MessageWithChannel = Message & { channel_name: string };
 
 export type HeartbeatResult = "ok" | "lost";
-
-export interface UnreadResult {
-  channel: string;
-  messages: Message[];
-  is_dm: boolean;
-}

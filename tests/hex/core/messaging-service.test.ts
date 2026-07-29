@@ -3,7 +3,6 @@ import { MessagingService } from "../../../src/core/messaging/service";
 import { createSqliteRepos } from "../../../src/storage/sqlite";
 import { createDb } from "../../../src/storage/sqlite/db";
 import { runMigrations, allMigrations } from "../../../src/storage/sqlite/migrations";
-import { createNotificationDispatcher } from "../../../src/notifications/dispatch/dispatcher";
 import { cleanupDb } from "../../helpers/db";
 
 const TEST_DB = `/tmp/octo-santa-test-hex-messaging-svc-${process.pid}.sqlite`;
@@ -13,14 +12,11 @@ function setup() {
   const db = createDb(TEST_DB);
   runMigrations(db, allMigrations);
   const repos = createSqliteRepos(db);
-  const dispatcher = createNotificationDispatcher();
   const svc = new MessagingService(
     repos.agents,
     repos.channels,
     repos.messages,
-    repos.cursors,
-    process.pid,
-    dispatcher
+    process.pid
   );
   return { db, repos, svc };
 }

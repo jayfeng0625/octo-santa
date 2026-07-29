@@ -3,7 +3,6 @@ import { MessagingService } from "../../../src/core/messaging/service";
 import { createSqliteRepos } from "../../../src/storage/sqlite";
 import { SqliteNotificationQueryRepo } from "../../../src/storage/sqlite/notification-query-repo";
 import { createNotificationPoller } from "../../../src/notifications/poller/poller";
-import { createNotificationDispatcher } from "../../../src/notifications/dispatch/dispatcher";
 import type { NotificationPort, NotificationMeta } from "../../../src/core/ports";
 import { cleanupDb } from "../../helpers/db";
 import { createDb } from "../../../src/storage/sqlite/db";
@@ -17,16 +16,13 @@ function setup() {
   runMigrations(db, allMigrations);
   const repos = createSqliteRepos(db);
   const notificationQueries = new SqliteNotificationQueryRepo(db);
-  const dispatcher = createNotificationDispatcher();
   const svc = new MessagingService(
     repos.agents,
     repos.channels,
     repos.messages,
-    repos.cursors,
-    process.pid,
-    dispatcher
+    process.pid
   );
-  return { db, repos, notificationQueries, dispatcher, svc };
+  return { db, repos, notificationQueries, svc };
 }
 
 function makeNotificationPort(): {

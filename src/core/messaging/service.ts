@@ -2,22 +2,13 @@ import type {
   AgentRepository,
   ChannelRepository,
   MessageRepository,
-  CursorRepository,
-  NotificationDispatch,
 } from "../ports";
-import type {
-  Agent,
-  Channel,
-  Message,
-  ReadOptions,
-  UnreadResult,
-} from "./types";
+import type { Agent, Channel, Message, ReadOptions } from "./types";
 import {
   validateAgentName,
   assertDmAccess,
   isDmChannel,
   dmChannelName,
-  parseDmChannelName,
   extractMentions,
   isAgentActive,
 } from "../utils";
@@ -27,9 +18,7 @@ export class MessagingService {
     private readonly agents: AgentRepository,
     private readonly channels: ChannelRepository,
     private readonly messages: MessageRepository,
-    private readonly cursors: CursorRepository,
-    private readonly pid: number,
-    private readonly dispatch?: NotificationDispatch
+    private readonly pid: number
   ) {}
 
   private requireRegistered(agentId: string): void {
@@ -40,70 +29,6 @@ export class MessagingService {
         `Agent "${agentId}" must call messaging_register before using messaging tools`
       );
     }
-  }
-
-  private otherMembers(channelId: number, exclude: string): string[] {
-    return this.channels
-      .getMembers(channelId)
-      .map((m) => m.id)
-      .filter((id) => id !== exclude);
-  }
-
-  private resolveTargets(
-    channelId: number,
-    channelName: string,
-    mentions: string[],
-    senderId: string
-  ): { targetAgents: string[]; isDm: boolean } {
-    const isDm = this.isDmChannelWithMembers(channelName, channelId);
-
-    if (isDm) {
-      return { targetAgents: this.otherMembers(channelId, senderId), isDm: true };
-    }
-
-    if (mentions.length === 0) {
-      return { targetAgents: [], isDm: false };
-    }
-
-    if (mentions.includes("*")) {
-      return { targetAgents: this.otherMembers(channelId, senderId), isDm: false };
-    }
-
-    const memberIds = new Set(this.channels.getMembers(channelId).map((m) => m.id));
-    const targetAgents = mentions.filter(
-      (id) => id !== senderId && memberIds.has(id)
-    );
-    return { targetAgents, isDm: false };
-  }
-
-  private isDmChannelWithMembers(
-    channelName: string,
-    channelId: number
-  ): boolean {
-    const p = parseDmChannelName(channelName);
-    if (!p) return false;
-    const memberIds = new Set(this.channels.getMembers(channelId).map((m) => m.id));
-    return memberIds.has(p.lo) && memberIds.has(p.hi);
-  }
-
-  private dispatchTo(
-    channelName: string,
-    sender: string,
-    content: string,
-    messageId: number,
-    isDm: boolean,
-    targetAgents: string[]
-  ): void {
-    if (!this.dispatch) return;
-    if (targetAgents.length === 0) return;
-    this.dispatch.dispatch({
-      channelName,
-      sender,
-      content,
-      messageId,
-      isDm,
-      targetAgents,
-    });
   }
 
   register(agentId: string): Agent {
@@ -145,22 +70,7 @@ export class MessagingService {
     const mentions = extractMentions(content, validIds);
     if (mentions.includes(agentId)) throw new Error("Cannot @mention yourself in a message");
 
-    const message = this.messages.insertAndJoinSender(
-      channel.id,
-      agentId,
-      content,
-      mentions
-    );
-
-    const { targetAgents, isDm } = this.resolveTargets(
-      channel.id,
-      channelName,
-      mentions,
-      agentId
-    );
-    this.dispatchTo(channelName, agentId, content, message.id, isDm, targetAgents);
-
-    return message;
+    return this.messages.insertAndJoinSender(channel.id, agentId, content, mentions);
   }
 
   read(agentId: string, channelName: string, opts?: ReadOptions): Message[] {
@@ -192,22 +102,6 @@ export class MessagingService {
     );
   }
 
-  readAllUnread(agentId: string): UnreadResult[] {
-    this.requireRegistered(agentId);
-    const cursorList = this.cursors.listForAgent(agentId);
-    const results: UnreadResult[] = [];
-    for (const cursor of cursorList) {
-      const messages = this.messages.readForwardAndAdvance(agentId, cursor.channelId, 100);
-      if (messages.length === 0) continue;
-      results.push({
-        channel: cursor.channelName,
-        messages,
-        is_dm: isDmChannel(cursor.channelName),
-      });
-    }
-    return results;
-  }
-
   // NOT atomic by design: channel creation, membership, and insert are separate
   // repo calls with no enclosing transaction. A failure partway through is
   // recoverable — create and addMember are idempotent (ON CONFLICT DO NOTHING),
@@ -235,16 +129,7 @@ export class MessagingService {
     const mentions = extractMentions(content, validIds);
     if (mentions.includes(agentId)) throw new Error("Cannot @mention yourself in a message");
 
-    const message = this.messages.insertAndJoinSender(
-      channel.id,
-      agentId,
-      content,
-      mentions
-    );
-
-    this.dispatchTo(channelName, agentId, content, message.id, true, [targetAgentId]);
-
-    return message;
+    return this.messages.insertAndJoinSender(channel.id, agentId, content, mentions);
   }
 
   renameChannel(

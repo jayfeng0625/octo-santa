@@ -7,8 +7,10 @@ import { log } from "../../log";
 import { jsonResult, withAgent } from "./helpers";
 import pkg from "../../../package.json";
 
+// Claude Code truncates server instructions at 2KB — keep this text under
+// that limit.
 export function buildInstructions(): string {
-  let instructions =
+  return (
     "octo-santa messaging module is available. Call messaging_register with a " +
     "unique agent name (e.g. your role). If the name is taken, pick a different one.\n\n" +
     "You must call messaging_register before sending, reading, creating channels, " +
@@ -34,35 +36,14 @@ export function buildInstructions(): string {
     "- You CANNOT run background tasks or polling loops\n" +
     "- For messaging, use ONLY messaging_* tools\n" +
     "- Do not use bash or scripts for communication\n\n" +
-    "DISCOVERY: messaging_list_agents, messaging_list_members.";
-
-  // Placed at the end of the document because Claude Code truncates server
-  // instructions at 2KB: if truncation clips anything, it clips this tail,
-  // which a push-tag client does not need. Non-push clients have no 2KB limit
-  // and receive the full block.
-  instructions +=
-    "\n\nNON-PUSH CLIENTS: This section overrides the BOUNDARIES prohibition on " +
-    "polling loops — for messaging_listen only. If your MCP client does not " +
-    "deliver server notifications as pushed tags (Claude Code does; Codex, " +
-    "Gemini CLI, OpenCode, and most local-model clients do not), poll instead. " +
-    "After messaging_register and messaging_subscribe, loop:\n" +
-    "  result = messaging_listen(timeout_ms: 30000)\n" +
-    "  for each ch in result.channels: process ch.messages   # messages arrive inline\n" +
-    "  re-enter loop\n" +
-    "messaging_listen blocks until new messages arrive or the timeout elapses " +
-    "(default 10000 ms, max 30000 ms) and returns {channels, timed_out}. " +
-    "Each channel entry includes its messages inline -- no follow-up " +
-    "messaging_read_messages needed in the steady-state loop. " +
-    "Keep the loop running for the life of the agent.";
-
-  return instructions;
+    "DISCOVERY: messaging_list_agents, messaging_list_members."
+  );
 }
 
 export function registerMessagingTools(
   server: McpServer,
   messaging: MessagingService,
-  onAgentId?: (agentId: string) => { commit: () => void },
-  agents?: AgentRepository
+  onAgentId?: (agentId: string) => { commit: () => void }
 ): void {
   server.registerTool("messaging_register", {
     description:
@@ -211,36 +192,10 @@ export function registerMessagingTools(
     );
   });
 
-  server.registerTool("messaging_listen", {
-    description: "Block until new messages arrive on any subscribed channel (or until timeout). Returns `{channels, timed_out}` with each channel's messages inline — no follow-up read needed. Use for poll loops on non-push clients instead of repeatedly calling messaging_read_messages.",
-    inputSchema: {
-      agent_id: z.string().trim().min(1).describe("Your registered agent name"),
-      timeout_ms: z.number().int().optional().describe("Max wait time in ms (default 10000, max 30000)"),
-    },
-  }, async ({ agent_id, timeout_ms }) => {
-    return withAgent(onAgentId, agent_id, async () => {
-      const timeout = Math.max(1000, Math.min(30000, timeout_ms ?? 10000));
-      agents?.heartbeatOrReclaim(agent_id, process.pid);
-      const deadline = Date.now() + timeout;
-      while (Date.now() < deadline) {
-        const result = messaging.readAllUnread(agent_id);
-        if (result.length > 0) {
-          return jsonResult({ channels: result, timed_out: false });
-        }
-        await Bun.sleep(1000);
-      }
-      return jsonResult({ channels: [], timed_out: true });
-    });
-  });
 }
 
 export interface McpStdioOpts {
   messaging: MessagingService;
-  registerNotificationHandler: (
-    agentId: string,
-    port: NotificationPort
-  ) => void;
-  unregisterNotificationHandler: (agentId: string) => void;
   agents: AgentRepository;
   startPoller: (port: NotificationPort, agentId: string) => { stop(): void };
   heartbeatIntervalMs?: number;
@@ -250,8 +205,6 @@ export interface McpStdioOpts {
 export async function startMcpStdio(opts: McpStdioOpts): Promise<void> {
   const {
     messaging,
-    registerNotificationHandler,
-    unregisterNotificationHandler,
     agents,
     startPoller,
     heartbeatIntervalMs = 10_000,
@@ -294,7 +247,6 @@ export async function startMcpStdio(opts: McpStdioOpts): Promise<void> {
               params: { content, meta },
             }),
         };
-        registerNotificationHandler(agentId, port);
         pollerRef = startPoller(port, agentId);
         heartbeatTimer = setInterval(() => {
           const result = agents.heartbeatOrReclaim(agentId, process.pid);
@@ -308,7 +260,7 @@ export async function startMcpStdio(opts: McpStdioOpts): Promise<void> {
     };
   }
 
-  registerMessagingTools(mcpServer, messaging, onAgentId, agents);
+  registerMessagingTools(mcpServer, messaging, onAgentId);
 
   const transport = new StdioServerTransport();
   await mcpServer.connect(transport);
@@ -317,7 +269,6 @@ export async function startMcpStdio(opts: McpStdioOpts): Promise<void> {
     try {
       if (heartbeatTimer !== null) clearInterval(heartbeatTimer);
       pollerRef?.stop();
-      if (boundAgentId) unregisterNotificationHandler(boundAgentId);
     } finally {
       if (boundAgentId) {
         onDisconnect(boundAgentId);

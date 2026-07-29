@@ -7,7 +7,6 @@ import { SqliteNotificationQueryRepo } from "./storage/sqlite/notification-query
 import { createNotificationPoller } from "./notifications/poller/poller";
 import { MessagingService } from "./core/messaging/service";
 import { startMcpStdio } from "./transports/mcp-stdio/adapter";
-import { createNotificationDispatcher } from "./notifications/dispatch/dispatcher";
 import { log } from "./log";
 
 function expandHome(p: string): string {
@@ -24,15 +23,11 @@ async function main() {
   const repos = createSqliteRepos(db);
   const notificationQueries = new SqliteNotificationQueryRepo(db);
 
-  const dispatcher = createNotificationDispatcher();
-
   const messaging = new MessagingService(
     repos.agents,
     repos.channels,
     repos.messages,
-    repos.cursors,
-    process.pid,
-    dispatcher
+    process.pid
   );
 
   const heartbeatIntervalMs = Number(process.env.OCTO_SANTA_HEARTBEAT_INTERVAL_MS) || 10_000;
@@ -40,8 +35,6 @@ async function main() {
 
   await startMcpStdio({
     messaging,
-    registerNotificationHandler: dispatcher.register.bind(dispatcher),
-    unregisterNotificationHandler: dispatcher.unregister.bind(dispatcher),
     agents: repos.agents,
     startPoller: (port, agentId) => {
       const poller = createNotificationPoller({
