@@ -5,7 +5,22 @@ import type { MessagingService } from "../../core/messaging/service";
 import type { NotificationPort, AgentRepository } from "../../core/ports";
 import { log } from "../../log";
 import { jsonResult, withAgent } from "./helpers";
+import {
+  RegisterOutput,
+  CreateChannelOutput,
+  SubscribeOutput,
+  ListChannelsOutput,
+  SendOutput,
+  ReadMessagesOutput,
+  ListAgentsOutput,
+  ListMembersOutput,
+  RenameChannelOutput,
+} from "./schemas";
 import pkg from "../../../package.json";
+
+// Everything octo-santa touches is the local shared SQLite database — no tool
+// reaches an open-world external system.
+const LOCAL = { openWorldHint: false } as const;
 
 // Claude Code truncates server instructions at 2KB — keep this text under
 // that limit.
@@ -46,8 +61,11 @@ export function registerMessagingTools(
   onAgentId?: (agentId: string) => { commit: () => void }
 ): void {
   server.registerTool("messaging_register", {
+    title: "Register agent",
     description:
       "Register this agent under a unique name to start receiving messages.",
+    annotations: { ...LOCAL, readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+    outputSchema: RegisterOutput,
     inputSchema: z.object({
       agent_id: z
         .string()
@@ -67,8 +85,11 @@ export function registerMessagingTools(
   });
 
   server.registerTool("messaging_create_channel", {
+    title: "Create channel",
     description:
       "Create a named channel and auto-join it as a member.",
+    annotations: { ...LOCAL, readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+    outputSchema: CreateChannelOutput,
     inputSchema: z.object({
       agent_id: z.string().trim().min(1).describe("Your agent/project name"),
       name: z.string().trim().min(1).max(128, "Channel name must not exceed 128 characters").regex(/^[\w.,@#-]+$/, "Channel name must contain only letters, digits, underscores, hyphens, dots, commas, @ or #").describe("Channel name"),
@@ -81,8 +102,11 @@ export function registerMessagingTools(
   });
 
   server.registerTool("messaging_subscribe", {
+    title: "Subscribe to channel",
     description:
       "Subscribe to an existing channel to start receiving notifications.",
+    annotations: { ...LOCAL, readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+    outputSchema: SubscribeOutput,
     inputSchema: z.object({
       agent_id: z.string().trim().min(1).describe("Your agent/project name"),
       channel: z
@@ -99,14 +123,20 @@ export function registerMessagingTools(
   });
 
   server.registerTool("messaging_list_channels", {
+    title: "List channels",
     description: "List all messaging channels",
+    annotations: { ...LOCAL, readOnlyHint: true, idempotentHint: true },
+    outputSchema: ListChannelsOutput,
   }, async () => {
-    return jsonResult(messaging.listChannels());
+    return jsonResult({ channels: messaging.listChannels() });
   });
 
   server.registerTool("messaging_send", {
+    title: "Send message or DM",
     description:
       "Send a message: set `channel` to post to a channel, or `to` to DM an agent (auto-creates the DM and pushes to both -- no @mention needed). Provide exactly one. In channels, @agent-name or @all notifies; no mention is silent.",
+    annotations: { ...LOCAL, readOnlyHint: false, destructiveHint: false, idempotentHint: false },
+    outputSchema: SendOutput,
     inputSchema: z.object({
       agent_id: z.string().trim().min(1).describe("Your agent/project name"),
       channel: z.string().trim().min(1).optional().describe("Channel to post to (mutually exclusive with `to`)"),
@@ -127,8 +157,12 @@ export function registerMessagingTools(
   });
 
   server.registerTool("messaging_read_messages", {
+    title: "Read messages",
     description:
       "Read unread messages from a channel, or fetch older history with before_id. Requires channel membership.",
+    // Not readOnly: the default mode consumes the unread cursor (read-once).
+    annotations: { ...LOCAL, readOnlyHint: false, destructiveHint: false, idempotentHint: false },
+    outputSchema: ReadMessagesOutput,
     inputSchema: z.object({
       agent_id: z.string().trim().min(1).describe("Your agent/project name"),
       channel: z.string().trim().min(1).describe("Channel name"),
@@ -149,13 +183,16 @@ export function registerMessagingTools(
     }),
   }, async ({ agent_id, channel, limit, before_id }) => {
     return withAgent(onAgentId, agent_id, () =>
-      jsonResult(messaging.read(agent_id, channel, { limit, before_id }))
+      jsonResult({ messages: messaging.read(agent_id, channel, { limit, before_id }) })
     );
   });
 
   server.registerTool("messaging_list_agents", {
+    title: "List agents",
     description:
       "List agents — active only by default; set include_stale to include disconnected ones.",
+    annotations: { ...LOCAL, readOnlyHint: true, idempotentHint: true },
+    outputSchema: ListAgentsOutput,
     inputSchema: z.object({
       include_stale: z
         .boolean()
@@ -166,21 +203,27 @@ export function registerMessagingTools(
         ),
     }),
   }, async ({ include_stale }) => {
-    return jsonResult(messaging.listAgents(include_stale));
+    return jsonResult({ agents: messaging.listAgents(include_stale) });
   });
 
   server.registerTool("messaging_list_members", {
+    title: "List channel members",
     description:
       "List a channel's members with their active/inactive status.",
+    annotations: { ...LOCAL, readOnlyHint: true, idempotentHint: true },
+    outputSchema: ListMembersOutput,
     inputSchema: z.object({
       channel: z.string().trim().min(1).describe("Channel name"),
     }),
   }, async ({ channel }) => {
-    return jsonResult(messaging.listMembers(channel));
+    return jsonResult({ members: messaging.listMembers(channel) });
   });
 
   server.registerTool("messaging_rename_channel", {
+    title: "Rename channel",
     description: "Rename a channel. You must be a member.",
+    annotations: { ...LOCAL, readOnlyHint: false, destructiveHint: false, idempotentHint: false },
+    outputSchema: RenameChannelOutput,
     inputSchema: z.object({
       agent_id: z.string().trim().min(1).describe("Your agent/project name"),
       channel: z.string().trim().min(1).describe("Current channel name"),

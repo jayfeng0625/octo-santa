@@ -1,5 +1,11 @@
-export function jsonResult(data: unknown) {
-  return { content: [{ type: "text" as const, text: JSON.stringify(data) }] };
+// Tool results carry the same object twice: human/legacy-readable JSON text
+// and validated structuredContent. Keep results top-level objects — object
+// shapes project identically onto both protocol eras.
+export function jsonResult<T extends object>(data: T) {
+  return {
+    content: [{ type: "text" as const, text: JSON.stringify(data) }],
+    structuredContent: data,
+  };
 }
 
 export function withAgent<T>(
