@@ -67,4 +67,44 @@ describe("SqliteMessageRepo", () => {
     db.close();
   });
 
+  describe("readRecent", () => {
+    it("returns the newest N messages in ascending order, all senders included", () => {
+      const { db, messages, channelId } = setup();
+      messages.insertAndJoinSender(channelId, "agent-a", "oldest", []);
+      messages.insertAndJoinSender(channelId, "agent-b", "middle", []);
+      messages.insertAndJoinSender(channelId, "agent-a", "newest", []);
+      const recent = messages.readRecent(channelId, 2);
+      expect(recent.map((m) => m.content)).toEqual(["middle", "newest"]);
+      db.close();
+    });
+
+    it("returns everything when the channel has fewer messages than the limit", () => {
+      const { db, messages, channelId } = setup();
+      messages.insertAndJoinSender(channelId, "agent-a", "only", []);
+      const recent = messages.readRecent(channelId, 50);
+      expect(recent.map((m) => m.content)).toEqual(["only"]);
+      db.close();
+    });
+
+    it("returns empty for a channel with no messages", () => {
+      const { db, messages, channelId } = setup();
+      expect(messages.readRecent(channelId, 50)).toEqual([]);
+      db.close();
+    });
+
+    it("never touches cursors — readForwardAndAdvance still sees everything as unread", () => {
+      const { db, messages, channels, channelId } = setup();
+      channels.addMember("agent-b", channelId, 0);
+      messages.insertAndJoinSender(channelId, "agent-a", "msg-1", []);
+      messages.insertAndJoinSender(channelId, "agent-a", "msg-2", []);
+
+      const recent = messages.readRecent(channelId, 50);
+      expect(recent.length).toBe(2);
+
+      const unread = messages.readForwardAndAdvance("agent-b", channelId, 100);
+      expect(unread.map((m) => m.content)).toEqual(["msg-1", "msg-2"]);
+      db.close();
+    });
+  });
+
 });

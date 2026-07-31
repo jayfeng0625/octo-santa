@@ -1,7 +1,22 @@
 # Spec-Native Push via MCP Resources + subscriptions/listen
 
 **Date:** 2026-07-30
-**Status:** Draft (prototype validated)
+**Status:** Implemented 2026-07-31 (all five recommendation items; open questions
+remain deferred)
+
+**Implementation deltas from the prototype appendix:**
+
+- Unknown-channel reads map to the SDK's `ResourceNotFoundError` (wire
+  `-32602` + `data.uri`) via a typed `ChannelNotFoundError` thrown by
+  `MessagingService.readHistory` — the adapter maps the domain error instead
+  of parsing message strings (recommendation 3). Malformed percent-encoding
+  in the `{channel}` variable maps to the same error instead of `-32603`.
+- The per-connection port construction is extracted as
+  `createConnectionNotificationPort(mcpServer, era)` so era gating and the
+  first-seen `list_changed` dedup are unit-testable.
+- Clarified semantics: the poller query excludes the bound agent's own
+  messages, so `resources/updated` fires for all *other* senders' messages —
+  an agent is never pinged for its own sends (documented in instructions).
 
 ## Background
 

@@ -46,6 +46,9 @@ export interface MessageRepository {
     limit: number,
     excludeAgent: string
   ): Message[];
+  // Pure history snapshot: most recent `limit` messages in ascending order,
+  // all senders included. Never touches cursors.
+  readRecent(channelId: number, limit: number): Message[];
 }
 
 // --- Push notification contract ---
@@ -60,4 +63,9 @@ export interface NotificationMeta {
 
 export interface NotificationPort {
   notify(content: string, meta: NotificationMeta): Promise<void>;
+  // Coarse activity signal: fired at most once per poll tick per channel that
+  // gained messages, regardless of mentions (the mention filter applies to
+  // notify() only). Optional — transports without a channel-activity surface
+  // simply omit it.
+  notifyChannelActivity?(channelName: string): Promise<void>;
 }

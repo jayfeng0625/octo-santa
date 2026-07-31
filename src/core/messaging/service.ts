@@ -4,6 +4,7 @@ import type {
   MessageRepository,
 } from "../ports";
 import type { Agent, Channel, Message, ReadOptions } from "./types";
+import { ChannelNotFoundError } from "./errors";
 import {
   validateAgentName,
   assertDmAccess,
@@ -100,6 +101,23 @@ export class MessagingService {
       channel.id,
       opts?.limit ?? 100
     );
+  }
+
+  // Pure history read for the resources surface: same access guards as
+  // read(), plus an explicit DM-privacy check, but never advances the unread
+  // cursor and includes the reader's own messages. Cursors belong to read().
+  readHistory(agentId: string, channelName: string, limit = 50): Message[] {
+    this.requireRegistered(agentId);
+    assertDmAccess(channelName, agentId);
+    const channel = this.channels.findByName(channelName);
+    if (!channel) throw new ChannelNotFoundError(channelName);
+    const members = this.channels.getMembers(channel.id);
+    if (!members.find((m) => m.id === agentId)) {
+      throw new Error(
+        `Not a member of channel "${channelName}". Join via messaging_subscribe or messaging_send.`
+      );
+    }
+    return this.messages.readRecent(channel.id, limit);
   }
 
   // NOT atomic by design: channel creation, membership, and insert are separate

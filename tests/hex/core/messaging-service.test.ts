@@ -1,5 +1,6 @@
 import { describe, it, expect, afterEach } from "bun:test";
 import { MessagingService } from "../../../src/core/messaging/service";
+import { ChannelNotFoundError } from "../../../src/core/messaging/errors";
 import { createSqliteRepos } from "../../../src/storage/sqlite";
 import { createDb } from "../../../src/storage/sqlite/db";
 import { runMigrations, allMigrations } from "../../../src/storage/sqlite/migrations";
@@ -450,6 +451,91 @@ describe("MessagingService", () => {
       const { svc } = setup();
       const members = svc.listMembers("nonexistent");
       expect(members).toEqual([]);
+    });
+  });
+
+  // ── readHistory (pure history read for MCP resources) ──────────
+
+  describe("readHistory", () => {
+    it("returns the newest messages ascending, including the reader's own", () => {
+      const { svc } = setup();
+      svc.register("alice");
+      svc.register("bob");
+      svc.createChannel("alice", "general");
+      svc.subscribe("bob", "general");
+      svc.send("alice", "general", "from-alice");
+      svc.send("bob", "general", "from-bob");
+
+      const history = svc.readHistory("alice", "general");
+      expect(history.map((m) => m.content)).toEqual(["from-alice", "from-bob"]);
+    });
+
+    it("caps the window at the given limit, keeping the newest", () => {
+      const { svc } = setup();
+      svc.register("alice");
+      svc.createChannel("alice", "general");
+      for (let i = 1; i <= 5; i++) svc.send("alice", "general", `msg-${i}`);
+
+      const history = svc.readHistory("alice", "general", 2);
+      expect(history.map((m) => m.content)).toEqual(["msg-4", "msg-5"]);
+    });
+
+    it("never advances the unread cursor — read() still returns everything", () => {
+      const { svc } = setup();
+      svc.register("alice");
+      svc.register("bob");
+      svc.createChannel("alice", "general");
+      svc.subscribe("bob", "general");
+      svc.send("alice", "general", "unread-1");
+
+      const history = svc.readHistory("bob", "general");
+      expect(history.length).toBe(1);
+
+      const firstRead = svc.read("bob", "general");
+      expect(firstRead.map((m) => m.content)).toEqual(["unread-1"]);
+      const secondRead = svc.read("bob", "general");
+      expect(secondRead).toEqual([]);
+    });
+
+    it("rejects unregistered agents", () => {
+      const { svc } = setup();
+      svc.register("alice");
+      svc.createChannel("alice", "general");
+      expect(() => svc.readHistory("ghost", "general")).toThrow(/messaging_register/);
+    });
+
+    it("throws ChannelNotFoundError for unknown channels", () => {
+      const { svc } = setup();
+      svc.register("alice");
+      expect(() => svc.readHistory("alice", "nope")).toThrow(ChannelNotFoundError);
+    });
+
+    it("rejects non-members of a channel", () => {
+      const { svc } = setup();
+      svc.register("alice");
+      svc.register("bob");
+      svc.createChannel("alice", "general");
+      expect(() => svc.readHistory("bob", "general")).toThrow(/Not a member/);
+    });
+
+    it("denies DM channels to outsiders even before the membership check", () => {
+      const { svc } = setup();
+      svc.register("alice");
+      svc.register("bob");
+      svc.register("carol");
+      svc.directMessage("alice", "bob", "secret");
+
+      expect(() => svc.readHistory("carol", "alice,bob")).toThrow(/private to alice and bob/);
+    });
+
+    it("allows DM members to read DM history", () => {
+      const { svc } = setup();
+      svc.register("alice");
+      svc.register("bob");
+      svc.directMessage("alice", "bob", "secret");
+
+      const history = svc.readHistory("bob", "alice,bob");
+      expect(history.map((m) => m.content)).toEqual(["secret"]);
     });
   });
 });

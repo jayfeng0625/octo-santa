@@ -96,4 +96,16 @@ export class SqliteMessageRepo implements MessageRepository {
       .all(channelId, beforeId, excludeAgent, limit) as Message[];
     return rows.reverse();
   }
+
+  readRecent(channelId: number, limit: number): Message[] {
+    const rows = this.db
+      .query(
+        `SELECT * FROM messages
+         WHERE channel_id = ?
+         ORDER BY id DESC
+         LIMIT ?`
+      )
+      .all(channelId, limit) as Message[];
+    return rows.reverse();
+  }
 }

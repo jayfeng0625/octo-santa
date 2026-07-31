@@ -477,6 +477,141 @@ describe("createNotificationPoller", () => {
     });
   });
 
+  describe("channel activity signal", () => {
+    function makeActivityPort(): {
+      port: NotificationPort;
+      notifyCalls: string[];
+      activityCalls: string[];
+    } {
+      const notifyCalls: string[] = [];
+      const activityCalls: string[] = [];
+      const port: NotificationPort = {
+        notify: async (content) => {
+          notifyCalls.push(content);
+        },
+        notifyChannelActivity: async (channelName) => {
+          activityCalls.push(channelName);
+        },
+      };
+      return { port, notifyCalls, activityCalls };
+    }
+
+    it("fires for silent messages regardless of the mention filter", async () => {
+      const msg = makeMessage({
+        id: 1,
+        channel_name: "general",
+        agent_id: "agent-b",
+        content: "no mention here",
+        mentions: "[]",
+      });
+
+      const { port, notifyCalls, activityCalls } = makeActivityPort();
+      const poller = createNotificationPoller({
+        ...makeQueryFns([msg], 0),
+        port,
+        agentId: "agent-a",
+      });
+
+      poller.start();
+      await poller._tick();
+      poller.stop();
+
+      expect(notifyCalls.length).toBe(0); // mention filter still applies to notify
+      expect(activityCalls).toEqual(["general"]);
+    });
+
+    it("dedups to one signal per channel per tick", async () => {
+      const msgs = [
+        makeMessage({ id: 1, channel_name: "general", agent_id: "agent-b", content: "one" }),
+        makeMessage({ id: 2, channel_name: "general", agent_id: "agent-b", content: "two" }),
+        makeMessage({ id: 3, channel_name: "other", agent_id: "agent-b", content: "three" }),
+      ];
+
+      const { port, activityCalls } = makeActivityPort();
+      const poller = createNotificationPoller({
+        ...makeQueryFns(msgs, 0),
+        port,
+        agentId: "agent-a",
+      });
+
+      poller.start();
+      await poller._tick();
+      poller.stop();
+
+      expect(activityCalls.sort()).toEqual(["general", "other"]);
+    });
+
+    it("does not re-signal already-consumed messages on the next tick", async () => {
+      const msg = makeMessage({
+        id: 1,
+        channel_name: "general",
+        agent_id: "agent-b",
+        content: "once",
+      });
+
+      const { port, activityCalls } = makeActivityPort();
+      const poller = createNotificationPoller({
+        ...makeQueryFns([msg], 0),
+        port,
+        agentId: "agent-a",
+      });
+
+      poller.start();
+      await poller._tick();
+      await poller._tick();
+      poller.stop();
+
+      expect(activityCalls).toEqual(["general"]);
+    });
+
+    it("works with ports that do not implement notifyChannelActivity", async () => {
+      const msg = makeMessage({
+        id: 1,
+        channel_name: "agent-a,agent-b",
+        agent_id: "agent-b",
+        content: "dm",
+      });
+
+      const { port, calls } = makeNotificationPort(); // no notifyChannelActivity
+      const poller = createNotificationPoller({
+        ...makeQueryFns([msg], 0),
+        port,
+        agentId: "agent-a",
+      });
+
+      poller.start();
+      await expect(poller._tick()).resolves.toBeUndefined();
+      poller.stop();
+      expect(calls.length).toBe(1);
+    });
+
+    it("does not throw when notifyChannelActivity rejects", async () => {
+      const msg = makeMessage({
+        id: 1,
+        channel_name: "general",
+        agent_id: "agent-b",
+        content: "boom",
+      });
+
+      const port: NotificationPort = {
+        notify: async () => {},
+        notifyChannelActivity: async () => {
+          throw new Error("transport failure");
+        },
+      };
+
+      const poller = createNotificationPoller({
+        ...makeQueryFns([msg], 0),
+        port,
+        agentId: "agent-a",
+      });
+
+      poller.start();
+      await expect(poller._tick()).resolves.toBeUndefined();
+      poller.stop();
+    });
+  });
+
   describe("fire-and-forget notify errors", () => {
     it("does not throw when port.notify rejects", async () => {
       const msg = makeMessage({
