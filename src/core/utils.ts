@@ -1,11 +1,37 @@
 import type { Agent } from "./messaging/types";
 
-const AGENT_NAME_RE = /^[\w-]+$/;
+export const AGENT_NAME_RE = /^[\w-]+$/;
 const RESERVED_AGENT_NAMES = new Set(["all", "here", "_system"]);
 const DM_CHANNEL_RE = /^([\w-]+),([\w-]+)$/;
 const MENTION_RE = /@([\w-]+)/g;
 
 export const PID_STALE_MS = 15 * 60 * 1000;
+
+// Channel-name and message-content rules. Single source of truth: the MCP
+// transport's zod schemas and the admin module both build on these, so the
+// two entry planes cannot drift apart on what they accept.
+export const CHANNEL_NAME_RE = /^[\w.,@#-]+$/;
+export const MAX_CHANNEL_NAME_LENGTH = 128;
+export const MAX_MESSAGE_LENGTH = 100_000;
+export const CHANNEL_NAME_RULE =
+  "Channel name must contain only letters, digits, underscores, hyphens, dots, commas, @ or #";
+
+export function validateChannelName(name: string): void {
+  if (!name.trim()) throw new Error("channel name must not be empty");
+  if (name.length > MAX_CHANNEL_NAME_LENGTH)
+    throw new Error(
+      `channel name must not exceed ${MAX_CHANNEL_NAME_LENGTH} characters`
+    );
+  if (!CHANNEL_NAME_RE.test(name)) throw new Error(CHANNEL_NAME_RULE);
+}
+
+export function validateMessageContent(content: string): void {
+  if (!content.trim()) throw new Error("message content must not be empty");
+  if (content.length > MAX_MESSAGE_LENGTH)
+    throw new Error(
+      `message content must not exceed ${MAX_MESSAGE_LENGTH} characters`
+    );
+}
 
 export function dmChannelName(a: string, b: string): string {
   return [a, b].sort().join(",");

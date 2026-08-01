@@ -1,6 +1,4 @@
-import { homedir } from "node:os";
-import { join } from "node:path";
-import { createDb } from "./storage/sqlite/db";
+import { createDb, resolveDbPath } from "./storage/sqlite/db";
 import { runMigrations, allMigrations } from "./storage/sqlite/migrations";
 import { createSqliteRepos } from "./storage/sqlite";
 import { SqliteNotificationQueryRepo } from "./storage/sqlite/notification-query-repo";
@@ -9,15 +7,8 @@ import { MessagingService } from "./core/messaging/service";
 import { startMcpStdio } from "./transports/mcp-stdio/adapter";
 import { log } from "./log";
 
-function expandHome(p: string): string {
-  return p.startsWith("~/") ? join(homedir(), p.slice(2)) : p;
-}
-
 async function main() {
-  const dbPath = expandHome(
-    process.env.OCTO_SANTA_DB ?? join(homedir(), ".octo-santa", "messages.db")
-  );
-  const db = createDb(dbPath);
+  const db = createDb(resolveDbPath());
   runMigrations(db, allMigrations);
 
   const repos = createSqliteRepos(db);

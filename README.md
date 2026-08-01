@@ -85,6 +85,64 @@ It never advances cursors, so a Claude Code session can point its Monitor tool (
 | `messaging_list_members` | List channel members with active/inactive status |
 | `messaging_rename_channel` | Rename a channel (members only) |
 
+## Admin Plane (elevated access)
+
+Approved 1st/3rd-party apps — issue-tracker bridges pushing events into
+channels, analytics jobs querying message history — can integrate directly
+with the storage layer over a **separate MCP connection**, without going
+through the chat-style messaging tools:
+
+```json
+{
+  "mcpServers": {
+    "octo-santa-admin": {
+      "command": "bun",
+      "args": ["run", "/absolute/path/to/octo-santa/src/admin.ts"]
+    }
+  }
+}
+```
+
+The admin server exposes exactly two generic tools, **code-mode / programmatic
+tool calling** style (the same search/execute pair as Cloudflare's Code Mode):
+
+| Tool | Description |
+|------|-------------|
+| `admin_search` | **Discovery** — keyword-search the modules' typed API declarations; returns matching methods and types with their docs |
+| `admin_execute` | **Run TypeScript** against those APIs, bound as globals |
+
+The flow: search for what you want to do, read the declarations that come
+back, then execute code that calls them — so only the definitions you need
+ever enter your context. Submitted code is an async function body: `await`
+freely and `return` a JSON value — that value plus captured `console` output
+is the tool result, so you look up state, act, filter, and aggregate in one
+round trip. Raw SQL never crosses the boundary; the SQLite storage module
+exposes controlled methods that uphold the messaging invariants, described by
+a **typehead** — a TypeScript `.d.ts` composed from each module's own
+fragment (also readable in full as resource
+`octo-santa://admin/typehead.d.ts`). Because every agent process watches the
+shared database, `storage.sendMessage(...)` *is* a push delivery.
+
+```ts
+// 1. admin_search { query: "send message channel" } → returns, among others:
+//    sendMessage(input: SendMessageInput): MessageRecord
+//    "Send a message to a channel. This is how you reach agents..."
+
+// 2. admin_execute — an issue-tracker bridge delivering an event:
+storage.createChannelIfMissing("eng-triage", "linear-hook");
+const m = storage.sendMessage({
+  channel: "eng-triage", sender: "linear-hook",
+  content: "LIN-142 moved to In Review", mentions: ["*"],  // ["*"] = everyone
+});
+return { delivered: m.id };
+
+// admin_execute — reporting over message history, only the digest returned:
+const perSender = storage.countMessages({ channel: "eng-triage", group_by: "sender" });
+return Object.fromEntries(perSender.map((r) => [r.value, r.count]));
+```
+
+See [docs/specs/2026-08-01-admin-typehead-mcp.md](docs/specs/2026-08-01-admin-typehead-mcp.md).
+
 ## Configuration
 
 | Env Variable | Default | Description |
@@ -92,13 +150,14 @@ It never advances cursors, so a Claude Code session can point its Monitor tool (
 | `OCTO_SANTA_DB` | `~/.octo-santa/messages.db` | Path to the shared SQLite database |
 | `OCTO_SANTA_POLL_INTERVAL_MS` | `2000` | Push poller interval in ms |
 | `OCTO_SANTA_HEARTBEAT_INTERVAL_MS` | `10000` | Agent liveness heartbeat interval in ms |
+| `OCTO_SANTA_ADMIN_TIMEOUT_MS` | `5000` | Wall-clock timeout for a single admin code run |
 
 ## Development
 
 ```bash
 bun test              # all tests
 bunx tsc --noEmit     # typecheck
-bun run build         # bundle → dist/<version>/main.js
+bun run build         # bundle → dist/<version>/{main,admin}.js
 ```
 
 See [docs/getting-started.md](docs/getting-started.md) for detailed setup, [docs/architecture.md](docs/architecture.md) for the hexagonal architecture, and [docs/messaging-patterns.md](docs/messaging-patterns.md) for agent communication strategies.

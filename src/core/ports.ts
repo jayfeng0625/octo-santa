@@ -4,6 +4,7 @@ import type {
   Message,
   HeartbeatResult,
 } from "./messaging/types";
+import type { AdminModuleDescription, CodeRunResult } from "./admin/types";
 
 // --- Storage ports (core defines, adapters implement) ---
 
@@ -49,6 +50,33 @@ export interface MessageRepository {
   // Pure history snapshot: most recent `limit` messages in ascending order,
   // all senders included. Never touches cursors.
   readRecent(channelId: number, limit: number): Message[];
+}
+
+// --- Admin API ports (elevated code-mode access) ---
+// Core's need: give approved external apps an elevated integration surface
+// through exactly two generic operations — search, which looks up methods
+// and types in the modules' declarations (discovery), and execute, which
+// runs caller-submitted code against them. Core stays agnostic about what
+// the code can do: each module contributes a typed API object (bound as a
+// global inside the code) plus a .d.ts fragment describing it, and never
+// exposes its raw backend (SQL, files, wire protocols) through that API.
+// Different modules may have entirely different interaction patterns; core
+// only composes them.
+
+export interface AdminModulePort {
+  describe(): AdminModuleDescription;
+  // The API object bound as this module's global inside execute runs.
+  createApi(): object;
+}
+
+// Executes caller-submitted code with the given globals bound. An adapter
+// concern — transpilation, isolation, and timeouts all live outside core.
+export interface CodeRunnerPort {
+  // Language submitted code is written in, e.g. "typescript".
+  readonly language: string;
+  // Names the execution environment already uses; modules may not bind them.
+  readonly reservedNames: readonly string[];
+  run(code: string, bindings: Record<string, object>): Promise<CodeRunResult>;
 }
 
 // --- Push notification contract ---

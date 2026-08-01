@@ -70,7 +70,11 @@ src/
     messaging/
       service.ts                 ← MessagingService — orchestrates messaging operations
       types.ts                   ← Agent, Channel, Message, etc.
-    ports.ts                     ← All port interfaces (repositories, notification)
+    admin/
+      service.ts                 ← AdminService — search (discovery) + execute (run caller code)
+      typehead-index.ts          ← Chunks module .d.ts fragments for keyword search
+      types.ts                   ← Module description, run results, JsonValue
+    ports.ts                     ← All port interfaces (repositories, notification, admin)
     utils.ts                     ← Pure domain utilities (validation, mention parsing, liveness)
 
   storage/                       ← Storage adapters
@@ -80,19 +84,29 @@ src/
       message-repo.ts
       notification-query-repo.ts ← Internal class for notification watcher queries
       index.ts                   ← Factory: createSqliteRepos(db)
-      db.ts                      ← createDb(), withRetrySync()
+      admin-module.ts            ← SqliteAdminModule — controlled methods for the admin API
+      admin-typehead.ts          ← The storage module's .d.ts fragment
+      db.ts                      ← createDb(), resolveDbPath(), withRetrySync()
       migrations.ts              ← Schema migrations
 
   transports/                    ← Transport adapters (how external clients connect)
     mcp-stdio/
       adapter.ts                 ← MCP tool registration, per-connection server factory (SDK v2 serveStdio)
       helpers.ts                 ← jsonResult(), withAgent()
+    mcp-admin-stdio/
+      adapter.ts                 ← Admin plane: admin_search/admin_execute (code-mode) + typehead resource
+      schemas.ts                 ← Admin wire schemas
+
+  runtime/                       ← Code-execution adapter (runs caller TypeScript)
+    typescript/
+      runner.ts                  ← TypeScriptRunner — transpile, block imports, bind globals, run
 
   notifications/                 ← Notification adapter (how agents receive push)
     poller/
       poller.ts                  ← Watches SQLite (2s interval), pushes MCP channel notifications
 
   main.ts                        ← Composition root — wires everything together
+  admin.ts                       ← Composition root for the separate admin MCP connection
   log.ts                         ← Logging utility
 ```
 
@@ -111,6 +125,8 @@ The core defines interfaces that adapters implement:
 | `ChannelRepository` | Channel CRUD, membership, rename with announcement |
 | `MessageRepository` | Message insert, cursor-advancing reads, history reads |
 | `NotificationPort` | Push delivery contract shared by the notification and transport adapters |
+| `AdminModulePort` | Elevated admin API: a module's typed API + `.d.ts` fragment (`describe`, `createApi`) |
+| `CodeRunnerPort` | Runs caller-submitted code with module globals bound |
 
 Core does not deliver notifications. `send()` extracts mentions and persists the
 message; delivery is entirely an adapter concern. `NotificationPort` lives in
@@ -125,10 +141,32 @@ registration, channels, messaging, DMs, mentions, cursor management.
 The service is a process-scoped singleton. It holds `process.pid` for agent
 ownership checks.
 
+**`AdminService`** (`core/admin/`) drives the elevated admin API for approved
+external apps, in the **code-mode / programmatic-tool-calling** style — two
+operations, mirroring Code Mode's search/execute pair. `search(query)` is
+discovery: it keyword-searches the modules' composed `.d.ts` declarations
+(via `TypeheadIndex`) and returns the matching methods and types with their
+docs, so an agent pulls only what it needs into context. `execute(code)` is
+the only operation that runs code: it binds each module's typed API as a
+global, delegates the opaque TypeScript to a `CodeRunnerPort`
+(`runtime/typescript/`), and normalizes the returned value onto the wire.
+Modules never expose their raw backend — the SQLite module (`SqliteAdminModule`)
+offers controlled methods like `storage.sendMessage` and `storage.countMessages`,
+never SQL. Each module authors its own `.d.ts` fragment; the full composed
+document also remains readable as MCP resource `octo-santa://admin/typehead.d.ts`
+(see `docs/specs/2026-08-01-admin-typehead-mcp.md`). The admin API is served on
+a separate MCP connection (`src/admin.ts` → `transports/mcp-admin-stdio/`);
+agent-facing messaging connections never see these tools. Core stays agnostic
+about both the language runtime and what any module does, so new modules and
+runtimes drop in without core changes.
+
 ### Domain Utilities (`core/utils.ts`)
 
-Pure functions with no dependencies: `validateAgentName()`, `isDmChannel()`,
-`extractMentions()`, `isAgentActive()`, `isProcessAlive()`.
+Pure functions with no dependencies: `validateAgentName()`,
+`validateChannelName()`, `validateMessageContent()`, `isDmChannel()`,
+`extractMentions()`, `isAgentActive()`, `isProcessAlive()`. The name/length
+rules live here so the messaging tools and the admin API cannot drift apart on
+what they accept.
 
 ## How the Layers Connect
 

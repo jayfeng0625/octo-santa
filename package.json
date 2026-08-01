@@ -6,6 +6,7 @@
   "type": "module",
   "scripts": {
     "start": "bun run src/main.ts",
+    "start:admin": "bun run src/admin.ts",
     "poll": "bun run src/poll.ts",
     "build": "bun run scripts/build.ts"
   },

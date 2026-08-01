@@ -5,9 +5,7 @@
 // One-shot by default; --interval <secs> keeps checking until unread messages
 // appear, --timeout <secs> bounds that wait.
 // Exit codes: 0 = unread messages exist, 1 = none, 2 = usage error.
-import { homedir } from "node:os";
-import { join } from "node:path";
-import { createDb } from "./storage/sqlite/db";
+import { createDb, resolveDbPath } from "./storage/sqlite/db";
 import { runMigrations, allMigrations } from "./storage/sqlite/migrations";
 import { SqliteNotificationQueryRepo } from "./storage/sqlite/notification-query-repo";
 import type { MessageWithChannel } from "./core/messaging/types";
@@ -25,10 +23,6 @@ function usage(): never {
     "Usage: bun run src/poll.ts --as <agent-id> [--channel <name>] [--limit <n>] [--interval <secs> [--timeout <secs>]]"
   );
   process.exit(2);
-}
-
-function expandHome(p: string): string {
-  return p.startsWith("~/") ? join(homedir(), p.slice(2)) : p;
 }
 
 function parseArgs(argv: string[]): PollArgs {
@@ -77,10 +71,7 @@ async function main(): Promise<void> {
   const { agentId, channel, limit, intervalSecs, timeoutSecs } = parseArgs(
     process.argv.slice(2)
   );
-  const dbPath = expandHome(
-    process.env.OCTO_SANTA_DB ?? join(homedir(), ".octo-santa", "messages.db")
-  );
-  const db = createDb(dbPath);
+  const db = createDb(resolveDbPath());
   runMigrations(db, allMigrations);
   const queries = new SqliteNotificationQueryRepo(db);
 

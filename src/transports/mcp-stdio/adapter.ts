@@ -8,8 +8,14 @@ import { z } from "zod";
 import type { MessagingService } from "../../core/messaging/service";
 import { ChannelNotFoundError } from "../../core/messaging/errors";
 import type { NotificationPort, AgentRepository } from "../../core/ports";
+import {
+  CHANNEL_NAME_RE,
+  CHANNEL_NAME_RULE,
+  MAX_CHANNEL_NAME_LENGTH,
+  MAX_MESSAGE_LENGTH,
+} from "../../core/utils";
 import { log } from "../../log";
-import { jsonResult, withAgent } from "./helpers";
+import { jsonResult, withAgent, LOCAL } from "./helpers";
 import {
   RegisterOutput,
   CreateChannelOutput,
@@ -22,10 +28,6 @@ import {
   RenameChannelOutput,
 } from "./schemas";
 import pkg from "../../../package.json";
-
-// Everything octo-santa touches is the local shared SQLite database — no tool
-// reaches an open-world external system.
-const LOCAL = { openWorldHint: false } as const;
 
 // Claude Code truncates server instructions at 2KB — keep this text under
 // that limit.
@@ -103,7 +105,7 @@ export function registerMessagingTools(
     outputSchema: CreateChannelOutput,
     inputSchema: z.object({
       agent_id: z.string().trim().min(1).describe("Your agent/project name"),
-      name: z.string().trim().min(1).max(128, "Channel name must not exceed 128 characters").regex(/^[\w.,@#-]+$/, "Channel name must contain only letters, digits, underscores, hyphens, dots, commas, @ or #").describe("Channel name"),
+      name: z.string().trim().min(1).max(MAX_CHANNEL_NAME_LENGTH, `Channel name must not exceed ${MAX_CHANNEL_NAME_LENGTH} characters`).regex(CHANNEL_NAME_RE, CHANNEL_NAME_RULE).describe("Channel name"),
     }),
   }, async ({ agent_id, name }) => {
     return withAgent(onAgentId, agent_id, () => {
@@ -152,7 +154,7 @@ export function registerMessagingTools(
       agent_id: z.string().trim().min(1).describe("Your agent/project name"),
       channel: z.string().trim().min(1).optional().describe("Channel to post to (mutually exclusive with `to`)"),
       to: z.string().trim().min(1).optional().describe("Agent to direct-message (mutually exclusive with `channel`)"),
-      content: z.string().trim().min(1).max(100_000, "Message content must not exceed 100,000 characters").describe("Message content"),
+      content: z.string().trim().min(1).max(MAX_MESSAGE_LENGTH, `Message content must not exceed ${MAX_MESSAGE_LENGTH.toLocaleString("en-US")} characters`).describe("Message content"),
     }),
   }, async ({ agent_id, channel, to, content }) => {
     return withAgent(onAgentId, agent_id, () => {
