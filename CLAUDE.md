@@ -43,7 +43,7 @@ Each agent runs as its own OS process (MCP subprocess). There is no shared memor
 ## APIs
 
 - `bun:sqlite` for SQLite — only in `src/storage/sqlite/`. Don't use `better-sqlite3`.
-- `@modelcontextprotocol/sdk` for MCP — only in `src/transports/mcp-stdio/`.
+- `@modelcontextprotocol/server` (SDK v2) for MCP — only in `src/transports/mcp-stdio/`.
 
 ## SQLite Concurrency
 

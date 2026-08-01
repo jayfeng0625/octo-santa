@@ -33,7 +33,7 @@ async function main() {
   const heartbeatIntervalMs = Number(process.env.OCTO_SANTA_HEARTBEAT_INTERVAL_MS) || 10_000;
   const pollIntervalMs = Number(process.env.OCTO_SANTA_POLL_INTERVAL_MS) || undefined;
 
-  await startMcpStdio({
+  startMcpStdio({
     messaging,
     agents: repos.agents,
     startPoller: (port, agentId) => {
