@@ -1,15 +1,15 @@
 import { describe, it, expect, afterEach } from "bun:test";
 import { cleanupDb, testDbPath, setupTestDb } from "../../helpers/db";
 import { allMigrations } from "../../../src/storage/sqlite/migrations";
-import { SqliteAdminGateway } from "../../../src/storage/sqlite/admin-gateway";
+import { SqliteAdminModule } from "../../../src/storage/sqlite/admin-module";
 import { AdminService } from "../../../src/core/admin/service";
+import { TypeScriptRunner } from "../../../src/runtime/typescript/runner";
 import {
   registerAdminTools,
   registerTypeheadResource,
   buildAdminInstructions,
   ADMIN_TYPEHEAD_URI,
 } from "../../../src/transports/mcp-admin-stdio/adapter";
-import { SQLITE_ADMIN_TYPEHEAD } from "../../../src/storage/sqlite/admin-typehead";
 
 const TEST_DB = testDbPath("admin-tool-metadata");
 
@@ -19,7 +19,7 @@ afterEach(() => {
 
 function setup() {
   const db = setupTestDb(TEST_DB, allMigrations);
-  const admin = new AdminService(new SqliteAdminGateway(db));
+  const admin = new AdminService(new TypeScriptRunner(), [new SqliteAdminModule(db)]);
 
   const configs: Record<string, any> = {};
   const handlers: Record<string, (...args: any[]) => Promise<any>> = {};
@@ -46,6 +46,16 @@ describe("admin plane tool surface", () => {
     db.close();
   });
 
+  it("both tools take TypeScript code, not queries", () => {
+    const { db, configs } = setup();
+    for (const name of Object.keys(configs)) {
+      const shape = configs[name].inputSchema.shape;
+      expect(Object.keys(shape), `${name} input keys`).toEqual(["code"]);
+      expect(configs[name].description).toContain("TypeScript");
+    }
+    db.close();
+  });
+
   it("every tool declares title, description, annotations, and outputSchema", () => {
     const { db, configs } = setup();
     for (const name of Object.keys(configs)) {
@@ -69,14 +79,14 @@ describe("admin plane tool surface", () => {
 });
 
 describe("typehead resource", () => {
-  it("serves the provider's .d.ts at the advertised URI", async () => {
-    const { db, resources } = setup();
+  it("serves the composed .d.ts at the advertised URI", async () => {
+    const { db, admin, resources } = setup();
     const resource = resources["admin-typehead"]!;
     expect(resource.uri).toBe(ADMIN_TYPEHEAD_URI);
     expect(resource.config.mimeType).toBe("application/typescript");
     const result = await resource.read(new URL(ADMIN_TYPEHEAD_URI));
-    expect(result.contents[0].text).toBe(SQLITE_ADMIN_TYPEHEAD);
-    expect(result.contents[0].mimeType).toBe("application/typescript");
+    expect(result.contents[0].text).toBe(admin.describe().typehead);
+    expect(result.contents[0].text).toContain("declare const storage");
     db.close();
   });
 
@@ -85,12 +95,13 @@ describe("typehead resource", () => {
     const instructions = buildAdminInstructions(admin);
     expect(instructions.length).toBeLessThan(2048);
     expect(instructions).toContain(ADMIN_TYPEHEAD_URI);
+    expect(instructions).toContain("storage (sqlite)");
     db.close();
   });
 });
 
 describe("structured output contract", () => {
-  it("real search/execute results parse against the declared outputSchemas", async () => {
+  it("real code runs parse against the declared outputSchema", async () => {
     const { db, configs, handlers } = setup();
 
     const invoke = async (name: string, args: Record<string, unknown>) => {
@@ -104,19 +115,20 @@ describe("structured output contract", () => {
       return result.structuredContent;
     };
 
-    const inserted = await invoke("admin_execute", {
-      statement:
-        "INSERT INTO channels (name, created_by, created_at) VALUES (?, '_system', ?)",
-      params: ["wire-check", 123],
+    const executed = await invoke("admin_execute", {
+      code: `
+        const channel = storage.ensureChannel("wire-check", "meta-bridge");
+        console.log("created", channel.name);
+        return { channelId: channel.id };
+      `,
     });
-    expect(inserted.changes).toBe(1);
+    expect(executed.result.channelId).toBe(1);
+    expect(executed.logs).toEqual(["[log] created wire-check"]);
 
     const searched = await invoke("admin_search", {
-      query: "SELECT name, created_at FROM channels WHERE name = ?",
-      params: ["wire-check"],
+      code: `return storage.listChannels().map((c) => c.name);`,
     });
-    expect(searched.rows).toEqual([{ name: "wire-check", created_at: 123 }]);
-    expect(searched.truncated).toBe(false);
+    expect(searched.result).toEqual(["wire-check"]);
 
     db.close();
   });

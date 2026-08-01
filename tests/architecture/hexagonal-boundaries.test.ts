@@ -59,6 +59,17 @@ describe("hexagonal architecture boundaries", () => {
       const violations = await rule.check(CHECK_OPTS);
       expect(violations).toEqual([]);
     }, RULE_TIMEOUT_MS);
+
+    it("core must not depend on runtime layer", async () => {
+      const rule = projectFiles()
+        .inFolder("src/core/**")
+        .shouldNot()
+        .dependOnFiles()
+        .inFolder("src/runtime/**");
+
+      const violations = await rule.check(CHECK_OPTS);
+      expect(violations).toEqual([]);
+    }, RULE_TIMEOUT_MS);
   });
 
   // --- Core must not import infrastructure modules directly ---
@@ -146,5 +157,31 @@ describe("hexagonal architecture boundaries", () => {
       const violations = await rule.check(CHECK_OPTS);
       expect(violations).toEqual([]);
     }, RULE_TIMEOUT_MS);
+
+    // The runtime layer (code execution) is an adapter like any other: it may
+    // depend only on core, and no other adapter may depend on it.
+    for (const other of ["storage", "transports", "notifications"]) {
+      it(`runtime must not depend on ${other}`, async () => {
+        const rule = projectFiles()
+          .inFolder("src/runtime/**")
+          .shouldNot()
+          .dependOnFiles()
+          .inFolder(`src/${other}/**`);
+
+        const violations = await rule.check(CHECK_OPTS);
+        expect(violations).toEqual([]);
+      }, RULE_TIMEOUT_MS);
+
+      it(`${other} must not depend on runtime`, async () => {
+        const rule = projectFiles()
+          .inFolder(`src/${other}/**`)
+          .shouldNot()
+          .dependOnFiles()
+          .inFolder("src/runtime/**");
+
+        const violations = await rule.check(CHECK_OPTS);
+        expect(violations).toEqual([]);
+      }, RULE_TIMEOUT_MS);
+    }
   });
 });

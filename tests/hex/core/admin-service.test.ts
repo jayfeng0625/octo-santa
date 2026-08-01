@@ -1,89 +1,105 @@
 import { describe, it, expect } from "bun:test";
 import { AdminService } from "../../../src/core/admin/service";
-import type { AdminStoragePort } from "../../../src/core/ports";
-import type {
-  AdminValue,
-  AdminRow,
-  AdminExecuteResult,
-} from "../../../src/core/admin/types";
+import type { AdminModulePort, CodeRunnerPort } from "../../../src/core/ports";
+import type { CodeRunOutcome } from "../../../src/core/admin/types";
 
-// Core-level tests with a fake port: the service must stay dialect-agnostic
-// and delegate opaque query strings untouched.
+// Core-level tests with fake ports: the service must stay agnostic about
+// what module APIs do — it only composes bindings and typeheads, delegates
+// opaque code to the runner, and normalizes outcomes.
 
-function makeFakePort(overrides: Partial<AdminStoragePort> = {}): AdminStoragePort & {
-  calls: { method: string; text: string; params: AdminValue[] }[];
-} {
-  const calls: { method: string; text: string; params: AdminValue[] }[] = [];
+function makeFakeRunner(outcome: CodeRunOutcome = { result: "ok", logs: [] }) {
+  const calls: { code: string; bindings: Record<string, object> }[] = [];
+  const runner: CodeRunnerPort = {
+    run: async (code, bindings) => {
+      calls.push({ code, bindings });
+      return outcome;
+    },
+  };
+  return { runner, calls };
+}
+
+function makeFakeModule(name: string, provider = "fake"): AdminModulePort {
   return {
-    calls,
     describe: () => ({
-      provider: "fake",
-      dialect: "fakeql",
-      typehead: "declare module 'fake' {}",
+      module: name,
+      provider,
+      typehead: `declare const ${name}: unknown; // ${provider}`,
     }),
-    search: (query: string, params: AdminValue[]): AdminRow[] => {
-      calls.push({ method: "search", text: query, params });
-      return [{ a: 1 }, { a: 2 }, { a: 3 }];
-    },
-    execute: (statement: string, params: AdminValue[]): AdminExecuteResult => {
-      calls.push({ method: "execute", text: statement, params });
-      return { changes: 1, last_insert_row_id: 42 };
-    },
-    ...overrides,
+    createSearchApi: () => ({ kind: "search", module: name }),
+    createExecuteApi: () => ({ kind: "execute", module: name }),
   };
 }
 
 describe("AdminService", () => {
-  it("passes queries and params through to the port opaquely", () => {
-    const port = makeFakePort();
-    const svc = new AdminService(port);
-    const result = svc.search("ANYTHING the provider understands", ["x", 1, true, null]);
-    expect(port.calls).toEqual([
-      { method: "search", text: "ANYTHING the provider understands", params: ["x", 1, true, null] },
+  it("binds each module's read-only API for search, keyed by module name", async () => {
+    const { runner, calls } = makeFakeRunner();
+    const svc = new AdminService(runner, [makeFakeModule("storage"), makeFakeModule("other")]);
+    await svc.search("return 1");
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.code).toBe("return 1");
+    expect(calls[0]!.bindings).toEqual({
+      storage: { kind: "search", module: "storage" },
+      other: { kind: "search", module: "other" },
+    });
+  });
+
+  it("binds each module's full API for execute", async () => {
+    const { runner, calls } = makeFakeRunner();
+    const svc = new AdminService(runner, [makeFakeModule("storage")]);
+    await svc.execute("return 1");
+    expect(calls[0]!.bindings).toEqual({
+      storage: { kind: "execute", module: "storage" },
+    });
+  });
+
+  it("rejects empty and whitespace-only code", async () => {
+    const svc = new AdminService(makeFakeRunner().runner, [makeFakeModule("m")]);
+    expect(svc.search("")).rejects.toThrow("code must not be empty");
+    expect(svc.execute("  \n ")).rejects.toThrow("code must not be empty");
+  });
+
+  it("rejects duplicate and reserved module names at construction", () => {
+    const { runner } = makeFakeRunner();
+    expect(
+      () => new AdminService(runner, [makeFakeModule("m"), makeFakeModule("m")])
+    ).toThrow('Duplicate admin module name "m"');
+    expect(() => new AdminService(runner, [makeFakeModule("console")])).toThrow(
+      'Admin module name "console" is reserved'
+    );
+  });
+
+  it("normalizes undefined results to null and passes logs through", async () => {
+    const { runner } = makeFakeRunner({ result: undefined, logs: ["[log] hi"] });
+    const svc = new AdminService(runner, [makeFakeModule("m")]);
+    expect(await svc.search("code")).toEqual({ result: null, logs: ["[log] hi"] });
+  });
+
+  it("rejects non-JSON-serializable results with a clear error", async () => {
+    const cyclic: Record<string, unknown> = {};
+    cyclic.self = cyclic;
+    const { runner } = makeFakeRunner({ result: cyclic, logs: [] });
+    const svc = new AdminService(runner, [makeFakeModule("m")]);
+    expect(svc.search("code")).rejects.toThrow("not JSON-serializable");
+  });
+
+  it("composes the typehead from core's header plus each module's fragment", () => {
+    const svc = new AdminService(makeFakeRunner().runner, [
+      makeFakeModule("storage", "sqlite"),
+      makeFakeModule("other", "x"),
     ]);
-    expect(result.rows).toHaveLength(3);
-    expect(result.row_count).toBe(3);
-    expect(result.truncated).toBe(false);
-  });
-
-  it("defaults params to an empty array", () => {
-    const port = makeFakePort();
-    const svc = new AdminService(port);
-    svc.search("q");
-    svc.execute("s");
-    expect(port.calls.map((c) => c.params)).toEqual([[], []]);
-  });
-
-  it("rejects empty and whitespace-only query/statement", () => {
-    const svc = new AdminService(makeFakePort());
-    expect(() => svc.search("")).toThrow("query must not be empty");
-    expect(() => svc.search("   ")).toThrow("query must not be empty");
-    expect(() => svc.execute("")).toThrow("statement must not be empty");
-    expect(() => svc.execute("  \n ")).toThrow("statement must not be empty");
-  });
-
-  it("caps search results at maxRows and flags truncation", () => {
-    const port = makeFakePort({
-      search: () => Array.from({ length: 5 }, (_, i) => ({ n: i })),
-    });
-    const svc = new AdminService(port, 2);
-    const result = svc.search("q");
-    expect(result.rows).toEqual([{ n: 0 }, { n: 1 }]);
-    expect(result.row_count).toBe(2);
-    expect(result.truncated).toBe(true);
-  });
-
-  it("returns execute results from the port unchanged", () => {
-    const svc = new AdminService(makeFakePort());
-    expect(svc.execute("s", [7])).toEqual({ changes: 1, last_insert_row_id: 42 });
-  });
-
-  it("surfaces the provider's interface description verbatim", () => {
-    const svc = new AdminService(makeFakePort());
-    expect(svc.describe()).toEqual({
-      provider: "fake",
-      dialect: "fakeql",
-      typehead: "declare module 'fake' {}",
-    });
+    const description = svc.describe();
+    expect(description.language).toBe("typescript");
+    expect(description.modules).toEqual([
+      { module: "storage", provider: "sqlite" },
+      { module: "other", provider: "x" },
+    ]);
+    // Header documents the execution model...
+    expect(description.typehead).toContain("run as the body of an async function");
+    expect(description.typehead).toContain("admin_search binds each module's read-only API");
+    // ...and every module fragment follows, in order.
+    const storageIdx = description.typehead.indexOf("declare const storage");
+    const otherIdx = description.typehead.indexOf("declare const other");
+    expect(storageIdx).toBeGreaterThan(0);
+    expect(otherIdx).toBeGreaterThan(storageIdx);
   });
 });

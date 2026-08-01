@@ -5,8 +5,9 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { createDb } from "./storage/sqlite/db";
 import { runMigrations, allMigrations } from "./storage/sqlite/migrations";
-import { SqliteAdminGateway } from "./storage/sqlite/admin-gateway";
+import { SqliteAdminModule } from "./storage/sqlite/admin-module";
 import { AdminService } from "./core/admin/service";
+import { TypeScriptRunner } from "./runtime/typescript/runner";
 import { startAdminMcpStdio } from "./transports/mcp-admin-stdio/adapter";
 import { log } from "./log";
 
@@ -21,9 +22,9 @@ async function main() {
   const db = createDb(dbPath);
   runMigrations(db, allMigrations);
 
-  const gateway = new SqliteAdminGateway(db);
-  const maxRows = Number(process.env.OCTO_SANTA_ADMIN_MAX_ROWS) || undefined;
-  const admin = new AdminService(gateway, maxRows);
+  const timeoutMs = Number(process.env.OCTO_SANTA_ADMIN_TIMEOUT_MS) || undefined;
+  const runner = new TypeScriptRunner(timeoutMs);
+  const admin = new AdminService(runner, [new SqliteAdminModule(db)]);
 
   startAdminMcpStdio({ admin });
 }

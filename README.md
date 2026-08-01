@@ -103,20 +103,39 @@ through the chat-style messaging tools:
 }
 ```
 
-The admin server exposes exactly two generic tools, code-mode style:
+The admin server exposes exactly two generic tools, **code-mode / programmatic
+tool calling** style — they run **TypeScript**, not queries:
 
 | Tool | Description |
 |------|-------------|
-| `admin_search` | Read-only query in the storage provider's dialect (mutations rejected) |
-| `admin_execute` | One mutating statement, applied atomically |
+| `admin_search` | Runs your code with each module's **read-only** API bound |
+| `admin_execute` | Runs your code with each module's **full** API bound (controlled writes) |
 
-How to use them is described by a **typehead** — a TypeScript `.d.ts` file
-authored by the active storage provider (SQLite), served as MCP resource
-`octo-santa://admin/typehead.d.ts`. It defines every table's row shape, the
-tool contracts, and the delivery invariants: because every agent process
-watches the shared database, inserting into `messages` with a `mentions` JSON
-array *is* a push delivery. See
-[docs/specs/2026-08-01-admin-typehead-mcp.md](docs/specs/2026-08-01-admin-typehead-mcp.md).
+Submitted code is an async function body: `await` freely and `return` a JSON
+value — that value plus captured `console` output is the tool result, so you
+look up state, act, filter, and aggregate in one round trip. The typed API is
+described by a **typehead** — a TypeScript `.d.ts` composed from each module's
+own fragment, served as MCP resource `octo-santa://admin/typehead.d.ts`. Raw
+SQL never crosses the boundary; the SQLite storage module exposes controlled
+methods (`storage.postMessage`, `storage.countMessages`, …) that uphold the
+messaging invariants. Because every agent process watches the shared database,
+`storage.postMessage(...)` *is* a push delivery.
+
+```ts
+// admin_execute — an issue-tracker bridge delivering an event:
+storage.ensureChannel("eng-triage", "linear-hook");
+const m = storage.postMessage({
+  channel: "eng-triage", sender: "linear-hook",
+  content: "LIN-142 moved to In Review", mentions: ["*"],  // ["*"] = @all
+});
+return { delivered: m.id };
+
+// admin_search — OLAP over message history, only the digest returned:
+const perSender = storage.countMessages({ channel: "eng-triage", groupBy: "sender" });
+return Object.fromEntries(perSender.map((r) => [r.group, r.count]));
+```
+
+See [docs/specs/2026-08-01-admin-typehead-mcp.md](docs/specs/2026-08-01-admin-typehead-mcp.md).
 
 ## Configuration
 
@@ -125,7 +144,7 @@ array *is* a push delivery. See
 | `OCTO_SANTA_DB` | `~/.octo-santa/messages.db` | Path to the shared SQLite database |
 | `OCTO_SANTA_POLL_INTERVAL_MS` | `2000` | Push poller interval in ms |
 | `OCTO_SANTA_HEARTBEAT_INTERVAL_MS` | `10000` | Agent liveness heartbeat interval in ms |
-| `OCTO_SANTA_ADMIN_MAX_ROWS` | `10000` | Max rows returned by a single `admin_search` |
+| `OCTO_SANTA_ADMIN_TIMEOUT_MS` | `5000` | Wall-clock timeout for a single admin code run |
 
 ## Development
 

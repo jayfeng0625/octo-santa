@@ -4,12 +4,7 @@ import type {
   Message,
   HeartbeatResult,
 } from "./messaging/types";
-import type {
-  AdminValue,
-  AdminRow,
-  AdminExecuteResult,
-  AdminInterfaceDescription,
-} from "./admin/types";
+import type { AdminModuleDescription, CodeRunOutcome } from "./admin/types";
 
 // --- Storage ports (core defines, adapters implement) ---
 
@@ -57,19 +52,29 @@ export interface MessageRepository {
   readRecent(channelId: number, limit: number): Message[];
 }
 
-// --- Admin storage port (elevated access plane) ---
-// Core's need: give approved external apps direct, elevated access to stored
-// data through exactly two generic operations, plus a self-describing contract
-// so clients can learn the provider's query language without core knowing it.
-// Queries and statements are opaque to core; the provider defines their
-// meaning and documents it in the typehead it returns from describe().
+// --- Admin plane ports (code-mode elevated access) ---
+// Core's need: give approved external apps an elevated integration surface
+// through exactly two generic operations — search and execute — that run
+// caller-submitted TypeScript. Core stays agnostic about what the code can
+// do: each module contributes a typed API object (bound as a global inside
+// the code) plus a .d.ts fragment describing it, and never exposes its raw
+// backend (SQL, files, wire protocols) through that API. Different modules
+// may have entirely different interaction patterns; core only composes them.
 
-export interface AdminStoragePort {
-  describe(): AdminInterfaceDescription;
-  // Read-only query. Providers MUST reject anything that mutates state.
-  search(query: string, params: AdminValue[]): AdminRow[];
-  // Single mutating statement, applied atomically.
-  execute(statement: string, params: AdminValue[]): AdminExecuteResult;
+export interface AdminModulePort {
+  describe(): AdminModuleDescription;
+  // API object bound into admin_search runs. Read-only: nothing reachable
+  // from this object may mutate state.
+  createSearchApi(): object;
+  // API object bound into admin_execute runs: the search surface plus the
+  // module's controlled write methods.
+  createExecuteApi(): object;
+}
+
+// Executes caller-submitted TypeScript with the given globals bound. An
+// adapter concern (transpilation, isolation, timeouts live outside core).
+export interface CodeRunnerPort {
+  run(code: string, bindings: Record<string, object>): Promise<CodeRunOutcome>;
 }
 
 // --- Push notification contract ---

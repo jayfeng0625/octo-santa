@@ -88,8 +88,12 @@ src/
       adapter.ts                 ← MCP tool registration, per-connection server factory (SDK v2 serveStdio)
       helpers.ts                 ← jsonResult(), withAgent()
     mcp-admin-stdio/
-      adapter.ts                 ← Admin plane: admin_search/admin_execute tools + typehead resource
+      adapter.ts                 ← Admin plane: admin_search/admin_execute (code-mode) + typehead resource
       schemas.ts                 ← Admin wire schemas
+
+  runtime/                       ← Code-execution adapter (runs caller TypeScript)
+    typescript/
+      runner.ts                  ← TypeScriptRunner — transpile, block imports, bind globals, run
 
   notifications/                 ← Notification adapter (how agents receive push)
     poller/
@@ -115,7 +119,8 @@ The core defines interfaces that adapters implement:
 | `ChannelRepository` | Channel CRUD, membership, rename with announcement |
 | `MessageRepository` | Message insert, cursor-advancing reads, history reads |
 | `NotificationPort` | Push delivery contract shared by the notification and transport adapters |
-| `AdminStoragePort` | Elevated generic access plane: `describe()` + `search()` + `execute()` |
+| `AdminModulePort` | Elevated plane: a module's typed API + `.d.ts` fragment (`describe`, `createSearchApi`, `createExecuteApi`) |
+| `CodeRunnerPort` | Runs caller-submitted code with module globals bound |
 
 Core does not deliver notifications. `send()` extracts mentions and persists the
 message; delivery is entirely an adapter concern. `NotificationPort` lives in
@@ -131,15 +136,20 @@ The service is a process-scoped singleton. It holds `process.pid` for agent
 ownership checks.
 
 **`AdminService`** (`core/admin/`) orchestrates the elevated admin plane for
-approved external apps: validates inputs, caps search result sizes, and
-delegates opaque provider-dialect strings to `AdminStoragePort`. The provider
-describes its own query language to clients via a TypeScript `.d.ts` typehead
-it authors (see `docs/specs/2026-08-01-admin-typehead-mcp.md`). The admin
-plane is served on a separate MCP connection (`src/admin.ts` →
-`transports/mcp-admin-stdio/`) with exactly two tools — `admin_search` and
-`admin_execute` — plus the typehead as MCP resource
-`octo-santa://admin/typehead.d.ts`. Agent-facing messaging connections never
-see these tools.
+approved external apps, in the **code-mode / programmatic-tool-calling** style:
+its two tools run caller-submitted **TypeScript**, not queries. For a run it
+binds each module's typed API (read-only for `admin_search`, full for
+`admin_execute`) as a global, delegates the opaque code to a `CodeRunnerPort`
+(`runtime/typescript/`), and normalizes the returned value onto the wire.
+Modules never expose their raw backend — the SQLite module (`SqliteAdminModule`)
+offers controlled methods like `storage.postMessage` and `storage.countMessages`,
+never SQL. Each module authors a TypeScript `.d.ts` fragment; core composes them
+into the typehead served as MCP resource `octo-santa://admin/typehead.d.ts` (see
+`docs/specs/2026-08-01-admin-typehead-mcp.md`). The plane is served on a separate
+MCP connection (`src/admin.ts` → `transports/mcp-admin-stdio/`); agent-facing
+messaging connections never see these tools. Core stays agnostic about both the
+language runtime and what any module does, so new modules and runtimes drop in
+without core changes.
 
 ### Domain Utilities (`core/utils.ts`)
 
