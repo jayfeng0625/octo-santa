@@ -5,8 +5,8 @@
 //
 // Raw SQL is deliberately absent — the module exposes only controlled methods
 // that uphold the messaging invariants. Keep this in lockstep with the
-// StorageReadApi / StorageWriteApi interfaces in admin-module.ts; the
-// drift-guard test asserts the two declare exactly the same method sets.
+// StorageApi interface in admin-module.ts; the drift-guard test asserts the
+// two declare exactly the same method set.
 
 export const STORAGE_TYPEHEAD = `\
 // ── Module "storage" (provider: sqlite) ─────────────────────────────────────
@@ -108,8 +108,9 @@ interface SendMessageInput {
   mentions?: string[];
 }
 
-/** What \`storage\` can do in a read-only run. */
-interface StorageReadApi {
+/** Everything \`storage\` can do. */
+interface StorageApi {
+  // ── Reading ──
   listAgents(): AgentRecord[];
   getAgent(id: string): AgentRecord | null;
   listChannels(): ChannelRecord[];
@@ -122,10 +123,8 @@ interface StorageReadApi {
   countMessages(filter?: CountFilter): CountRecord[];
   /** The newest message id right now. Save it, then pass it as \`after_id\` next time to get only what arrived since. */
   getLatestMessageId(): number;
-}
 
-/** What \`storage\` can do in a read/write run: everything above, plus these. */
-interface StorageWriteApi extends StorageReadApi {
+  // ── Writing ──
   /** Create an agent so it can send messages. Safe to call every time — does nothing if it already exists. */
   createAgentIfMissing(id: string): AgentRecord;
   /** Create a channel, with its creator joined. Safe to call every time. Direct-message names are not allowed here. */
@@ -145,9 +144,5 @@ interface StorageWriteApi extends StorageReadApi {
   sendDirectMessage(input: { from: string; to: string; content: string }): MessageRecord;
 }
 
-/**
- * In a read-only run, \`storage\` has the StorageReadApi methods only — the
- * writing methods are not there at all.
- */
-declare const storage: StorageWriteApi;
+declare const storage: StorageApi;
 `;

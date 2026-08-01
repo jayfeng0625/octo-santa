@@ -28,21 +28,19 @@ function setup() {
   return { db, admin, configs, resources, invoke };
 }
 
-describe("admin plane tool surface", () => {
+describe("admin tool surface", () => {
   it("exposes exactly search and execute — nothing else", () => {
     const { db, configs } = setup();
     expect(Object.keys(configs).sort()).toEqual(["admin_execute", "admin_search"]);
     db.close();
   });
 
-  it("both tools take code, not queries", () => {
+  it("search takes a keyword query for discovery; execute takes code", () => {
     const { db, admin, configs } = setup();
-    const language = admin.describe().language;
-    for (const name of Object.keys(configs)) {
-      const shape = configs[name].inputSchema.shape;
-      expect(Object.keys(shape), `${name} input keys`).toEqual(["code"]);
-      expect(configs[name].description, `${name} names the language`).toContain(language);
-    }
+    expect(Object.keys(configs.admin_search.inputSchema.shape)).toEqual(["query", "limit"]);
+    expect(configs.admin_search.description).toContain("discover what");
+    expect(Object.keys(configs.admin_execute.inputSchema.shape)).toEqual(["code"]);
+    expect(configs.admin_execute.description).toContain(admin.describe().language);
     db.close();
   });
 
@@ -57,7 +55,7 @@ describe("admin plane tool surface", () => {
     db.close();
   });
 
-  it("search is read-only and closed-world; execute is destructive", () => {
+  it("search is a read-only lookup; execute is destructive", () => {
     const { db, configs } = setup();
     expect(configs.admin_search.annotations.readOnlyHint).toBe(true);
     expect(configs.admin_search.annotations.openWorldHint).toBe(false);
@@ -80,7 +78,7 @@ describe("typehead resource", () => {
     expect(text).toContain("declare const storage");
     // Core stays out of MCP naming; the transport supplies the mapping.
     expect(admin.describe().typehead).not.toContain("admin_search");
-    expect(text).toContain("`admin_search` tool performs a read-only");
+    expect(text).toContain("`admin_search` tool searches these");
     db.close();
   });
 
@@ -95,8 +93,13 @@ describe("typehead resource", () => {
 });
 
 describe("structured output contract", () => {
-  it("real code runs parse against the declared outputSchema", async () => {
+  it("real search and execute results parse against the declared outputSchemas", async () => {
     const { db, invoke } = setup();
+
+    const searched = await invoke("admin_search", { query: "create channel", limit: 3 });
+    expect(searched.matches.length).toBeGreaterThan(0);
+    expect(searched.matches.length).toBeLessThanOrEqual(3);
+    expect(searched.matches.map((m: any) => m.name)).toContain("createChannelIfMissing");
 
     const executed = await invoke("admin_execute", {
       code: `
@@ -107,11 +110,6 @@ describe("structured output contract", () => {
     });
     expect(executed.result.channelId).toBe(1);
     expect(executed.logs).toEqual(["[log] created wire-check"]);
-
-    const searched = await invoke("admin_search", {
-      code: `return storage.listChannels().map((c) => c.name);`,
-    });
-    expect(searched.result).toEqual(["wire-check"]);
 
     db.close();
   });

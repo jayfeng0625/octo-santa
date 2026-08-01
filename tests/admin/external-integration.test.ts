@@ -1,9 +1,9 @@
-// End-to-end proof of the admin plane's reason to exist: an approved external
-// app (e.g. a Linear/Jira webhook bridge) submits TypeScript to
-// admin_search/admin_execute — never raw SQL — and the ordinary messaging
-// plane (service reads and the notification watcher's queries) picks up its
-// writes exactly as if an agent had sent them. Cross-process by construction:
-// the only thing the two planes share is the SQLite file.
+// End-to-end proof of the admin API's reason to exist: an approved external
+// app (e.g. a Linear/Jira webhook bridge) discovers what to call with search,
+// then submits TypeScript to execute — never raw SQL — and the ordinary
+// messaging plane (service reads and the notification watcher's queries)
+// picks up its writes exactly as if an agent had sent them. Cross-process by
+// construction: the only thing the two planes share is the SQLite file.
 
 import { describe, it, expect, afterEach } from "bun:test";
 import { cleanupDb, testDbPath, setupTestDb } from "../helpers/db";
@@ -35,17 +35,23 @@ function setup() {
   return { db, messaging, admin, notificationQueries };
 }
 
-describe("external app integration via the admin plane", () => {
-  it("an issue-tracker bridge delivers a message agents actually receive", async () => {
+describe("external app integration via the admin API", () => {
+  it("a bridge discovers how to send with search, then delivers with execute", async () => {
     const { db, messaging, admin, notificationQueries } = setup();
 
     // An agent sets up a triage channel through the normal messaging plane.
     messaging.register("triage-bot");
     messaging.createChannel("triage-bot", "eng-triage");
 
-    // The webhook bridge submits one TypeScript program that decides where to
-    // push and delivers — the code-mode plan: look up state, act, return only
-    // what the caller needs.
+    // Step 1 — discovery: the bridge searches the declarations for what it
+    // needs instead of loading the whole document into context.
+    const found = admin.search("send message to a channel");
+    expect(found.matches[0]!.name).toBe("sendMessage");
+    const declaration = found.matches[0]!.declaration;
+    expect(declaration).toContain("sendMessage(input: SendMessageInput)");
+
+    // Step 2 — execution: one TypeScript program that decides where to push
+    // and delivers, returning only what the caller needs.
     const outcome = await admin.execute(`
       const event = { issue: "LIN-142", status: "In Review" };
       storage.createAgentIfMissing("linear-hook");
@@ -77,20 +83,7 @@ describe("external app integration via the admin plane", () => {
     db.close();
   });
 
-  it("write methods are absent from admin_search runs", async () => {
-    const { db, admin } = setup();
-    const surface = await admin.search(
-      `return { post: typeof (storage as any).sendMessage, list: typeof storage.listChannels };`
-    );
-    expect(surface.result).toEqual({ post: "undefined", list: "function" });
-    // Attempting the write anyway fails inside the code run.
-    expect(
-      admin.search(`(storage as any).sendMessage({}); return 1;`)
-    ).rejects.toThrow();
-    db.close();
-  });
-
-  it("supports OLAP analytics in code without touching cursors", async () => {
+  it("supports reporting over history in code without touching cursors", async () => {
     const { db, messaging, admin } = setup();
 
     messaging.register("alice");
@@ -101,8 +94,8 @@ describe("external app integration via the admin plane", () => {
     messaging.send("alice", "metrics", "two");
     messaging.send("bob", "metrics", "three");
 
-    // Aggregation + reshaping happens inside the run; only the digest returns.
-    const outcome = await admin.search(`
+    // Counting + reshaping happens inside the run; only the digest returns.
+    const outcome = await admin.execute(`
       const perSender = storage.countMessages({ channel: "metrics", group_by: "sender" });
       const total = storage.countMessages({ channel: "metrics" })[0].count;
       console.log("rows scanned:", total);
@@ -111,7 +104,7 @@ describe("external app integration via the admin plane", () => {
     expect(outcome.result).toEqual({ alice: 2, bob: 1 });
     expect(outcome.logs).toEqual(["[log] rows scanned: 3"]);
 
-    // Analytics reads are pure: bob's unread cursor is untouched.
+    // Reporting reads are pure: bob's unread cursor is untouched.
     const unread = messaging.read("bob", "metrics", {});
     expect(unread.map((m) => m.content)).toEqual(["one", "two"]);
 
@@ -123,10 +116,10 @@ describe("external app integration via the admin plane", () => {
     messaging.register("worker");
     messaging.createChannel("worker", "feed");
 
-    const hwm = await admin.search(`return storage.getLatestMessageId();`);
+    const hwm = await admin.execute(`return storage.getLatestMessageId();`);
     messaging.send("worker", "feed", "new event");
 
-    const delta = await admin.search(`
+    const delta = await admin.execute(`
       const rows = storage.getMessages({ after_id: ${JSON.stringify(hwm.result)} });
       return rows.map((m) => ({ channel: m.channel, content: m.content }));
     `);

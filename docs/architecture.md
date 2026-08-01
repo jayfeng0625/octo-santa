@@ -71,7 +71,8 @@ src/
       service.ts                 ← MessagingService — orchestrates messaging operations
       types.ts                   ← Agent, Channel, Message, etc.
     admin/
-      service.ts                 ← AdminService — composes module APIs, runs caller code
+      service.ts                 ← AdminService — search (discovery) + execute (run caller code)
+      typehead-index.ts          ← Chunks module .d.ts fragments for keyword search
       types.ts                   ← Module description, run results, JsonValue
     ports.ts                     ← All port interfaces (repositories, notification, admin)
     utils.ts                     ← Pure domain utilities (validation, mention parsing, liveness)
@@ -124,7 +125,7 @@ The core defines interfaces that adapters implement:
 | `ChannelRepository` | Channel CRUD, membership, rename with announcement |
 | `MessageRepository` | Message insert, cursor-advancing reads, history reads |
 | `NotificationPort` | Push delivery contract shared by the notification and transport adapters |
-| `AdminModulePort` | Elevated admin API: a module's typed API + `.d.ts` fragment (`describe`, `createReadApi`, `createWriteApi`) |
+| `AdminModulePort` | Elevated admin API: a module's typed API + `.d.ts` fragment (`describe`, `createApi`) |
 | `CodeRunnerPort` | Runs caller-submitted code with module globals bound |
 
 Core does not deliver notifications. `send()` extracts mentions and persists the
@@ -140,21 +141,24 @@ registration, channels, messaging, DMs, mentions, cursor management.
 The service is a process-scoped singleton. It holds `process.pid` for agent
 ownership checks.
 
-**`AdminService`** (`core/admin/`) orchestrates the elevated admin plane for
-approved external apps, in the **code-mode / programmatic-tool-calling** style:
-its two tools run caller-submitted **TypeScript**, not queries. For a run it
-binds each module's typed API (read-only for `admin_search`, full for
-`admin_execute`) as a global, delegates the opaque code to a `CodeRunnerPort`
+**`AdminService`** (`core/admin/`) drives the elevated admin API for approved
+external apps, in the **code-mode / programmatic-tool-calling** style — two
+operations, mirroring Code Mode's search/execute pair. `search(query)` is
+discovery: it keyword-searches the modules' composed `.d.ts` declarations
+(via `TypeheadIndex`) and returns the matching methods and types with their
+docs, so an agent pulls only what it needs into context. `execute(code)` is
+the only operation that runs code: it binds each module's typed API as a
+global, delegates the opaque TypeScript to a `CodeRunnerPort`
 (`runtime/typescript/`), and normalizes the returned value onto the wire.
 Modules never expose their raw backend — the SQLite module (`SqliteAdminModule`)
 offers controlled methods like `storage.sendMessage` and `storage.countMessages`,
-never SQL. Each module authors a TypeScript `.d.ts` fragment; core composes them
-into the typehead served as MCP resource `octo-santa://admin/typehead.d.ts` (see
-`docs/specs/2026-08-01-admin-typehead-mcp.md`). The plane is served on a separate
-MCP connection (`src/admin.ts` → `transports/mcp-admin-stdio/`); agent-facing
-messaging connections never see these tools. Core stays agnostic about both the
-language runtime and what any module does, so new modules and runtimes drop in
-without core changes.
+never SQL. Each module authors its own `.d.ts` fragment; the full composed
+document also remains readable as MCP resource `octo-santa://admin/typehead.d.ts`
+(see `docs/specs/2026-08-01-admin-typehead-mcp.md`). The admin API is served on
+a separate MCP connection (`src/admin.ts` → `transports/mcp-admin-stdio/`);
+agent-facing messaging connections never see these tools. Core stays agnostic
+about both the language runtime and what any module does, so new modules and
+runtimes drop in without core changes.
 
 ### Domain Utilities (`core/utils.ts`)
 

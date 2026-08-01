@@ -54,8 +54,9 @@ export interface MessageRepository {
 
 // --- Admin API ports (elevated code-mode access) ---
 // Core's need: give approved external apps an elevated integration surface
-// through exactly two generic operations — a read-only run and a read/write
-// run — that execute caller-submitted code. Core stays agnostic about what
+// through exactly two generic operations — search, which looks up methods
+// and types in the modules' declarations (discovery), and execute, which
+// runs caller-submitted code against them. Core stays agnostic about what
 // the code can do: each module contributes a typed API object (bound as a
 // global inside the code) plus a .d.ts fragment describing it, and never
 // exposes its raw backend (SQL, files, wire protocols) through that API.
@@ -64,12 +65,8 @@ export interface MessageRepository {
 
 export interface AdminModulePort {
   describe(): AdminModuleDescription;
-  // Bound into read-only runs. Nothing reachable from this object may mutate
-  // state — core cannot verify that, so it is a rule for implementers.
-  createReadApi(): object;
-  // Bound into read/write runs: the read surface plus the module's controlled
-  // write methods.
-  createWriteApi(): object;
+  // The API object bound as this module's global inside execute runs.
+  createApi(): object;
 }
 
 // Executes caller-submitted code with the given globals bound. An adapter

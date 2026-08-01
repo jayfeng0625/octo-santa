@@ -80,7 +80,8 @@ export interface SendMessageInput {
   mentions?: string[];
 }
 
-export interface StorageReadApi {
+export interface StorageApi {
+  // Reading
   listAgents(): AgentRecord[];
   getAgent(id: string): AgentRecord | null;
   listChannels(): ChannelRecord[];
@@ -89,9 +90,7 @@ export interface StorageReadApi {
   getMessages(filter?: MessageFilter): MessageRecord[];
   countMessages(filter?: CountFilter): CountRecord[];
   getLatestMessageId(): number;
-}
-
-export interface StorageWriteApi extends StorageReadApi {
+  // Writing
   createAgentIfMissing(id: string): AgentRecord;
   createChannelIfMissing(name: string, createdBy: string): ChannelRecord;
   addMember(channel: string, agentId: string): void;
@@ -152,8 +151,9 @@ export class SqliteAdminModule implements AdminModulePort {
 
   // Bound method references rather than arrow wrappers: TypeScript then checks
   // each full signature against the interface, so a parameter added to a
-  // method can't be silently dropped here.
-  createReadApi(): StorageReadApi {
+  // method can't be silently dropped here. The explicit enumeration is what
+  // keeps internals (raw db access, private helpers) off the surface.
+  createApi(): StorageApi {
     return {
       listAgents: this.listAgents.bind(this),
       getAgent: this.getAgent.bind(this),
@@ -163,12 +163,6 @@ export class SqliteAdminModule implements AdminModulePort {
       getMessages: this.getMessages.bind(this),
       countMessages: this.countMessages.bind(this),
       getLatestMessageId: this.getLatestMessageId.bind(this),
-    };
-  }
-
-  createWriteApi(): StorageWriteApi {
-    return {
-      ...this.createReadApi(),
       createAgentIfMissing: this.createAgentIfMissing.bind(this),
       createChannelIfMissing: this.createChannelIfMissing.bind(this),
       addMember: this.addMember.bind(this),

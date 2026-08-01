@@ -5,14 +5,21 @@ import type {
   CodeRunResult,
   JsonValue,
 } from "./types";
+import { TypeheadIndex, type TypeheadSearchResult } from "./typehead-index";
 
-// Composes the typed surface from the registered modules, binds each module's
-// API into the caller's run (read-only APIs for search, full APIs for
-// execute), and normalizes the outcome onto the wire contract. Core never
-// inspects the code or the module APIs, so modules with entirely different
-// interaction patterns compose without core changes.
+const DEFAULT_SEARCH_LIMIT = 10;
+
+// The two operations of the admin API, code-mode style:
+// - search: discovery. Looks up methods and types in the modules' composed
+//   typehead by keyword, so an agent pulls only the declarations it needs
+//   into context instead of the whole document.
+// - execute: the only operation that runs code. Binds every module's API as
+//   a global and hands the caller's code to the runner.
+// Core never inspects the code or the module APIs, so modules with entirely
+// different interaction patterns compose without core changes.
 export class AdminService {
   private readonly modules = new Map<string, AdminModulePort>();
+  private readonly index: TypeheadIndex;
   private readonly description: AdminApiDescription;
 
   constructor(
@@ -33,7 +40,8 @@ export class AdminService {
     }
 
     // Built once: describe() is not required to be cheap, and the composed
-    // document is identical for every caller.
+    // document and its search index are identical for every caller.
+    this.index = new TypeheadIndex(descriptions);
     this.description = {
       language: runner.language,
       modules: descriptions.map(({ globalName, provider }) => ({ globalName, provider })),
@@ -48,22 +56,16 @@ export class AdminService {
     return this.description;
   }
 
-  async search(code: string): Promise<AdminRunResult> {
-    return this.run(code, (m) => m.createReadApi());
+  search(query: string, limit: number = DEFAULT_SEARCH_LIMIT): TypeheadSearchResult {
+    if (!query.trim()) throw new Error("query must not be empty");
+    return this.index.search(query, Math.max(1, limit));
   }
 
   async execute(code: string): Promise<AdminRunResult> {
-    return this.run(code, (m) => m.createWriteApi());
-  }
-
-  private async run(
-    code: string,
-    apiOf: (module: AdminModulePort) => object
-  ): Promise<AdminRunResult> {
     if (!code.trim()) throw new Error("code must not be empty");
     const bindings: Record<string, object> = {};
     for (const [name, module] of this.modules) {
-      bindings[name] = apiOf(module);
+      bindings[name] = module.createApi();
     }
     return normalizeResult(await this.runner.run(code, bindings));
   }
@@ -78,16 +80,15 @@ function buildTypeheadHeader(globalNames: string[]): string {
 /**
  * octo-santa admin API.
  *
+ * Two operations drive everything here. Search looks up methods and types in
+ * these declarations by keyword — use it to find what to call and how, and
+ * pull in only what you need. Execute runs your code against them.
+ *
  * Your code runs as the body of an async function: use \`await\` freely and
  * \`return\` a value that can be written as JSON — that value, plus anything
  * you logged with console, comes back as the result. Imports and require()
  * do not work; everything you need is already a global variable:
  * ${globalNames.join(", ")} (declared below) and console.
- *
- * There are two ways to run code. A read-only run binds each module's reading
- * methods only — the writing methods are not there at all. A read/write run
- * binds everything, including the methods that change data. Each module lists
- * both sets below.
  */
 `;
 }

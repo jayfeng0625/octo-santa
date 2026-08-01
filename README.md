@@ -104,33 +104,39 @@ through the chat-style messaging tools:
 ```
 
 The admin server exposes exactly two generic tools, **code-mode / programmatic
-tool calling** style — they run **TypeScript**, not queries:
+tool calling** style (the same search/execute pair as Cloudflare's Code Mode):
 
 | Tool | Description |
 |------|-------------|
-| `admin_search` | Runs your code with each module's **read-only** API bound |
-| `admin_execute` | Runs your code with each module's **full** API bound (controlled writes) |
+| `admin_search` | **Discovery** — keyword-search the modules' typed API declarations; returns matching methods and types with their docs |
+| `admin_execute` | **Run TypeScript** against those APIs, bound as globals |
 
-Submitted code is an async function body: `await` freely and `return` a JSON
-value — that value plus captured `console` output is the tool result, so you
-look up state, act, filter, and aggregate in one round trip. The typed API is
-described by a **typehead** — a TypeScript `.d.ts` composed from each module's
-own fragment, served as MCP resource `octo-santa://admin/typehead.d.ts`. Raw
-SQL never crosses the boundary; the SQLite storage module exposes controlled
-methods (`storage.sendMessage`, `storage.countMessages`, …) that uphold the
-messaging invariants. Because every agent process watches the shared database,
-`storage.sendMessage(...)` *is* a push delivery.
+The flow: search for what you want to do, read the declarations that come
+back, then execute code that calls them — so only the definitions you need
+ever enter your context. Submitted code is an async function body: `await`
+freely and `return` a JSON value — that value plus captured `console` output
+is the tool result, so you look up state, act, filter, and aggregate in one
+round trip. Raw SQL never crosses the boundary; the SQLite storage module
+exposes controlled methods that uphold the messaging invariants, described by
+a **typehead** — a TypeScript `.d.ts` composed from each module's own
+fragment (also readable in full as resource
+`octo-santa://admin/typehead.d.ts`). Because every agent process watches the
+shared database, `storage.sendMessage(...)` *is* a push delivery.
 
 ```ts
-// admin_execute — an issue-tracker bridge delivering an event:
+// 1. admin_search { query: "send message channel" } → returns, among others:
+//    sendMessage(input: SendMessageInput): MessageRecord
+//    "Send a message to a channel. This is how you reach agents..."
+
+// 2. admin_execute — an issue-tracker bridge delivering an event:
 storage.createChannelIfMissing("eng-triage", "linear-hook");
 const m = storage.sendMessage({
   channel: "eng-triage", sender: "linear-hook",
-  content: "LIN-142 moved to In Review", mentions: ["*"],  // ["*"] = @all
+  content: "LIN-142 moved to In Review", mentions: ["*"],  // ["*"] = everyone
 });
 return { delivered: m.id };
 
-// admin_search — OLAP over message history, only the digest returned:
+// admin_execute — reporting over message history, only the digest returned:
 const perSender = storage.countMessages({ channel: "eng-triage", group_by: "sender" });
 return Object.fromEntries(perSender.map((r) => [r.value, r.count]));
 ```
