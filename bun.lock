@@ -12,6 +12,10 @@
         "typescript": "^5",
       },
     },
+    "packages/linear-bridge": {
+      "name": "linear-bridge",
+      "version": "0.1.0",
+    },
     "packages/octo-santa": {
       "name": "octo-santa",
       "version": "0.9.0",
@@ -105,6 +109,8 @@
     "isarray": ["isarray@1.0.0", "", {}, "sha512-VLghIWNM6ELQzo7zwmcg0NmTVyWKYjvIeM83yjp0wRDTmUnrM678fQbcKBo6n2CJEF0szoG//ytg+TKla89ALQ=="],
 
     "json-colorizer": ["json-colorizer@2.2.2", "", { "dependencies": { "chalk": "^2.4.1", "lodash.get": "^4.4.2" } }, "sha512-56oZtwV1piXrQnRNTtJeqRv+B9Y/dXAYLqBBaYl/COcUdoZxgLBLAO88+CnkbT6MxNs0c5E9mPBIb2sFcNz3vw=="],
+
+    "linear-bridge": ["linear-bridge@workspace:packages/linear-bridge"],
 
     "lodash": ["lodash@4.18.1", "", {}, "sha512-dMInicTPVE8d1e5otfwmmjlxkZoUpiVLwyeTdUsi/Caj/gfzzblBcCE5sRHV/AsjuCmxWrte2TNGSYuCeCq+0Q=="],
 
