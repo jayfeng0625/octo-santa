@@ -29,10 +29,10 @@ describe("hexagonal architecture boundaries", () => {
   describe("core must not depend on adapter layers", () => {
     it("core must not depend on storage layer", async () => {
       const rule = projectFiles()
-        .inFolder("src/core/**")
+        .inFolder("packages/octo-santa/src/core/**")
         .shouldNot()
         .dependOnFiles()
-        .inFolder("src/storage/**");
+        .inFolder("packages/octo-santa/src/storage/**");
 
       const violations = await rule.check(CHECK_OPTS);
       expect(violations).toEqual([]);
@@ -40,10 +40,10 @@ describe("hexagonal architecture boundaries", () => {
 
     it("core must not depend on transports layer", async () => {
       const rule = projectFiles()
-        .inFolder("src/core/**")
+        .inFolder("packages/octo-santa/src/core/**")
         .shouldNot()
         .dependOnFiles()
-        .inFolder("src/transports/**");
+        .inFolder("packages/octo-santa/src/transports/**");
 
       const violations = await rule.check(CHECK_OPTS);
       expect(violations).toEqual([]);
@@ -51,10 +51,10 @@ describe("hexagonal architecture boundaries", () => {
 
     it("core must not depend on notifications layer", async () => {
       const rule = projectFiles()
-        .inFolder("src/core/**")
+        .inFolder("packages/octo-santa/src/core/**")
         .shouldNot()
         .dependOnFiles()
-        .inFolder("src/notifications/**");
+        .inFolder("packages/octo-santa/src/notifications/**");
 
       const violations = await rule.check(CHECK_OPTS);
       expect(violations).toEqual([]);
@@ -62,10 +62,10 @@ describe("hexagonal architecture boundaries", () => {
 
     it("core must not depend on runtime layer", async () => {
       const rule = projectFiles()
-        .inFolder("src/core/**")
+        .inFolder("packages/octo-santa/src/core/**")
         .shouldNot()
         .dependOnFiles()
-        .inFolder("src/runtime/**");
+        .inFolder("packages/octo-santa/src/runtime/**");
 
       const violations = await rule.check(CHECK_OPTS);
       expect(violations).toEqual([]);
@@ -77,7 +77,7 @@ describe("hexagonal architecture boundaries", () => {
   describe("core must not import infrastructure modules", () => {
     it("core must not import bun:sqlite or @modelcontextprotocol", async () => {
       const rule = projectFiles()
-        .inFolder("src/core/**")
+        .inFolder("packages/octo-santa/src/core/**")
         .should()
         .adhereTo(
           hasNoForbiddenImports,
@@ -94,10 +94,10 @@ describe("hexagonal architecture boundaries", () => {
   describe("no cross-adapter dependencies", () => {
     it("storage must not depend on transports", async () => {
       const rule = projectFiles()
-        .inFolder("src/storage/**")
+        .inFolder("packages/octo-santa/src/storage/**")
         .shouldNot()
         .dependOnFiles()
-        .inFolder("src/transports/**");
+        .inFolder("packages/octo-santa/src/transports/**");
 
       const violations = await rule.check(CHECK_OPTS);
       expect(violations).toEqual([]);
@@ -105,10 +105,10 @@ describe("hexagonal architecture boundaries", () => {
 
     it("storage must not depend on notifications", async () => {
       const rule = projectFiles()
-        .inFolder("src/storage/**")
+        .inFolder("packages/octo-santa/src/storage/**")
         .shouldNot()
         .dependOnFiles()
-        .inFolder("src/notifications/**");
+        .inFolder("packages/octo-santa/src/notifications/**");
 
       const violations = await rule.check(CHECK_OPTS);
       expect(violations).toEqual([]);
@@ -116,10 +116,10 @@ describe("hexagonal architecture boundaries", () => {
 
     it("transports must not depend on storage", async () => {
       const rule = projectFiles()
-        .inFolder("src/transports/**")
+        .inFolder("packages/octo-santa/src/transports/**")
         .shouldNot()
         .dependOnFiles()
-        .inFolder("src/storage/**");
+        .inFolder("packages/octo-santa/src/storage/**");
 
       const violations = await rule.check(CHECK_OPTS);
       expect(violations).toEqual([]);
@@ -127,10 +127,10 @@ describe("hexagonal architecture boundaries", () => {
 
     it("transports must not depend on notifications", async () => {
       const rule = projectFiles()
-        .inFolder("src/transports/**")
+        .inFolder("packages/octo-santa/src/transports/**")
         .shouldNot()
         .dependOnFiles()
-        .inFolder("src/notifications/**");
+        .inFolder("packages/octo-santa/src/notifications/**");
 
       const violations = await rule.check(CHECK_OPTS);
       expect(violations).toEqual([]);
@@ -138,10 +138,10 @@ describe("hexagonal architecture boundaries", () => {
 
     it("notifications must not depend on transports", async () => {
       const rule = projectFiles()
-        .inFolder("src/notifications/**")
+        .inFolder("packages/octo-santa/src/notifications/**")
         .shouldNot()
         .dependOnFiles()
-        .inFolder("src/transports/**");
+        .inFolder("packages/octo-santa/src/transports/**");
 
       const violations = await rule.check(CHECK_OPTS);
       expect(violations).toEqual([]);
@@ -149,10 +149,10 @@ describe("hexagonal architecture boundaries", () => {
 
     it("notifications must not depend on storage", async () => {
       const rule = projectFiles()
-        .inFolder("src/notifications/**")
+        .inFolder("packages/octo-santa/src/notifications/**")
         .shouldNot()
         .dependOnFiles()
-        .inFolder("src/storage/**");
+        .inFolder("packages/octo-santa/src/storage/**");
 
       const violations = await rule.check(CHECK_OPTS);
       expect(violations).toEqual([]);
@@ -163,10 +163,10 @@ describe("hexagonal architecture boundaries", () => {
     for (const other of ["storage", "transports", "notifications"]) {
       it(`runtime must not depend on ${other}`, async () => {
         const rule = projectFiles()
-          .inFolder("src/runtime/**")
+          .inFolder("packages/octo-santa/src/runtime/**")
           .shouldNot()
           .dependOnFiles()
-          .inFolder(`src/${other}/**`);
+          .inFolder(`packages/octo-santa/src/${other}/**`);
 
         const violations = await rule.check(CHECK_OPTS);
         expect(violations).toEqual([]);
@@ -174,10 +174,10 @@ describe("hexagonal architecture boundaries", () => {
 
       it(`${other} must not depend on runtime`, async () => {
         const rule = projectFiles()
-          .inFolder(`src/${other}/**`)
+          .inFolder(`packages/octo-santa/src/${other}/**`)
           .shouldNot()
           .dependOnFiles()
-          .inFolder("src/runtime/**");
+          .inFolder("packages/octo-santa/src/runtime/**");
 
         const violations = await rule.check(CHECK_OPTS);
         expect(violations).toEqual([]);

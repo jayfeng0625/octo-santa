@@ -5,7 +5,7 @@ import { createSqliteRepos } from "../src/storage/sqlite";
 import { MessagingService } from "../src/core/messaging/service";
 
 const TEST_DB = testDbPath("poll");
-const projectRoot = process.cwd();
+const projectRoot = new URL("..", import.meta.url).pathname.replace(/\/$/, "");
 
 afterEach(() => cleanupDb(TEST_DB));
 

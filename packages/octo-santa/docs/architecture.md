@@ -64,6 +64,8 @@ If the answer to 1 or 2 is "no", the design is incomplete. If the answer to
 
 ## Directory Layout
 
+Paths below are relative to `packages/octo-santa/` (this package's root in the monorepo).
+
 ```
 src/
   core/                          ← Domain logic. No infrastructure imports.

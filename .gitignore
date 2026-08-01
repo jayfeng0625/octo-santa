@@ -10,10 +10,10 @@ node_modules/
 dist/
 
 # Plans are ephemeral working documents
-docs/plans/
+**/docs/plans/
 
 # Research docs are ephemeral
-docs/research/
+**/docs/research/
 
 # Remediation specs are ephemeral
-docs/specs/remediation/
+**/docs/specs/remediation/

@@ -27,20 +27,20 @@ This produces `dist/latest/main.js` — the MCP server bundle (requires Bun to r
 ### Claude Code CLI
 
 ```bash
-claude mcp add octo-santa -- bun run /path/to/octo-santa/dist/latest/main.js
+claude mcp add octo-santa -- bun run /path/to/<repo>/packages/octo-santa/dist/latest/main.js
 ```
 
 With a custom database path:
 
 ```bash
 claude mcp add --env OCTO_SANTA_DB=/path/to/messages.db octo-santa \
-  -- bun run /path/to/octo-santa/dist/latest/main.js
+  -- bun run /path/to/<repo>/packages/octo-santa/dist/latest/main.js
 ```
 
 ### Codex CLI
 
 ```bash
-codex mcp add octo-santa -- bun run /path/to/octo-santa/dist/latest/main.js
+codex mcp add octo-santa -- bun run /path/to/<repo>/packages/octo-santa/dist/latest/main.js
 ```
 
 With a custom database path:
@@ -48,7 +48,7 @@ With a custom database path:
 ```bash
 codex mcp add octo-santa \
   --env OCTO_SANTA_DB=/path/to/messages.db \
-  -- bun run /path/to/octo-santa/dist/latest/main.js
+  -- bun run /path/to/<repo>/packages/octo-santa/dist/latest/main.js
 ```
 
 ### Manual JSON config
@@ -60,7 +60,7 @@ codex mcp add octo-santa \
   "mcpServers": {
     "octo-santa": {
       "command": "bun",
-      "args": ["run", "/path/to/octo-santa/dist/latest/main.js"]
+      "args": ["run", "/path/to/<repo>/packages/octo-santa/dist/latest/main.js"]
     }
   }
 }
@@ -75,7 +75,7 @@ Same format — makes octo-santa available to all projects.
 During development, run from source instead of the build:
 
 ```bash
-claude mcp add octo-santa -- bun run /path/to/octo-santa/src/main.ts
+claude mcp add octo-santa -- bun run /path/to/<repo>/packages/octo-santa/src/main.ts
 ```
 
 ### Configuration Options

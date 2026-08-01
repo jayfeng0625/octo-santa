@@ -4,16 +4,20 @@
   "workspaces": {
     "": {
       "name": "octo-santa",
-      "dependencies": {
-        "@modelcontextprotocol/server": "2.0.0",
-        "zod": "^4.3.6",
-      },
       "devDependencies": {
         "@types/bun": "latest",
         "archunit": "^2.1.66",
       },
       "peerDependencies": {
         "typescript": "^5",
+      },
+    },
+    "packages/octo-santa": {
+      "name": "octo-santa",
+      "version": "0.9.0",
+      "dependencies": {
+        "@modelcontextprotocol/server": "^2.0.0",
+        "zod": "^4.3.6",
       },
     },
   },
@@ -113,6 +117,8 @@
     "minimatch": ["minimatch@10.2.5", "", { "dependencies": { "brace-expansion": "^5.0.5" } }, "sha512-MULkVLfKGYDFYejP07QOurDLLQpcjk7Fw+7jXS2R2czRQzR56yHRveU5NDJEOviH+hETZKSkIk5c+T23GjFUMg=="],
 
     "node-stream": ["node-stream@1.7.0", "", { "dependencies": { "lodash": "^4.17.2", "readable-stream": "^2.3.3", "split2": "^2.1.0", "stream-combiner2": "^1.1.1", "through2": "^2.0.1" } }, "sha512-AB1qHzJWjAuxpDvTr/n1wvKVOg8c9BjAHV21QXq+q9yEUNr7wSqfHmAhAzvpQWSbf8mQQle3fjsnu3R14jrElA=="],
+
+    "octo-santa": ["octo-santa@workspace:packages/octo-santa"],
 
     "path-parse": ["path-parse@1.0.7", "", {}, "sha512-LDJzPVEEEPR+y48z93A0Ed0yXb8pAByGWo/k5YYdYgpY2/2EsOsksJrq7lOHxryrVOn1ejG6oAp8ahvOIQD8sw=="],
 
