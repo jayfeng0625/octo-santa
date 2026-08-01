@@ -23,6 +23,18 @@ describe("buildInstructions", () => {
     expect(text).toContain("CANNOT run background tasks");
   });
 
+  it("documents the resources surface: unfiltered activity pings, cursor-free reads", () => {
+    const text = buildInstructions();
+    expect(text).toContain("RESOURCES");
+    // resources/updated is an unfiltered activity ping, unlike the mention-
+    // filtered custom push.
+    expect(text).toMatch(/ALL new messages/);
+    expect(text).toMatch(/not just mentions/);
+    // resources/read never consumes unread — cursors belong to the tool.
+    expect(text).toMatch(/NEVER consumes unread/);
+    expect(text).toContain("messaging_read_messages only");
+  });
+
   it("does not reference removed features", () => {
     const text = buildInstructions();
     expect(text).not.toContain("BRAIN:");

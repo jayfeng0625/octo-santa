@@ -1,7 +1,12 @@
-import { McpServer } from "@modelcontextprotocol/server";
+import {
+  McpServer,
+  ResourceTemplate,
+  ResourceNotFoundError,
+} from "@modelcontextprotocol/server";
 import { serveStdio, type StdioServerHandle } from "@modelcontextprotocol/server/stdio";
 import { z } from "zod";
 import type { MessagingService } from "../../core/messaging/service";
+import { ChannelNotFoundError } from "../../core/messaging/errors";
 import type { NotificationPort, AgentRepository } from "../../core/ports";
 import { log } from "../../log";
 import { jsonResult, withAgent } from "./helpers";
@@ -47,6 +52,12 @@ export function buildInstructions(): string {
     "CHANNELS: messaging_create_channel to create (auto-joins you), " +
     "messaging_subscribe to join an existing channel.\n" +
     "DMs: messaging_send with to:<agent> for 1:1 -- auto-pushes, no @mention needed.\n\n" +
+    "RESOURCES (MCP): each channel is a resource at " +
+    "octo-santa://channels/<url-encoded-name>/messages. resources/read returns " +
+    "recent history (newest 50, including your own messages) and NEVER consumes unread -- " +
+    "cursors belong to messaging_read_messages only. Modern clients can subscribe via " +
+    "subscriptions/listen for notifications/resources/updated pings on ALL new messages " +
+    "in a channel (not just mentions; your own sends excluded).\n\n" +
     "BOUNDARIES:\n" +
     "- You CANNOT run background tasks or polling loops\n" +
     "- For messaging, use ONLY messaging_* tools\n" +
@@ -237,6 +248,110 @@ export function registerMessagingTools(
 
 }
 
+// Every mint of a channel resource URI must go through this helper: the
+// listen router's per-URI subscription filter is an exact string comparison,
+// so list, read, and updated-ping URIs have to be byte-identical. Channel
+// names allow [\w.,@#-]; percent-encoding keeps `#` out of the fragment and
+// `,` (every DM channel name) matchable by the template's {channel} variable,
+// which rejects raw commas.
+export function channelResourceUri(name: string): string {
+  return `octo-santa://channels/${encodeURIComponent(name)}/messages`;
+}
+
+export function registerChannelResources(
+  server: McpServer,
+  messaging: MessagingService,
+  getBoundAgentId: () => string | null
+): void {
+  server.registerResource(
+    "channel-messages",
+    new ResourceTemplate("octo-santa://channels/{channel}/messages", {
+      list: () => ({
+        resources: messaging.listChannels().map((channel) => ({
+          uri: channelResourceUri(channel.name),
+          name: channel.name,
+          description: `Message history of channel "${channel.name}"`,
+          mimeType: "application/json",
+        })),
+      }),
+    }),
+    {
+      title: "Channel messages",
+      description:
+        "Recent message history of a channel. Pure read — never advances the unread cursor.",
+      mimeType: "application/json",
+    },
+    async (uri, variables) => {
+      // UriTemplate.match does not decode, so the raw variable arrives
+      // percent-encoded exactly as minted by channelResourceUri.
+      const raw = variables["channel"];
+      const encoded = Array.isArray(raw) ? raw[0] ?? "" : raw ?? "";
+      let channelName: string;
+      try {
+        channelName = decodeURIComponent(encoded);
+      } catch {
+        throw new ResourceNotFoundError(uri.toString());
+      }
+      const agentId = getBoundAgentId();
+      if (agentId === null) {
+        throw new Error(
+          "Channel resources require a bound agent: call messaging_register first"
+        );
+      }
+      try {
+        const messages = messaging.readHistory(agentId, channelName, 50);
+        return {
+          contents: [
+            {
+              uri: uri.toString(),
+              mimeType: "application/json",
+              text: JSON.stringify(messages),
+            },
+          ],
+        };
+      } catch (error) {
+        if (error instanceof ChannelNotFoundError) {
+          throw new ResourceNotFoundError(uri.toString());
+        }
+        throw error;
+      }
+    }
+  );
+}
+
+// Builds the per-connection NotificationPort the poller drives. The custom
+// content push is era-blind (the stdio entry passes non-spec notification
+// methods straight through on both eras). The spec-native channel-activity
+// signal is modern-only: on a legacy connection the entry installs no listen
+// router, so resources/updated would reach a client that never asked,
+// unsolicited and unstamped — the era gate keeps legacy spec-compliant.
+export function createConnectionNotificationPort(
+  mcpServer: McpServer,
+  era: "legacy" | "modern"
+): NotificationPort {
+  const seenChannels = new Set<string>();
+  return {
+    notify: (content, meta) =>
+      mcpServer.server.notification({
+        method: "notifications/claude/channel",
+        params: { content, meta },
+      }),
+    notifyChannelActivity: async (channelName) => {
+      if (era !== "modern") return;
+      // First-seen heuristic: activity on a channel this connection has not
+      // seen before implies the resource list may have changed (channel
+      // creation and rename both surface as messages under the new name).
+      if (!seenChannels.has(channelName)) {
+        seenChannels.add(channelName);
+        mcpServer.sendResourceListChanged();
+      }
+      await mcpServer.server.sendResourceUpdated({
+        uri: channelResourceUri(channelName),
+      });
+    },
+  };
+}
+
 export interface McpStdioOpts {
   messaging: MessagingService;
   agents: AgentRepository;
@@ -271,6 +386,16 @@ function buildConnectionServer(
     {
       capabilities: {
         experimental: { "claude/channel": {} },
+        // `subscribe` must be declared here in the constructor: the stdio
+        // entry hands getCapabilities() to the listen router right after this
+        // factory returns, and nothing auto-sets the subscribe bit — without
+        // it the router strips resourceSubscriptions from every listen ack.
+        // Legacy connections cannot serve subscriptions (SDK v2 registers no
+        // resources/subscribe handler), so they must not advertise it.
+        resources:
+          era === "modern"
+            ? { subscribe: true, listChanged: true }
+            : { listChanged: true },
       },
       instructions: buildInstructions(),
     }
@@ -295,16 +420,7 @@ function buildConnectionServer(
       commit: () => {
         if (boundAgentId !== null) return;
         boundAgentId = agentId;
-        const port: NotificationPort = {
-          // Custom extension notifications are era-blind in SDK v2: the stdio
-          // entry passes any non-spec notification method straight through to
-          // the wire on both 2025-era and 2026-07-28 connections.
-          notify: (content, meta) =>
-            mcpServer.server.notification({
-              method: "notifications/claude/channel",
-              params: { content, meta },
-            }),
-        };
+        const port = createConnectionNotificationPort(mcpServer, era);
         pollerRef = startPoller(port, agentId);
         heartbeatTimer = setInterval(() => {
           const result = agents.heartbeatOrReclaim(agentId, process.pid);
@@ -319,6 +435,7 @@ function buildConnectionServer(
   }
 
   registerMessagingTools(mcpServer, messaging, onAgentId);
+  registerChannelResources(mcpServer, messaging, () => boundAgentId);
 
   mcpServer.server.onclose = () => {
     try {
