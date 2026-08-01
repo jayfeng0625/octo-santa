@@ -1,5 +1,6 @@
 import { describe, it, expect, afterEach } from "bun:test";
 import { SqliteMessageRepo } from "../../../src/storage/sqlite/message-repo";
+import { SqliteAdminModule } from "../../../src/storage/sqlite/admin-module";
 import { SqliteAgentRepo } from "../../../src/storage/sqlite/agent-repo";
 import { SqliteChannelRepo } from "../../../src/storage/sqlite/channel-repo";
 import { createDb } from "../../../src/storage/sqlite/db";
@@ -107,4 +108,31 @@ describe("SqliteMessageRepo", () => {
     });
   });
 
+  it("insertAndJoinSender and admin sendMessage produce identical rows via the shared insert body", () => {
+    const { db, messages, channelId } = setup();
+    const admin = new SqliteAdminModule(db).createApi();
+
+    messages.insertAndJoinSender(channelId, "agent-a", "@agent-b check", ["agent-b"]);
+    admin.sendMessage({
+      channel: "coordination",
+      sender: "agent-a",
+      content: "@agent-b check",
+      mentions: ["agent-b"],
+    });
+
+    const rows = db
+      .query("SELECT * FROM messages WHERE channel_id = ? ORDER BY id ASC")
+      .all(channelId) as Record<string, unknown>[];
+    expect(rows.length).toBe(2);
+    const [repoRow, adminRow] = rows.map(({ id, created_at, ...rest }) => rest);
+    expect(adminRow).toEqual(repoRow!);
+
+    // Both paths upsert the same sender cursor row — one row, still at 0.
+    const cursors = db
+      .query("SELECT * FROM cursors WHERE agent_id = ? AND channel_id = ?")
+      .all("agent-a", channelId) as { last_read_message_id: number }[];
+    expect(cursors.length).toBe(1);
+    expect(cursors[0]!.last_read_message_id).toBe(0);
+    db.close();
+  });
 });

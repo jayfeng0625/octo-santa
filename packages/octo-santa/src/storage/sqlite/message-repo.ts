@@ -3,6 +3,45 @@ import type { MessageRepository } from "../../core/ports";
 import type { Message } from "../../core/messaging/types";
 import { withRetrySync } from "./db";
 
+// Shared insert-and-join-sender body. Runs the caller's statements on the
+// caller's connection with NO transaction or retry of its own — callers wrap
+// it in their own .immediate() transaction (SqliteMessageRepo adds
+// withRetrySync; the admin module calls it inside its already-open write
+// transactions, where a nested retry would be wrong).
+export function insertMessageRow(
+  db: Database,
+  channelId: number,
+  agentId: string,
+  content: string,
+  mentions: string[]
+): Message {
+  const now = Date.now();
+  const mentionsJson = JSON.stringify(mentions);
+
+  db.query(
+    "INSERT INTO messages (channel_id, agent_id, content, created_at, mentions) VALUES (?, ?, ?, ?, ?)"
+  ).run(channelId, agentId, content, now, mentionsJson);
+
+  const lastId = db.query("SELECT last_insert_rowid() as id").get() as { id: number };
+
+  // Sender joins on send. ON CONFLICT DO NOTHING preserves an existing cursor
+  // so the sender doesn't skip unread messages from others.
+  db.query(
+    `INSERT INTO cursors (agent_id, channel_id, last_read_message_id)
+     VALUES (?, ?, 0)
+     ON CONFLICT(agent_id, channel_id) DO NOTHING`
+  ).run(agentId, channelId);
+
+  return {
+    id: lastId.id,
+    channel_id: channelId,
+    agent_id: agentId,
+    content,
+    created_at: now,
+    mentions: mentionsJson,
+  };
+}
+
 export class SqliteMessageRepo implements MessageRepository {
   constructor(private readonly db: Database) {}
 
@@ -12,36 +51,9 @@ export class SqliteMessageRepo implements MessageRepository {
     content: string,
     mentions: string[]
   ): Message {
-    const doInsert = this.db.transaction(() => {
-      const now = Date.now();
-      const mentionsJson = JSON.stringify(mentions);
-
-      this.db.run(
-        "INSERT INTO messages (channel_id, agent_id, content, created_at, mentions) VALUES (?, ?, ?, ?, ?)",
-        [channelId, agentId, content, now, mentionsJson]
-      );
-
-      const lastId = this.db.query("SELECT last_insert_rowid() as id").get() as { id: number };
-
-      // ON CONFLICT DO NOTHING preserves an existing cursor so the sender
-      // doesn't skip unread messages from others.
-      this.db.run(
-        `INSERT INTO cursors (agent_id, channel_id, last_read_message_id)
-         VALUES (?, ?, 0)
-         ON CONFLICT(agent_id, channel_id) DO NOTHING`,
-        [agentId, channelId]
-      );
-
-      return {
-        id: lastId.id,
-        channel_id: channelId,
-        agent_id: agentId,
-        content,
-        created_at: now,
-        mentions: mentionsJson,
-      };
-    });
-
+    const doInsert = this.db.transaction(() =>
+      insertMessageRow(this.db, channelId, agentId, content, mentions)
+    );
     return withRetrySync(() => doInsert.immediate());
   }
 

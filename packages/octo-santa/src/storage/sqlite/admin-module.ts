@@ -14,6 +14,7 @@ import {
   isAgentActive,
 } from "../../core/utils";
 import { withRetrySync } from "./db";
+import { insertMessageRow } from "./message-repo";
 import { STORAGE_TYPEHEAD } from "./admin-typehead";
 
 // The storage module of the admin API. Submitted code sees this as the
@@ -384,27 +385,22 @@ export class SqliteAdminModule implements AdminModulePort {
       .run(agentId, channelId);
   }
 
+  // Delegates to the shared insertMessageRow (see message-repo.ts) — callers
+  // here already hold an open .immediate() write transaction, so the shared
+  // body adds no transaction or retry of its own.
   private insertMessage(
     channel: ChannelRecord,
     sender: string,
     content: string,
     mentions: string[]
   ): MessageRecord {
-    const now = Date.now();
-    this.db
-      .query(
-        "INSERT INTO messages (channel_id, agent_id, content, created_at, mentions) VALUES (?, ?, ?, ?, ?)"
-      )
-      .run(channel.id, sender, content, now, JSON.stringify(mentions));
-    const idRow = this.db.query("SELECT last_insert_rowid() AS id").get() as { id: number };
-    // Sender joins on send, mirroring insertAndJoinSender.
-    this.insertMemberIfMissing(sender, channel.id);
+    const msg = insertMessageRow(this.db, channel.id, sender, content, mentions);
     return {
-      id: idRow.id,
+      id: msg.id,
       channel: channel.name,
       sender,
       content,
-      created_at: now,
+      created_at: msg.created_at,
       mentions,
     };
   }
