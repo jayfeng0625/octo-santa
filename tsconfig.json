@@ -6,6 +6,9 @@
     "module": "Preserve",
     "moduleDetection": "force",
     "allowJs": true,
+    // TypeScript 7 no longer auto-includes every node_modules/@types package;
+    // Bun's ambient globals must be requested explicitly.
+    "types": ["bun"],
 
     // Bundler mode
     "moduleResolution": "bundler",
