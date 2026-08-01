@@ -4,6 +4,12 @@ import type {
   Message,
   HeartbeatResult,
 } from "./messaging/types";
+import type {
+  AdminValue,
+  AdminRow,
+  AdminExecuteResult,
+  AdminInterfaceDescription,
+} from "./admin/types";
 
 // --- Storage ports (core defines, adapters implement) ---
 
@@ -49,6 +55,21 @@ export interface MessageRepository {
   // Pure history snapshot: most recent `limit` messages in ascending order,
   // all senders included. Never touches cursors.
   readRecent(channelId: number, limit: number): Message[];
+}
+
+// --- Admin storage port (elevated access plane) ---
+// Core's need: give approved external apps direct, elevated access to stored
+// data through exactly two generic operations, plus a self-describing contract
+// so clients can learn the provider's query language without core knowing it.
+// Queries and statements are opaque to core; the provider defines their
+// meaning and documents it in the typehead it returns from describe().
+
+export interface AdminStoragePort {
+  describe(): AdminInterfaceDescription;
+  // Read-only query. Providers MUST reject anything that mutates state.
+  search(query: string, params: AdminValue[]): AdminRow[];
+  // Single mutating statement, applied atomically.
+  execute(statement: string, params: AdminValue[]): AdminExecuteResult;
 }
 
 // --- Push notification contract ---

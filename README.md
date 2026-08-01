@@ -85,6 +85,39 @@ It never advances cursors, so a Claude Code session can point its Monitor tool (
 | `messaging_list_members` | List channel members with active/inactive status |
 | `messaging_rename_channel` | Rename a channel (members only) |
 
+## Admin Plane (elevated access)
+
+Approved 1st/3rd-party apps — issue-tracker bridges pushing events into
+channels, analytics jobs querying message history — can integrate directly
+with the storage layer over a **separate MCP connection**, without going
+through the chat-style messaging tools:
+
+```json
+{
+  "mcpServers": {
+    "octo-santa-admin": {
+      "command": "bun",
+      "args": ["run", "/absolute/path/to/octo-santa/src/admin.ts"]
+    }
+  }
+}
+```
+
+The admin server exposes exactly two generic tools, code-mode style:
+
+| Tool | Description |
+|------|-------------|
+| `admin_search` | Read-only query in the storage provider's dialect (mutations rejected) |
+| `admin_execute` | One mutating statement, applied atomically |
+
+How to use them is described by a **typehead** — a TypeScript `.d.ts` file
+authored by the active storage provider (SQLite), served as MCP resource
+`octo-santa://admin/typehead.d.ts`. It defines every table's row shape, the
+tool contracts, and the delivery invariants: because every agent process
+watches the shared database, inserting into `messages` with a `mentions` JSON
+array *is* a push delivery. See
+[docs/specs/2026-08-01-admin-typehead-mcp.md](docs/specs/2026-08-01-admin-typehead-mcp.md).
+
 ## Configuration
 
 | Env Variable | Default | Description |
@@ -92,13 +125,14 @@ It never advances cursors, so a Claude Code session can point its Monitor tool (
 | `OCTO_SANTA_DB` | `~/.octo-santa/messages.db` | Path to the shared SQLite database |
 | `OCTO_SANTA_POLL_INTERVAL_MS` | `2000` | Push poller interval in ms |
 | `OCTO_SANTA_HEARTBEAT_INTERVAL_MS` | `10000` | Agent liveness heartbeat interval in ms |
+| `OCTO_SANTA_ADMIN_MAX_ROWS` | `10000` | Max rows returned by a single `admin_search` |
 
 ## Development
 
 ```bash
 bun test              # all tests
 bunx tsc --noEmit     # typecheck
-bun run build         # bundle → dist/<version>/main.js
+bun run build         # bundle → dist/<version>/{main,admin}.js
 ```
 
 See [docs/getting-started.md](docs/getting-started.md) for detailed setup, [docs/architecture.md](docs/architecture.md) for the hexagonal architecture, and [docs/messaging-patterns.md](docs/messaging-patterns.md) for agent communication strategies.

@@ -10,9 +10,9 @@ const latestLink = join(root, "dist", "latest");
 
 mkdirSync(versionDir, { recursive: true });
 
-console.log(`Building MCP bundle → dist/${version}/main.js`);
+console.log(`Building MCP bundles → dist/${version}/{main,admin}.js`);
 const mcp = Bun.spawnSync(
-  ["bun", "build", "src/main.ts", "--outdir", versionDir, "--target", "bun"],
+  ["bun", "build", "src/main.ts", "src/admin.ts", "--outdir", versionDir, "--target", "bun"],
   { cwd: root, stdio: ["inherit", "inherit", "inherit"] }
 );
 if (mcp.exitCode !== 0) process.exit(mcp.exitCode);

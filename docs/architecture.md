@@ -87,12 +87,16 @@ src/
     mcp-stdio/
       adapter.ts                 ← MCP tool registration, per-connection server factory (SDK v2 serveStdio)
       helpers.ts                 ← jsonResult(), withAgent()
+    mcp-admin-stdio/
+      adapter.ts                 ← Admin plane: admin_search/admin_execute tools + typehead resource
+      schemas.ts                 ← Admin wire schemas
 
   notifications/                 ← Notification adapter (how agents receive push)
     poller/
       poller.ts                  ← Watches SQLite (2s interval), pushes MCP channel notifications
 
   main.ts                        ← Composition root — wires everything together
+  admin.ts                       ← Composition root for the separate admin MCP connection
   log.ts                         ← Logging utility
 ```
 
@@ -111,6 +115,7 @@ The core defines interfaces that adapters implement:
 | `ChannelRepository` | Channel CRUD, membership, rename with announcement |
 | `MessageRepository` | Message insert, cursor-advancing reads, history reads |
 | `NotificationPort` | Push delivery contract shared by the notification and transport adapters |
+| `AdminStoragePort` | Elevated generic access plane: `describe()` + `search()` + `execute()` |
 
 Core does not deliver notifications. `send()` extracts mentions and persists the
 message; delivery is entirely an adapter concern. `NotificationPort` lives in
@@ -124,6 +129,17 @@ registration, channels, messaging, DMs, mentions, cursor management.
 
 The service is a process-scoped singleton. It holds `process.pid` for agent
 ownership checks.
+
+**`AdminService`** (`core/admin/`) orchestrates the elevated admin plane for
+approved external apps: validates inputs, caps search result sizes, and
+delegates opaque provider-dialect strings to `AdminStoragePort`. The provider
+describes its own query language to clients via a TypeScript `.d.ts` typehead
+it authors (see `docs/specs/2026-08-01-admin-typehead-mcp.md`). The admin
+plane is served on a separate MCP connection (`src/admin.ts` →
+`transports/mcp-admin-stdio/`) with exactly two tools — `admin_search` and
+`admin_execute` — plus the typehead as MCP resource
+`octo-santa://admin/typehead.d.ts`. Agent-facing messaging connections never
+see these tools.
 
 ### Domain Utilities (`core/utils.ts`)
 
