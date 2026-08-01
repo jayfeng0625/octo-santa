@@ -1,16 +1,16 @@
 import type { CodeRunnerPort } from "../../core/ports";
-import type { CodeRunOutcome } from "../../core/admin/types";
+import type { CodeRunResult } from "../../core/admin/types";
 
 // Runs caller-submitted TypeScript as the body of an async function with the
 // given globals bound. Bun.Transpiler strips types; imports (static, dynamic,
 // and require) are rejected up front so the code can only reach what the
-// admin plane bound for it.
+// admin API bound for it.
 //
 // This is hygiene, not a security sandbox: code still runs in-process, and
-// the trust boundary of the admin plane is whoever can launch the admin
-// entrypoint at all — the same boundary as file access to the database. The
-// hygiene exists so integrations fail loudly when they reach outside their
-// typed surface instead of quietly depending on process internals.
+// the trust boundary is whoever can launch the admin entrypoint at all — the
+// same boundary as file access to the database. The hygiene exists so
+// integrations fail loudly when they reach outside their typed surface
+// instead of quietly depending on process internals.
 const AsyncFunction = Object.getPrototypeOf(async function () {})
   .constructor as new (...args: string[]) => (...args: unknown[]) => Promise<unknown>;
 
@@ -18,6 +18,9 @@ const AsyncFunction = Object.getPrototypeOf(async function () {})
 const SHADOWED = ["process", "Bun", "require", "module", "exports"] as const;
 
 export class TypeScriptRunner implements CodeRunnerPort {
+  readonly language = "typescript";
+  readonly reservedNames = ["console", ...SHADOWED];
+
   private readonly transpiler = new Bun.Transpiler({ loader: "ts" });
 
   constructor(private readonly timeoutMs: number = 5_000) {}
@@ -25,9 +28,9 @@ export class TypeScriptRunner implements CodeRunnerPort {
   async run(
     code: string,
     bindings: Record<string, object>
-  ): Promise<CodeRunOutcome> {
+  ): Promise<CodeRunResult> {
     for (const name of Object.keys(bindings)) {
-      if (name === "console" || (SHADOWED as readonly string[]).includes(name)) {
+      if (this.reservedNames.includes(name)) {
         throw new Error(`binding name "${name}" is reserved`);
       }
     }
@@ -73,9 +76,9 @@ export class TypeScriptRunner implements CodeRunnerPort {
     ];
     const fn = new AsyncFunction(...names, `"use strict";\n${js}\nreturn __main__();`);
 
-    let timer: ReturnType<typeof setTimeout> | null = null;
-    // The timeout catches hung awaits; a synchronous busy-loop cannot be
-    // preempted in-process and will still block (accepted for this plane).
+    let timer!: ReturnType<typeof setTimeout>;
+    // Catches hung awaits; a synchronous busy-loop cannot be preempted
+    // in-process and will still block (accepted for this surface).
     const timeout = new Promise<never>((_, reject) => {
       timer = setTimeout(
         () => reject(new Error(`admin code timed out after ${this.timeoutMs}ms`)),
@@ -86,7 +89,7 @@ export class TypeScriptRunner implements CodeRunnerPort {
       const result = await Promise.race([fn(...values), timeout]);
       return { result, logs };
     } finally {
-      if (timer !== null) clearTimeout(timer);
+      clearTimeout(timer);
     }
   }
 }

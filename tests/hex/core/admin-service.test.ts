@@ -1,15 +1,17 @@
 import { describe, it, expect } from "bun:test";
 import { AdminService } from "../../../src/core/admin/service";
 import type { AdminModulePort, CodeRunnerPort } from "../../../src/core/ports";
-import type { CodeRunOutcome } from "../../../src/core/admin/types";
+import type { CodeRunResult } from "../../../src/core/admin/types";
 
 // Core-level tests with fake ports: the service must stay agnostic about
 // what module APIs do — it only composes bindings and typeheads, delegates
 // opaque code to the runner, and normalizes outcomes.
 
-function makeFakeRunner(outcome: CodeRunOutcome = { result: "ok", logs: [] }) {
+function makeFakeRunner(outcome: CodeRunResult = { result: "ok", logs: [] }) {
   const calls: { code: string; bindings: Record<string, object> }[] = [];
   const runner: CodeRunnerPort = {
+    language: "typescript",
+    reservedNames: ["console"],
     run: async (code, bindings) => {
       calls.push({ code, bindings });
       return outcome;
@@ -21,12 +23,12 @@ function makeFakeRunner(outcome: CodeRunOutcome = { result: "ok", logs: [] }) {
 function makeFakeModule(name: string, provider = "fake"): AdminModulePort {
   return {
     describe: () => ({
-      module: name,
+      globalName: name,
       provider,
       typehead: `declare const ${name}: unknown; // ${provider}`,
     }),
-    createSearchApi: () => ({ kind: "search", module: name }),
-    createExecuteApi: () => ({ kind: "execute", module: name }),
+    createReadApi: () => ({ kind: "search", module: name }),
+    createWriteApi: () => ({ kind: "execute", module: name }),
   };
 }
 
@@ -58,7 +60,7 @@ describe("AdminService", () => {
     expect(svc.execute("  \n ")).rejects.toThrow("code must not be empty");
   });
 
-  it("rejects duplicate and reserved module names at construction", () => {
+  it("rejects duplicate and runner-reserved module names at construction", () => {
     const { runner } = makeFakeRunner();
     expect(
       () => new AdminService(runner, [makeFakeModule("m"), makeFakeModule("m")])
@@ -79,7 +81,7 @@ describe("AdminService", () => {
     cyclic.self = cyclic;
     const { runner } = makeFakeRunner({ result: cyclic, logs: [] });
     const svc = new AdminService(runner, [makeFakeModule("m")]);
-    expect(svc.search("code")).rejects.toThrow("not JSON-serializable");
+    expect(svc.search("code")).rejects.toThrow("cannot be written as JSON");
   });
 
   it("composes the typehead from core's header plus each module's fragment", () => {
@@ -90,12 +92,14 @@ describe("AdminService", () => {
     const description = svc.describe();
     expect(description.language).toBe("typescript");
     expect(description.modules).toEqual([
-      { module: "storage", provider: "sqlite" },
-      { module: "other", provider: "x" },
+      { globalName: "storage", provider: "sqlite" },
+      { globalName: "other", provider: "x" },
     ]);
     // Header documents the execution model...
-    expect(description.typehead).toContain("run as the body of an async function");
-    expect(description.typehead).toContain("admin_search binds each module's read-only API");
+    expect(description.typehead).toContain("body of an async function");
+    expect(description.typehead).toContain("A read-only run binds each module");
+    // ...without naming MCP tools: those belong to the transport, not core.
+    expect(description.typehead).not.toContain("admin_search");
     // ...and every module fragment follows, in order.
     const storageIdx = description.typehead.indexOf("declare const storage");
     const otherIdx = description.typehead.indexOf("declare const other");

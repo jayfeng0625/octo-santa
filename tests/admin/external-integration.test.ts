@@ -48,10 +48,10 @@ describe("external app integration via the admin plane", () => {
     // what the caller needs.
     const outcome = await admin.execute(`
       const event = { issue: "LIN-142", status: "In Review" };
-      storage.ensureAgent("linear-hook");
+      storage.createAgentIfMissing("linear-hook");
       const channel = storage.getChannel("eng-triage");
       if (!channel) throw new Error("triage channel missing");
-      const message = storage.postMessage({
+      const message = storage.sendMessage({
         channel: channel.name,
         sender: "linear-hook",
         content: \`\${event.issue} moved to \${event.status}\`,
@@ -80,12 +80,12 @@ describe("external app integration via the admin plane", () => {
   it("write methods are absent from admin_search runs", async () => {
     const { db, admin } = setup();
     const surface = await admin.search(
-      `return { post: typeof (storage as any).postMessage, list: typeof storage.listChannels };`
+      `return { post: typeof (storage as any).sendMessage, list: typeof storage.listChannels };`
     );
     expect(surface.result).toEqual({ post: "undefined", list: "function" });
     // Attempting the write anyway fails inside the code run.
     expect(
-      admin.search(`(storage as any).postMessage({}); return 1;`)
+      admin.search(`(storage as any).sendMessage({}); return 1;`)
     ).rejects.toThrow();
     db.close();
   });
@@ -103,10 +103,10 @@ describe("external app integration via the admin plane", () => {
 
     // Aggregation + reshaping happens inside the run; only the digest returns.
     const outcome = await admin.search(`
-      const perSender = storage.countMessages({ channel: "metrics", groupBy: "sender" });
+      const perSender = storage.countMessages({ channel: "metrics", group_by: "sender" });
       const total = storage.countMessages({ channel: "metrics" })[0].count;
       console.log("rows scanned:", total);
-      return Object.fromEntries(perSender.map((r) => [r.group, r.count]));
+      return Object.fromEntries(perSender.map((r) => [r.value, r.count]));
     `);
     expect(outcome.result).toEqual({ alice: 2, bob: 1 });
     expect(outcome.logs).toEqual(["[log] rows scanned: 3"]);
@@ -118,16 +118,16 @@ describe("external app integration via the admin plane", () => {
     db.close();
   });
 
-  it("supports incremental pull loops via getMaxMessageId and afterId", async () => {
+  it("supports incremental pull loops via getLatestMessageId and after_id", async () => {
     const { db, messaging, admin } = setup();
     messaging.register("worker");
     messaging.createChannel("worker", "feed");
 
-    const hwm = await admin.search(`return storage.getMaxMessageId();`);
+    const hwm = await admin.search(`return storage.getLatestMessageId();`);
     messaging.send("worker", "feed", "new event");
 
     const delta = await admin.search(`
-      const rows = storage.getMessages({ afterId: ${JSON.stringify(hwm.result)} });
+      const rows = storage.getMessages({ after_id: ${JSON.stringify(hwm.result)} });
       return rows.map((m) => ({ channel: m.channel, content: m.content }));
     `);
     expect(delta.result).toEqual([{ channel: "feed", content: "new event" }]);

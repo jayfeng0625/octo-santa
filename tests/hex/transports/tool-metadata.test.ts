@@ -1,5 +1,6 @@
 import { describe, it, expect, afterEach } from "bun:test";
 import { cleanupDb, testDbPath, setupTestDb } from "../../helpers/db";
+import { makeMockServer } from "../../helpers/mcp";
 import { allMigrations } from "../../../src/storage/sqlite/migrations";
 import { createSqliteRepos } from "../../../src/storage/sqlite";
 import { MessagingService } from "../../../src/core/messaging/service";
@@ -34,17 +35,9 @@ function setup() {
   const repos = createSqliteRepos(db);
   const svc = new MessagingService(repos.agents, repos.channels, repos.messages, process.pid);
 
-  const configs: Record<string, any> = {};
-  const handlers: Record<string, (...args: any[]) => Promise<any>> = {};
-  const mockServer = {
-    registerTool: (name: string, config: any, cb: (...args: any[]) => Promise<any>) => {
-      configs[name] = config;
-      handlers[name] = cb;
-    },
-  } as any;
-
-  registerMessagingTools(mockServer, svc);
-  return { db, configs, handlers };
+  const { server, configs, invoke } = makeMockServer();
+  registerMessagingTools(server, svc);
+  return { db, configs, invoke };
 }
 
 describe("tool metadata (SDK v2)", () => {
@@ -93,17 +86,7 @@ describe("structured output contract", () => {
   // with the exact zod schema each tool advertises — the runtime drift guard
   // between core return shapes and the wire contract.
   it("every tool's real result parses against its declared outputSchema", async () => {
-    const { db, configs, handlers } = setup();
-
-    const invoke = async (name: string, args: Record<string, unknown>) => {
-      const result = await handlers[name]!(args);
-      const parsed = configs[name].outputSchema.safeParse(result.structuredContent);
-      expect(parsed.success, `${name} structuredContent vs outputSchema: ${JSON.stringify(parsed.error?.issues)}`).toBe(true);
-      expect(result.content[0].text, `${name} text mirrors structuredContent`).toBe(
-        JSON.stringify(result.structuredContent)
-      );
-      return result.structuredContent;
-    };
+    const { db, invoke } = setup();
 
     await invoke("messaging_register", { agent_id: "meta-agent" });
     await invoke("messaging_create_channel", { agent_id: "meta-agent", name: "meta-ch" });

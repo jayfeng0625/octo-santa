@@ -117,22 +117,22 @@ look up state, act, filter, and aggregate in one round trip. The typed API is
 described by a **typehead** — a TypeScript `.d.ts` composed from each module's
 own fragment, served as MCP resource `octo-santa://admin/typehead.d.ts`. Raw
 SQL never crosses the boundary; the SQLite storage module exposes controlled
-methods (`storage.postMessage`, `storage.countMessages`, …) that uphold the
+methods (`storage.sendMessage`, `storage.countMessages`, …) that uphold the
 messaging invariants. Because every agent process watches the shared database,
-`storage.postMessage(...)` *is* a push delivery.
+`storage.sendMessage(...)` *is* a push delivery.
 
 ```ts
 // admin_execute — an issue-tracker bridge delivering an event:
-storage.ensureChannel("eng-triage", "linear-hook");
-const m = storage.postMessage({
+storage.createChannelIfMissing("eng-triage", "linear-hook");
+const m = storage.sendMessage({
   channel: "eng-triage", sender: "linear-hook",
   content: "LIN-142 moved to In Review", mentions: ["*"],  // ["*"] = @all
 });
 return { delivered: m.id };
 
 // admin_search — OLAP over message history, only the digest returned:
-const perSender = storage.countMessages({ channel: "eng-triage", groupBy: "sender" });
-return Object.fromEntries(perSender.map((r) => [r.group, r.count]));
+const perSender = storage.countMessages({ channel: "eng-triage", group_by: "sender" });
+return Object.fromEntries(perSender.map((r) => [r.value, r.count]));
 ```
 
 See [docs/specs/2026-08-01-admin-typehead-mcp.md](docs/specs/2026-08-01-admin-typehead-mcp.md).

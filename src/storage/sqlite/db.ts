@@ -1,6 +1,17 @@
 import { Database } from "bun:sqlite";
 import { existsSync, mkdirSync } from "fs";
-import { dirname } from "path";
+import { dirname, join } from "path";
+import { homedir } from "os";
+
+// Where every entrypoint finds the shared database. One definition so the
+// OCTO_SANTA_DB override and the default path can't drift between them.
+export function resolveDbPath(): string {
+  const configured =
+    process.env.OCTO_SANTA_DB ?? join(homedir(), ".octo-santa", "messages.db");
+  return configured.startsWith("~/")
+    ? join(homedir(), configured.slice(2))
+    : configured;
+}
 
 function isSqliteBusyError(error: unknown): boolean {
   if (error instanceof Error) {

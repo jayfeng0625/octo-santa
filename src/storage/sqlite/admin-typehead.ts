@@ -1,42 +1,49 @@
 // The storage module's typehead: the TypeScript declaration fragment that
-// tells approved external apps what the `storage` global can do inside code
-// submitted to admin_search / admin_execute. Served (composed with core's
-// execution-model header) as the `octo-santa://admin/typehead.d.ts` resource.
+// tells approved external apps what the `storage` global can do inside
+// submitted code. Served (composed with core's execution-model header) as the
+// `octo-santa://admin/typehead.d.ts` resource.
 //
-// Raw SQL is deliberately absent from this surface — the module exposes only
-// controlled methods that uphold the messaging invariants. Keep this text in
-// lockstep with the StorageSearchApi / StorageExecuteApi interfaces in
-// admin-module.ts; the drift-guard test asserts every API method is declared
-// here.
+// Raw SQL is deliberately absent — the module exposes only controlled methods
+// that uphold the messaging invariants. Keep this in lockstep with the
+// StorageReadApi / StorageWriteApi interfaces in admin-module.ts; the
+// drift-guard test asserts the two declare exactly the same method sets.
 
 export const STORAGE_TYPEHEAD = `\
 // ── Module "storage" (provider: sqlite) ─────────────────────────────────────
-// Controlled access to octo-santa's shared database — the single SQLite file
-// that is the only bridge between agent processes. There is no raw SQL here:
-// use the typed methods below.
+// Reads and writes octo-santa's shared database — the single file that agent
+// processes use to talk to each other. There is no SQL here; use the methods
+// below.
 //
-// DELIVERY MODEL: posting a message writes it to the shared database, and
-// every agent's own server process watches that database (~2s) and pushes
-// matching messages to its agent. So postMessage / postDirectMessage IS a
-// push delivery — there is no other signal to send. Push targeting reads the
-// mentions ("*" = @all; DM channels always push); unmentioned channel
-// messages are silent until the recipient reads.
+// HOW MESSAGES REACH AGENTS: sending a message writes it to the shared
+// database, and every agent's own process is watching that database (checking
+// about every 2 seconds). It picks up messages meant for its agent and shows
+// them. So calling sendMessage or sendDirectMessage IS how you reach an agent
+// — there is nothing else to call afterwards.
+//
+// WHO GETS NOTIFIED: the \`mentions\` list decides. Name the agents you want to
+// reach, or use "*" for everyone in the channel. An empty list means nobody is
+// notified — the message is still stored, and agents see it next time they
+// read. Direct messages always reach the other person, mentions or not.
 
-/** An agent known to the system. External apps appear here too once ensured. */
+/** An agent. External apps show up here too, once you create one. */
 interface AgentRecord {
   id: string;
-  /** Unix ms of first registration. */
+  /** When this agent was first seen, in milliseconds since 1970. */
   created_at: number;
-  /** Unix ms of last heartbeat. */
+  /** When this agent last checked in, in milliseconds since 1970. */
   last_seen_at: number;
-  /** True when the agent's process is currently alive and heartbeating. */
+  /** True if the agent's process is running right now. */
   active: boolean;
 }
 
-/** A channel. DM channels are named "<a>,<b>" (participants sorted). */
+/**
+ * A channel. Direct-message channels are named "<one>,<other>" with the two
+ * names in alphabetical order.
+ */
 interface ChannelRecord {
   id: number;
   name: string;
+  /** The agent that created it. */
   created_by: string;
   created_at: number;
 }
@@ -47,98 +54,100 @@ interface MemberRecord {
 }
 
 interface MessageRecord {
-  /** Monotonic — usable as a cursor (see getMessages afterId). */
+  /** Always counts upward, so a bigger id means a newer message. */
   id: number;
   /** Channel name. */
   channel: string;
-  /** Sending agent id. */
+  /** The agent that sent it. */
   sender: string;
   content: string;
-  /** Unix ms. */
   created_at: number;
-  /** Mentioned agent names; ["*"] = @all; [] = silent. */
+  /** Who was notified. ["*"] means everyone; [] means nobody. */
   mentions: string[];
 }
 
 interface MessageFilter {
   channel?: string;
   sender?: string;
-  /** Messages that mention this agent (includes @all broadcasts). */
+  /** Messages that name this agent, plus messages sent to everyone. */
   mentioning?: string;
-  /** Only messages with id > afterId — incremental-pull cursor for external loops. */
-  afterId?: number;
-  sinceMs?: number;
-  untilMs?: number;
-  /** Default 100, max 10000. */
+  /** Only messages newer than this id. */
+  after_id?: number;
+  /** Only messages sent at or after this time (milliseconds since 1970). */
+  since_ms?: number;
+  /** Only messages sent at or before this time (milliseconds since 1970). */
+  until_ms?: number;
+  /** How many to return. Default 100. Asking for more than 10000 gives you 10000. */
   limit?: number;
 }
 
 interface CountFilter {
   channel?: string;
-  sinceMs?: number;
-  untilMs?: number;
-  /** "day" groups by UTC calendar day (YYYY-MM-DD). */
-  groupBy?: "sender" | "channel" | "day";
+  since_ms?: number;
+  until_ms?: number;
+  /** Split the count by sender, by channel, or by calendar day (UTC). */
+  group_by?: "sender" | "channel" | "day";
 }
 
-/** group is null when no groupBy was given (single total row). */
 interface CountRecord {
-  group: string | null;
+  /** The sender, channel, or day being counted. Null if you did not split the count. */
+  value: string | null;
   count: number;
 }
 
-interface PostMessageInput {
-  /** Must exist — create with ensureChannel first. */
+interface SendMessageInput {
+  /** Must already exist — call createChannelIfMissing first. */
   channel: string;
-  /** Ensured automatically (registered as an agent row if missing). */
+  /** The name to send as. Created automatically if it does not exist yet. */
   sender: string;
   content: string;
   /**
-   * Explicit push targets ("*" = @all). Omitted → mentions are extracted
-   * from content (@agent-name / @all), matching normal messaging behavior.
+   * Who to notify: agent names, or ["*"] for everyone in the channel. Leave
+   * this out and the names written as @name in the content are used instead.
    */
   mentions?: string[];
 }
 
-/** Read-only surface — what \`storage\` implements in admin_search runs. */
-interface StorageSearchApi {
+/** What \`storage\` can do in a read-only run. */
+interface StorageReadApi {
   listAgents(): AgentRecord[];
   getAgent(id: string): AgentRecord | null;
   listChannels(): ChannelRecord[];
   getChannel(name: string): ChannelRecord | null;
   /** Throws if the channel does not exist. */
   listMembers(channel: string): MemberRecord[];
-  /** Filtered scan, ascending by id. Never touches any agent's unread cursor. */
+  /** Oldest first. Reading here never marks anything as read for any agent. */
   getMessages(filter?: MessageFilter): MessageRecord[];
-  /** OLAP-style aggregation over message history. */
+  /** Counts messages without fetching them — use this instead of pulling messages and counting them yourself. */
   countMessages(filter?: CountFilter): CountRecord[];
-  /** Highest message id — cheap high-water mark for incremental loops. */
-  getMaxMessageId(): number;
+  /** The newest message id right now. Save it, then pass it as \`after_id\` next time to get only what arrived since. */
+  getLatestMessageId(): number;
 }
 
-/** Full surface — what \`storage\` implements in admin_execute runs. */
-interface StorageExecuteApi extends StorageSearchApi {
-  /** Register an external app (or any agent id) so it can send. Idempotent. */
-  ensureAgent(id: string): AgentRecord;
-  /** Create a channel if missing (creator auto-joins). Rejects DM-style names. Idempotent. */
-  ensureChannel(name: string, createdBy: string): ChannelRecord;
-  /** Subscribe an agent to a channel (it will see and be pushed its messages). Idempotent. */
+/** What \`storage\` can do in a read/write run: everything above, plus these. */
+interface StorageWriteApi extends StorageReadApi {
+  /** Create an agent so it can send messages. Safe to call every time — does nothing if it already exists. */
+  createAgentIfMissing(id: string): AgentRecord;
+  /** Create a channel, with its creator joined. Safe to call every time. Direct-message names are not allowed here. */
+  createChannelIfMissing(name: string, createdBy: string): ChannelRecord;
+  /** Add an agent to a channel so it sees and is notified about messages there. Safe to call every time. */
   addMember(channel: string, agentId: string): void;
   /**
-   * Post to a channel — this IS delivery (see DELIVERY MODEL above).
-   * @example Push an issue-tracker event to every live member:
-   *   storage.ensureChannel("eng-triage", "linear-hook");
-   *   storage.postMessage({ channel: "eng-triage", sender: "linear-hook",
+   * Send a message to a channel. This is how you reach agents (see the note
+   * at the top).
+   * @example Tell everyone in a channel about an issue-tracker update:
+   *   storage.createChannelIfMissing("eng-triage", "linear-hook");
+   *   storage.sendMessage({ channel: "eng-triage", sender: "linear-hook",
    *     content: "LIN-142 moved to In Review", mentions: ["*"] });
    */
-  postMessage(input: PostMessageInput): MessageRecord;
-  /** DM an existing agent — always pushes to both parties, no mentions needed. */
-  postDirectMessage(input: { from: string; to: string; content: string }): MessageRecord;
+  sendMessage(input: SendMessageInput): MessageRecord;
+  /** Send a private message to one agent, who must already exist. Always reaches them. */
+  sendDirectMessage(input: { from: string; to: string; content: string }): MessageRecord;
 }
 
 /**
- * In admin_search runs, \`storage\` implements only StorageSearchApi — the
- * write methods are absent at runtime.
+ * In a read-only run, \`storage\` has the StorageReadApi methods only — the
+ * writing methods are not there at all.
  */
-declare const storage: StorageExecuteApi;
+declare const storage: StorageWriteApi;
 `;

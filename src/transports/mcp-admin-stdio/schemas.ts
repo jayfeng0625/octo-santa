@@ -1,9 +1,7 @@
 import { z } from "zod";
 import type { AdminRunResult } from "../../core/admin/types";
 
-// Wire schema for the admin plane's structured tool output. Both tools return
-// the same shape: whatever the submitted code returned (already normalized to
-// a JSON value by the core service) plus captured console output.
+// Wire schema for the admin API's structured tool output, shared by both tools.
 
 export const RunOutput = z.object({
   result: z

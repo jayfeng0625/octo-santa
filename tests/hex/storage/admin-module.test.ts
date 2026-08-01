@@ -12,10 +12,10 @@ afterEach(() => {
 function setup() {
   const db = setupTestDb(TEST_DB, allMigrations);
   const module = new SqliteAdminModule(db);
-  return { db, module, search: module.createSearchApi(), exec: module.createExecuteApi() };
+  return { db, module, search: module.createReadApi(), exec: module.createWriteApi() };
 }
 
-const SEARCH_METHODS = [
+const READ_METHODS = [
   "listAgents",
   "getAgent",
   "listChannels",
@@ -23,79 +23,84 @@ const SEARCH_METHODS = [
   "listMembers",
   "getMessages",
   "countMessages",
-  "getMaxMessageId",
+  "getLatestMessageId",
 ];
 const WRITE_METHODS = [
-  "ensureAgent",
-  "ensureChannel",
+  "createAgentIfMissing",
+  "createChannelIfMissing",
   "addMember",
-  "postMessage",
-  "postDirectMessage",
+  "sendMessage",
+  "sendDirectMessage",
 ];
 
 describe("API surface", () => {
   it("search API exposes exactly the read methods — no write methods, no raw SQL", () => {
     const { db, search } = setup();
-    expect(Object.keys(search).sort()).toEqual([...SEARCH_METHODS].sort());
+    expect(Object.keys(search).sort()).toEqual([...READ_METHODS].sort());
     db.close();
   });
 
   it("execute API exposes the read methods plus exactly the controlled writes", () => {
     const { db, exec } = setup();
     expect(Object.keys(exec).sort()).toEqual(
-      [...SEARCH_METHODS, ...WRITE_METHODS].sort()
+      [...READ_METHODS, ...WRITE_METHODS].sort()
     );
     db.close();
   });
 
-  it("typehead declares the storage binding and every API method (drift guard)", () => {
-    const { db, module } = setup();
-    const { module: name, provider, typehead } = module.describe();
-    expect(name).toBe("storage");
+  // Drift guard, both directions: the served .d.ts and the runtime API must
+  // declare exactly the same method sets, so neither a new method nor a
+  // removed one can slip through undocumented.
+  it("typehead declares exactly the methods the API implements", () => {
+    const { db, module, exec } = setup();
+    const { globalName, provider, typehead } = module.describe();
+    expect(globalName).toBe("storage");
     expect(provider).toBe("sqlite");
-    expect(typehead).toContain("declare const storage: StorageExecuteApi");
-    for (const method of [...SEARCH_METHODS, ...WRITE_METHODS]) {
-      expect(typehead, `typehead declares ${method}`).toContain(`${method}(`);
-    }
+    expect(typehead).toContain("declare const storage: StorageWriteApi");
+
+    const declared = new Set(
+      [...typehead.matchAll(/^\s{2}(\w+)\(/gm)].map((m) => m[1]!)
+    );
+    expect([...declared].sort()).toEqual(Object.keys(exec).sort());
     db.close();
   });
 });
 
 describe("write surface", () => {
-  it("ensureAgent registers an external app idempotently", () => {
+  it("createAgentIfMissing registers an external app idempotently", () => {
     const { db, exec } = setup();
-    const first = exec.ensureAgent("linear-hook");
-    const second = exec.ensureAgent("linear-hook");
+    const first = exec.createAgentIfMissing("linear-hook");
+    const second = exec.createAgentIfMissing("linear-hook");
     expect(first.id).toBe("linear-hook");
     expect(first.active).toBe(false);
     expect(second.created_at).toBe(first.created_at);
     db.close();
   });
 
-  it("ensureAgent enforces agent-name rules", () => {
+  it("createAgentIfMissing enforces agent-name rules", () => {
     const { db, exec } = setup();
-    expect(() => exec.ensureAgent("bad name!")).toThrow();
-    expect(() => exec.ensureAgent("_system")).toThrow();
+    expect(() => exec.createAgentIfMissing("bad name!")).toThrow();
+    expect(() => exec.createAgentIfMissing("_system")).toThrow();
     db.close();
   });
 
-  it("ensureChannel creates once, auto-joins the creator, and rejects DM-style names", () => {
+  it("createChannelIfMissing creates once, auto-joins the creator, and rejects DM-style names", () => {
     const { db, exec } = setup();
-    const first = exec.ensureChannel("eng-triage", "linear-hook");
-    const second = exec.ensureChannel("eng-triage", "someone-else");
+    const first = exec.createChannelIfMissing("eng-triage", "linear-hook");
+    const second = exec.createChannelIfMissing("eng-triage", "someone-else");
     expect(second.id).toBe(first.id);
     expect(second.created_by).toBe("linear-hook");
     expect(exec.listMembers("eng-triage").map((m) => m.agent_id)).toEqual([
       "linear-hook",
     ]);
-    expect(() => exec.ensureChannel("alice,bob", "x")).toThrow("DM-style");
+    expect(() => exec.createChannelIfMissing("alice,bob", "x")).toThrow("DM-style");
     db.close();
   });
 
-  it("postMessage delivers to an existing channel with explicit mentions", () => {
+  it("sendMessage delivers to an existing channel with explicit mentions", () => {
     const { db, exec } = setup();
-    exec.ensureChannel("eng-triage", "linear-hook");
-    const message = exec.postMessage({
+    exec.createChannelIfMissing("eng-triage", "linear-hook");
+    const message = exec.sendMessage({
       channel: "eng-triage",
       sender: "linear-hook",
       content: "LIN-142 moved to In Review",
@@ -111,11 +116,11 @@ describe("write surface", () => {
     db.close();
   });
 
-  it("postMessage extracts mentions from content when not given explicitly", () => {
+  it("sendMessage extracts mentions from content when not given explicitly", () => {
     const { db, exec } = setup();
-    exec.ensureAgent("planner");
-    exec.ensureChannel("general", "bridge");
-    const message = exec.postMessage({
+    exec.createAgentIfMissing("planner");
+    exec.createChannelIfMissing("general", "bridge");
+    const message = exec.sendMessage({
       channel: "general",
       sender: "bridge",
       content: "heads up @planner and @nobody-known",
@@ -124,44 +129,44 @@ describe("write surface", () => {
     db.close();
   });
 
-  it("postMessage auto-registers the sender but requires the channel to exist", () => {
+  it("sendMessage auto-registers the sender but requires the channel to exist", () => {
     const { db, exec } = setup();
     expect(() =>
-      exec.postMessage({ channel: "ghost", sender: "bridge", content: "x" })
+      exec.sendMessage({ channel: "ghost", sender: "bridge", content: "x" })
     ).toThrow('Channel "ghost" does not exist');
-    exec.ensureChannel("real", "creator");
-    exec.postMessage({ channel: "real", sender: "fresh-sender", content: "x" });
+    exec.createChannelIfMissing("real", "creator");
+    exec.sendMessage({ channel: "real", sender: "fresh-sender", content: "x" });
     expect(exec.getAgent("fresh-sender")).not.toBeNull();
     // Sender joined on send, mirroring messaging behavior.
     expect(exec.listMembers("real").map((m) => m.agent_id)).toContain("fresh-sender");
     db.close();
   });
 
-  it("postMessage upholds messaging invariants: no self-mention, no empty content, DM privacy", () => {
+  it("sendMessage upholds messaging invariants: no self-mention, no empty content, DM privacy", () => {
     const { db, exec } = setup();
-    exec.ensureChannel("c", "bridge");
+    exec.createChannelIfMissing("c", "bridge");
     expect(() =>
-      exec.postMessage({ channel: "c", sender: "bridge", content: "hi", mentions: ["bridge"] })
+      exec.sendMessage({ channel: "c", sender: "bridge", content: "hi", mentions: ["bridge"] })
     ).toThrow("Cannot @mention yourself");
     expect(() =>
-      exec.postMessage({ channel: "c", sender: "bridge", content: "   " })
+      exec.sendMessage({ channel: "c", sender: "bridge", content: "   " })
     ).toThrow("must not be empty");
     // A DM channel between two agents is private to them.
-    exec.ensureAgent("alice");
-    exec.postDirectMessage({ from: "bob", to: "alice", content: "hi" });
+    exec.createAgentIfMissing("alice");
+    exec.sendDirectMessage({ from: "bob", to: "alice", content: "hi" });
     expect(() =>
-      exec.postMessage({ channel: "alice,bob", sender: "intruder", content: "x" })
+      exec.sendMessage({ channel: "alice,bob", sender: "intruder", content: "x" })
     ).toThrow("private");
     db.close();
   });
 
-  it("postDirectMessage creates the DM channel, joins both parties, requires the target", () => {
+  it("sendDirectMessage creates the DM channel, joins both parties, requires the target", () => {
     const { db, exec } = setup();
     expect(() =>
-      exec.postDirectMessage({ from: "bridge", to: "ghost", content: "x" })
+      exec.sendDirectMessage({ from: "bridge", to: "ghost", content: "x" })
     ).toThrow('Agent "ghost" not found');
-    exec.ensureAgent("planner");
-    const message = exec.postDirectMessage({
+    exec.createAgentIfMissing("planner");
+    const message = exec.sendDirectMessage({
       from: "bridge",
       to: "planner",
       content: "direct ping",
@@ -176,27 +181,27 @@ describe("write surface", () => {
 
   it("addMember subscribes an agent and respects DM privacy", () => {
     const { db, exec } = setup();
-    exec.ensureChannel("open", "creator");
+    exec.createChannelIfMissing("open", "creator");
     exec.addMember("open", "joiner");
     expect(exec.listMembers("open").map((m) => m.agent_id)).toContain("joiner");
-    exec.ensureAgent("alice");
-    exec.postDirectMessage({ from: "bob", to: "alice", content: "hi" });
+    exec.createAgentIfMissing("alice");
+    exec.sendDirectMessage({ from: "bob", to: "alice", content: "hi" });
     expect(() => exec.addMember("alice,bob", "intruder")).toThrow("private");
     db.close();
   });
 });
 
 describe("read surface", () => {
-  function seed(exec: ReturnType<SqliteAdminModule["createExecuteApi"]>) {
-    exec.ensureChannel("triage", "bridge");
-    exec.ensureChannel("random", "bridge");
-    exec.postMessage({ channel: "triage", sender: "bridge", content: "one", mentions: ["*"] });
-    exec.postMessage({ channel: "triage", sender: "bridge", content: "two" });
-    exec.ensureAgent("planner");
-    exec.postMessage({ channel: "random", sender: "planner", content: "three", mentions: ["bridge"] });
+  function seed(exec: ReturnType<SqliteAdminModule["createWriteApi"]>) {
+    exec.createChannelIfMissing("triage", "bridge");
+    exec.createChannelIfMissing("random", "bridge");
+    exec.sendMessage({ channel: "triage", sender: "bridge", content: "one", mentions: ["*"] });
+    exec.sendMessage({ channel: "triage", sender: "bridge", content: "two" });
+    exec.createAgentIfMissing("planner");
+    exec.sendMessage({ channel: "random", sender: "planner", content: "three", mentions: ["bridge"] });
   }
 
-  it("getMessages filters by channel, sender, mentioning, and afterId", () => {
+  it("getMessages filters by channel, sender, mentioning, and after_id", () => {
     const { db, search, exec } = setup();
     seed(exec);
     expect(search.getMessages({ channel: "triage" }).map((m) => m.content)).toEqual([
@@ -212,7 +217,7 @@ describe("read surface", () => {
       "three",
     ]);
     const first = search.getMessages({ limit: 1 })[0]!;
-    expect(search.getMessages({ afterId: first.id }).map((m) => m.content)).toEqual([
+    expect(search.getMessages({ after_id: first.id }).map((m) => m.content)).toEqual([
       "two",
       "three",
     ]);
@@ -229,29 +234,29 @@ describe("read surface", () => {
     db.close();
   });
 
-  it("countMessages aggregates with and without groupBy", () => {
+  it("countMessages aggregates with and without group_by", () => {
     const { db, search, exec } = setup();
     seed(exec);
-    expect(search.countMessages()).toEqual([{ group: null, count: 3 }]);
-    expect(search.countMessages({ groupBy: "sender" })).toEqual([
-      { group: "bridge", count: 2 },
-      { group: "planner", count: 1 },
+    expect(search.countMessages()).toEqual([{ value: null, count: 3 }]);
+    expect(search.countMessages({ group_by: "sender" })).toEqual([
+      { value: "bridge", count: 2 },
+      { value: "planner", count: 1 },
     ]);
-    expect(search.countMessages({ groupBy: "channel", channel: "triage" })).toEqual([
-      { group: "triage", count: 2 },
+    expect(search.countMessages({ group_by: "channel", channel: "triage" })).toEqual([
+      { value: "triage", count: 2 },
     ]);
-    const byDay = search.countMessages({ groupBy: "day" });
+    const byDay = search.countMessages({ group_by: "day" });
     expect(byDay).toHaveLength(1);
     expect(byDay[0]!.count).toBe(3);
-    expect(byDay[0]!.group).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(byDay[0]!.value).toMatch(/^\d{4}-\d{2}-\d{2}$/);
     db.close();
   });
 
-  it("getMaxMessageId tracks the high-water mark for incremental loops", () => {
+  it("getLatestMessageId tracks the high-water mark for incremental loops", () => {
     const { db, search, exec } = setup();
-    expect(search.getMaxMessageId()).toBe(0);
+    expect(search.getLatestMessageId()).toBe(0);
     seed(exec);
-    expect(search.getMaxMessageId()).toBe(3);
+    expect(search.getLatestMessageId()).toBe(3);
     db.close();
   });
 

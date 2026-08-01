@@ -31,7 +31,7 @@ aggregate all in one round trip, returning only what it needs.
 **Modules never expose their raw backend.** Each module contributes a typed API
 object bound as a global inside the code, plus a TypeScript `.d.ts` fragment
 (its *typehead*) describing that API. The SQLite storage module exposes
-controlled methods like `postMessage` and `countMessages` — **no raw SQL
+controlled methods like `sendMessage` and `countMessages` — **no raw SQL
 crosses the boundary**. Core composes the module fragments with an
 execution-model header into the single `.d.ts` served as MCP resource
 `octo-santa://admin/typehead.d.ts`. Clients read it once and have a typed,
@@ -43,11 +43,11 @@ Two driving use cases:
 
 1. **External agent loops.** A bridge process listens for issue-tracker
    webhooks (Linear, Notion, Jira). On a change event it decides which channels
-   and agents to target and delivers directly. `storage.postMessage(...)` writes
+   and agents to target and delivers directly. `storage.sendMessage(...)` writes
    to the shared database, and because every agent process watches the
    `messages` table, that write **is** a push delivery — no other signal exists
    or is needed.
-2. **OLAP-style analytics.** `storage.countMessages({ groupBy: ... })` and
+2. **Reporting over history.** `storage.countMessages({ group_by: ... })` and
    filtered `getMessages` scans over message history, reshaped in code, without
    consuming any agent's unread cursor.
 
@@ -74,8 +74,8 @@ Hexagonal placement — core stays agnostic about both the language runtime and
 what any module's methods do:
 
 ```
-core/admin/types.ts        AdminModuleDescription, CodeRunOutcome, AdminRunResult, ...
-core/ports.ts              AdminModulePort { describe, createSearchApi, createExecuteApi }
+core/admin/types.ts        AdminModuleDescription, CodeRunResult, AdminRunResult, JsonValue
+core/ports.ts              AdminModulePort { describe, createReadApi, createWriteApi }
                            CodeRunnerPort  { run(code, bindings) }
 core/admin/service.ts      AdminService — composes bindings + typehead, normalizes result
 runtime/typescript/
@@ -95,9 +95,16 @@ admin.ts                   composition root for the admin connection
   the outcome — `undefined` → `null`, and a JSON round-trip that turns cycles /
   bigints / functions into a clear error at the boundary. `describe()` composes
   the served `.d.ts` from an execution-model header (core owns it) plus each
-  module's fragment. Duplicate and reserved (`console`) module names are
-  rejected at construction. Neither port is shaped by SQLite or by TypeScript
-  specifically — a different runtime or a non-storage module drops in unchanged.
+  module's fragment, once at construction. Duplicate module names, and names
+  the runner reserves (`console`, `process`, ...), are rejected there too —
+  the reserved list lives on `CodeRunnerPort`, the layer that owns the
+  execution environment, so a misconfiguration fails at boot rather than on
+  every request. Core's header deliberately does not name the MCP tools: it
+  describes a read-only run and a read/write run, and the transport appends
+  the `admin_search`/`admin_execute` mapping when it serves the document.
+  Neither port is shaped by SQLite or by TypeScript specifically — a different
+  runtime or a non-storage module drops in unchanged, and `CodeRunnerPort`
+  reports its own `language`.
 - **Runtime** (`TypeScriptRunner`, a new adapter layer): transpiles with
   `Bun.Transpiler` (types stripped), rejects `import` / `require` / dynamic
   `import()` up front via `scanImports`, wraps the code as an async function
@@ -110,8 +117,9 @@ admin.ts                   composition root for the admin connection
   reach outside their typed surface.
 - **Storage module** (`SqliteAdminModule`): the `storage` global. Exposes a
   read surface (`listAgents`, `getMessages`, `countMessages`,
-  `getMaxMessageId`, ...) and, on execute, controlled writes (`ensureAgent`,
-  `ensureChannel`, `addMember`, `postMessage`, `postDirectMessage`). Each write
+  `getLatestMessageId`, ...) and, on execute, controlled writes
+  (`createAgentIfMissing`, `createChannelIfMissing`, `addMember`, `sendMessage`,
+  `sendDirectMessage`). Each write
   reuses the same domain rules the messaging service enforces (agent-name
   validation, `extractMentions`, no self-mention, DM privacy via
   `assertDmAccess`, membership-on-send) and the same concurrency discipline
@@ -128,10 +136,22 @@ admin.ts                   composition root for the admin connection
   search + execute is the point; the typed contract is static reference
   material, so it lives on the resource surface.
 
+### Naming
+
+The public surface is written for an outside integrator, not for this
+codebase: `sendMessage` / `sendDirectMessage` (matching the product's `send`
+verb, and avoiding the DOM's `postMessage`), `createAgentIfMissing` /
+`createChannelIfMissing` (saying what they do instead of "ensure"),
+`StorageReadApi` / `StorageWriteApi` (the read surface has no search method),
+`getLatestMessageId`, and snake_case options (`after_id`, `since_ms`,
+`group_by`) matching the existing `before_id`. The typehead prose avoids
+jargon — no "OLAP", no "high-water mark" — and explains the incremental-pull
+pattern in plain words instead.
+
 ## Extensibility: adding a module
 
 A new module implements `AdminModulePort` — `describe()` returning its binding
-name, provider, and `.d.ts` fragment; `createSearchApi()` / `createExecuteApi()`
+name, provider, and `.d.ts` fragment; `createReadApi()` / `createWriteApi()`
 returning the API objects — and is passed into `AdminService`'s module list at
 the composition root. Its methods appear as a new global inside submitted code,
 its fragment is concatenated into the served `.d.ts`, and core, the runtime,
@@ -152,9 +172,9 @@ tools; agent-facing sessions cannot reach the elevated surface.
 - Posting a message *is* delivery: every agent process watches the `messages`
   table and pushes matching rows. `mentions` drives targeting (`["*"]` = @all;
   DM channels always push; `[]` = silent). Callers never see the FK ordering
-  or mention-extraction — `postMessage`/`postDirectMessage` handle it.
+  or mention-extraction — `sendMessage`/`sendDirectMessage` handle it.
 - Reads never advance any unread cursor.
-- Message ids are monotonic; `getMaxMessageId` + `getMessages({ afterId })`
+- Message ids are monotonic; `getLatestMessageId` + `getMessages({ after_id })`
   form the incremental-pull cursor for external loops.
 
 ## Testing
@@ -173,7 +193,7 @@ tools; agent-facing sessions cannot reach the elevated surface.
   taking `code`, annotations, structured-output contract, composed typehead
   resource, <2KB instructions.
 - `tests/admin/external-integration.test.ts` — end-to-end: an issue-tracker
-  bridge's `postMessage` (submitted as TypeScript) is seen by
+  bridge's `sendMessage` (submitted as TypeScript) is seen by
   `messaging_read_messages` and the notification watcher; the read surface has
   no write methods; OLAP aggregation and incremental-pull loops run in code and
   leave cursors untouched.

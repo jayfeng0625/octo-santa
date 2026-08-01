@@ -1,5 +1,6 @@
 import { describe, it, expect, afterEach } from "bun:test";
 import { cleanupDb, testDbPath, setupTestDb } from "../../helpers/db";
+import { makeMockServer } from "../../helpers/mcp";
 import { allMigrations } from "../../../src/storage/sqlite/migrations";
 import { SqliteAdminModule } from "../../../src/storage/sqlite/admin-module";
 import { AdminService } from "../../../src/core/admin/service";
@@ -21,22 +22,10 @@ function setup() {
   const db = setupTestDb(TEST_DB, allMigrations);
   const admin = new AdminService(new TypeScriptRunner(), [new SqliteAdminModule(db)]);
 
-  const configs: Record<string, any> = {};
-  const handlers: Record<string, (...args: any[]) => Promise<any>> = {};
-  const resources: Record<string, { uri: string; config: any; read: (uri: URL) => Promise<any> }> = {};
-  const mockServer = {
-    registerTool: (name: string, config: any, cb: (...args: any[]) => Promise<any>) => {
-      configs[name] = config;
-      handlers[name] = cb;
-    },
-    registerResource: (name: string, uri: string, config: any, read: (uri: URL) => Promise<any>) => {
-      resources[name] = { uri, config, read };
-    },
-  } as any;
-
-  registerAdminTools(mockServer, admin);
-  registerTypeheadResource(mockServer, admin);
-  return { db, admin, configs, handlers, resources };
+  const { server, configs, resources, invoke } = makeMockServer();
+  registerAdminTools(server, admin);
+  registerTypeheadResource(server, admin);
+  return { db, admin, configs, resources, invoke };
 }
 
 describe("admin plane tool surface", () => {
@@ -46,12 +35,13 @@ describe("admin plane tool surface", () => {
     db.close();
   });
 
-  it("both tools take TypeScript code, not queries", () => {
-    const { db, configs } = setup();
+  it("both tools take code, not queries", () => {
+    const { db, admin, configs } = setup();
+    const language = admin.describe().language;
     for (const name of Object.keys(configs)) {
       const shape = configs[name].inputSchema.shape;
       expect(Object.keys(shape), `${name} input keys`).toEqual(["code"]);
-      expect(configs[name].description).toContain("TypeScript");
+      expect(configs[name].description, `${name} names the language`).toContain(language);
     }
     db.close();
   });
@@ -85,8 +75,12 @@ describe("typehead resource", () => {
     expect(resource.uri).toBe(ADMIN_TYPEHEAD_URI);
     expect(resource.config.mimeType).toBe("application/typescript");
     const result = await resource.read(new URL(ADMIN_TYPEHEAD_URI));
-    expect(result.contents[0].text).toBe(admin.describe().typehead);
-    expect(result.contents[0].text).toContain("declare const storage");
+    const text = result.contents[0].text as string;
+    expect(text).toContain(admin.describe().typehead);
+    expect(text).toContain("declare const storage");
+    // Core stays out of MCP naming; the transport supplies the mapping.
+    expect(admin.describe().typehead).not.toContain("admin_search");
+    expect(text).toContain("`admin_search` tool performs a read-only");
     db.close();
   });
 
@@ -102,22 +96,11 @@ describe("typehead resource", () => {
 
 describe("structured output contract", () => {
   it("real code runs parse against the declared outputSchema", async () => {
-    const { db, configs, handlers } = setup();
-
-    const invoke = async (name: string, args: Record<string, unknown>) => {
-      const result = await handlers[name]!(args);
-      const parsed = configs[name].outputSchema.safeParse(result.structuredContent);
-      expect(
-        parsed.success,
-        `${name} structuredContent vs outputSchema: ${JSON.stringify(parsed.error?.issues)}`
-      ).toBe(true);
-      expect(result.content[0].text).toBe(JSON.stringify(result.structuredContent));
-      return result.structuredContent;
-    };
+    const { db, invoke } = setup();
 
     const executed = await invoke("admin_execute", {
       code: `
-        const channel = storage.ensureChannel("wire-check", "meta-bridge");
+        const channel = storage.createChannelIfMissing("wire-check", "meta-bridge");
         console.log("created", channel.name);
         return { channelId: channel.id };
       `,

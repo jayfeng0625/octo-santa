@@ -1,3 +1,8 @@
+// Every tool in every MCP transport octo-santa serves is annotated with this:
+// nothing here reaches an open-world external system, only the local shared
+// SQLite database.
+export const LOCAL = { openWorldHint: false } as const;
+
 // Tool results carry the same object twice: human/legacy-readable JSON text
 // and validated structuredContent. Keep results top-level objects — object
 // shapes project identically onto both protocol eras.

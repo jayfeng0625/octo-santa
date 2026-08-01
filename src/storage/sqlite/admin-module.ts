@@ -1,8 +1,12 @@
 import type { Database } from "bun:sqlite";
 import type { AdminModulePort } from "../../core/ports";
 import type { AdminModuleDescription } from "../../core/admin/types";
+import type { Channel } from "../../core/messaging/types";
 import {
+  AGENT_NAME_RE,
   validateAgentName,
+  validateChannelName,
+  validateMessageContent,
   extractMentions,
   assertDmAccess,
   isDmChannel,
@@ -12,13 +16,10 @@ import {
 import { withRetrySync } from "./db";
 import { STORAGE_TYPEHEAD } from "./admin-typehead";
 
-// The storage module of the code-mode admin plane. Submitted TypeScript sees
-// this API as the `storage` global; raw SQL never crosses the boundary — every
-// method is a controlled, parameterized operation that upholds the messaging
-// invariants (FKs, mention extraction, membership-on-send, DM privacy).
-//
-// All SQL strings here come from a small fixed set, so db.query()'s prepared-
-// statement cache applies throughout.
+// The storage module of the admin API. Submitted code sees this as the
+// `storage` global; raw SQL never crosses the boundary — every method is a
+// controlled, parameterized operation that upholds the messaging invariants
+// (FKs, mention extraction, membership-on-send, DM privacy).
 
 export interface AgentRecord {
   id: string;
@@ -27,12 +28,9 @@ export interface AgentRecord {
   active: boolean;
 }
 
-export interface ChannelRecord {
-  id: number;
-  name: string;
-  created_by: string;
-  created_at: number;
-}
+// Same shape as the core domain type; aliased so the public API name is
+// stable if either side ever gains a field the other doesn't want.
+export type ChannelRecord = Channel;
 
 export interface MemberRecord {
   agent_id: string;
@@ -51,37 +49,38 @@ export interface MessageRecord {
 export interface MessageFilter {
   channel?: string;
   sender?: string;
-  // Messages that mention this agent (or @all).
+  // Messages that mention this agent (or everyone).
   mentioning?: string;
-  // Cursor for incremental pulls: only messages with id > afterId.
-  afterId?: number;
-  sinceMs?: number;
-  untilMs?: number;
+  // Only messages newer than this id.
+  after_id?: number;
+  since_ms?: number;
+  until_ms?: number;
   // Default 100, max 10_000.
   limit?: number;
 }
 
 export interface CountFilter {
   channel?: string;
-  sinceMs?: number;
-  untilMs?: number;
-  groupBy?: "sender" | "channel" | "day";
+  since_ms?: number;
+  until_ms?: number;
+  group_by?: "sender" | "channel" | "day";
 }
 
 export interface CountRecord {
-  group: string | null;
+  // The sender, channel, or day counted; null when group_by was omitted.
+  value: string | null;
   count: number;
 }
 
-export interface PostMessageInput {
+export interface SendMessageInput {
   channel: string;
   sender: string;
   content: string;
-  // Explicit mention targets ("*" = @all). Omitted → extracted from content.
+  // Who to notify ("*" = everyone). Omitted → read from the content's @names.
   mentions?: string[];
 }
 
-export interface StorageSearchApi {
+export interface StorageReadApi {
   listAgents(): AgentRecord[];
   getAgent(id: string): AgentRecord | null;
   listChannels(): ChannelRecord[];
@@ -89,57 +88,92 @@ export interface StorageSearchApi {
   listMembers(channel: string): MemberRecord[];
   getMessages(filter?: MessageFilter): MessageRecord[];
   countMessages(filter?: CountFilter): CountRecord[];
-  getMaxMessageId(): number;
+  getLatestMessageId(): number;
 }
 
-export interface StorageExecuteApi extends StorageSearchApi {
-  ensureAgent(id: string): AgentRecord;
-  ensureChannel(name: string, createdBy: string): ChannelRecord;
+export interface StorageWriteApi extends StorageReadApi {
+  createAgentIfMissing(id: string): AgentRecord;
+  createChannelIfMissing(name: string, createdBy: string): ChannelRecord;
   addMember(channel: string, agentId: string): void;
-  postMessage(input: PostMessageInput): MessageRecord;
-  postDirectMessage(input: { from: string; to: string; content: string }): MessageRecord;
+  sendMessage(input: SendMessageInput): MessageRecord;
+  sendDirectMessage(input: { from: string; to: string; content: string }): MessageRecord;
 }
 
-const CHANNEL_NAME_RE = /^[\w.,@#-]+$/;
-const MENTION_NAME_RE = /^[\w-]+$/;
-const MAX_CONTENT_LENGTH = 100_000;
 const MAX_MESSAGE_LIMIT = 10_000;
 const DEFAULT_MESSAGE_LIMIT = 100;
 
-const GROUP_EXPRS: Record<NonNullable<CountFilter["groupBy"]>, string> = {
+// Filter key → SQL predicate. Both read paths draw from this one table, so a
+// predicate can never exist on one and be silently missing from the other.
+// Each caller passes the keys it honors; the emitted SQL string set stays
+// fixed and small, so db.query()'s prepared-statement cache still applies.
+const FILTER_CLAUSES = {
+  channel: "c.name = ?",
+  sender: "m.agent_id = ?",
+  mentioning:
+    "EXISTS (SELECT 1 FROM json_each(m.mentions) WHERE json_each.value IN (?, '*'))",
+  after_id: "m.id > ?",
+  since_ms: "m.created_at >= ?",
+  until_ms: "m.created_at <= ?",
+} as const;
+
+type FilterKey = keyof typeof FILTER_CLAUSES;
+
+const MESSAGE_KEYS = [
+  "channel",
+  "sender",
+  "mentioning",
+  "after_id",
+  "since_ms",
+  "until_ms",
+] as const satisfies readonly FilterKey[];
+const COUNT_KEYS = ["channel", "since_ms", "until_ms"] as const satisfies readonly FilterKey[];
+
+const GROUP_EXPRS = {
   sender: "m.agent_id",
   channel: "c.name",
   day: "strftime('%Y-%m-%d', m.created_at / 1000, 'unixepoch')",
+} as const;
+
+const MESSAGES_FROM = "FROM messages m JOIN channels c ON c.id = m.channel_id";
+
+type AgentRow = {
+  id: string;
+  created_at: number;
+  last_seen_at: number;
+  pid: number | null;
 };
 
 export class SqliteAdminModule implements AdminModulePort {
   constructor(private readonly db: Database) {}
 
   describe(): AdminModuleDescription {
-    return { module: "storage", provider: "sqlite", typehead: STORAGE_TYPEHEAD };
+    return { globalName: "storage", provider: "sqlite", typehead: STORAGE_TYPEHEAD };
   }
 
-  createSearchApi(): StorageSearchApi {
+  // Bound method references rather than arrow wrappers: TypeScript then checks
+  // each full signature against the interface, so a parameter added to a
+  // method can't be silently dropped here.
+  createReadApi(): StorageReadApi {
     return {
-      listAgents: () => this.listAgents(),
-      getAgent: (id) => this.getAgent(id),
-      listChannels: () => this.listChannels(),
-      getChannel: (name) => this.getChannel(name),
-      listMembers: (channel) => this.listMembers(channel),
-      getMessages: (filter) => this.getMessages(filter),
-      countMessages: (filter) => this.countMessages(filter),
-      getMaxMessageId: () => this.getMaxMessageId(),
+      listAgents: this.listAgents.bind(this),
+      getAgent: this.getAgent.bind(this),
+      listChannels: this.listChannels.bind(this),
+      getChannel: this.getChannel.bind(this),
+      listMembers: this.listMembers.bind(this),
+      getMessages: this.getMessages.bind(this),
+      countMessages: this.countMessages.bind(this),
+      getLatestMessageId: this.getLatestMessageId.bind(this),
     };
   }
 
-  createExecuteApi(): StorageExecuteApi {
+  createWriteApi(): StorageWriteApi {
     return {
-      ...this.createSearchApi(),
-      ensureAgent: (id) => this.ensureAgent(id),
-      ensureChannel: (name, createdBy) => this.ensureChannel(name, createdBy),
-      addMember: (channel, agentId) => this.addMember(channel, agentId),
-      postMessage: (input) => this.postMessage(input),
-      postDirectMessage: (input) => this.postDirectMessage(input),
+      ...this.createReadApi(),
+      createAgentIfMissing: this.createAgentIfMissing.bind(this),
+      createChannelIfMissing: this.createChannelIfMissing.bind(this),
+      addMember: this.addMember.bind(this),
+      sendMessage: this.sendMessage.bind(this),
+      sendDirectMessage: this.sendDirectMessage.bind(this),
     };
   }
 
@@ -148,14 +182,14 @@ export class SqliteAdminModule implements AdminModulePort {
   private listAgents(): AgentRecord[] {
     const rows = this.db
       .query("SELECT id, created_at, last_seen_at, pid FROM agents ORDER BY id")
-      .all() as { id: string; created_at: number; last_seen_at: number; pid: number | null }[];
+      .all() as AgentRow[];
     return rows.map(toAgentRecord);
   }
 
   private getAgent(id: string): AgentRecord | null {
     const row = this.db
       .query("SELECT id, created_at, last_seen_at, pid FROM agents WHERE id = ?")
-      .get(id) as { id: string; created_at: number; last_seen_at: number; pid: number | null } | null;
+      .get(id) as AgentRow | null;
     return row ? toAgentRecord(row) : null;
   }
 
@@ -184,82 +218,38 @@ export class SqliteAdminModule implements AdminModulePort {
   }
 
   private getMessages(filter: MessageFilter = {}): MessageRecord[] {
-    const where: string[] = [];
-    const params: (string | number)[] = [];
-    if (filter.channel !== undefined) {
-      where.push("c.name = ?");
-      params.push(filter.channel);
-    }
-    if (filter.sender !== undefined) {
-      where.push("m.agent_id = ?");
-      params.push(filter.sender);
-    }
-    if (filter.mentioning !== undefined) {
-      where.push(
-        "EXISTS (SELECT 1 FROM json_each(m.mentions) WHERE json_each.value IN (?, '*'))"
-      );
-      params.push(filter.mentioning);
-    }
-    if (filter.afterId !== undefined) {
-      where.push("m.id > ?");
-      params.push(filter.afterId);
-    }
-    if (filter.sinceMs !== undefined) {
-      where.push("m.created_at >= ?");
-      params.push(filter.sinceMs);
-    }
-    if (filter.untilMs !== undefined) {
-      where.push("m.created_at <= ?");
-      params.push(filter.untilMs);
-    }
+    const { sql: whereSql, params } = buildWhere(filter, MESSAGE_KEYS);
     const limit = Math.max(
       1,
       Math.min(filter.limit ?? DEFAULT_MESSAGE_LIMIT, MAX_MESSAGE_LIMIT)
     );
-    const sql =
-      "SELECT m.id, c.name AS channel, m.agent_id AS sender, m.content, m.created_at, m.mentions " +
-      "FROM messages m JOIN channels c ON c.id = m.channel_id" +
-      (where.length > 0 ? ` WHERE ${where.join(" AND ")}` : "") +
-      " ORDER BY m.id ASC LIMIT ?";
-    const rows = this.db.query(sql).all(...params, limit) as (Omit<
-      MessageRecord,
-      "mentions"
-    > & { mentions: string })[];
+    const rows = this.db
+      .query(
+        `SELECT m.id, c.name AS channel, m.agent_id AS sender, m.content, m.created_at, m.mentions
+         ${MESSAGES_FROM}${whereSql} ORDER BY m.id ASC LIMIT ?`
+      )
+      .all(...params, limit) as (Omit<MessageRecord, "mentions"> & { mentions: string })[];
     return rows.map((r) => ({ ...r, mentions: JSON.parse(r.mentions) as string[] }));
   }
 
   private countMessages(filter: CountFilter = {}): CountRecord[] {
-    const where: string[] = [];
-    const params: (string | number)[] = [];
-    if (filter.channel !== undefined) {
-      where.push("c.name = ?");
-      params.push(filter.channel);
-    }
-    if (filter.sinceMs !== undefined) {
-      where.push("m.created_at >= ?");
-      params.push(filter.sinceMs);
-    }
-    if (filter.untilMs !== undefined) {
-      where.push("m.created_at <= ?");
-      params.push(filter.untilMs);
-    }
-    const whereSql = where.length > 0 ? ` WHERE ${where.join(" AND ")}` : "";
-    const from = "FROM messages m JOIN channels c ON c.id = m.channel_id";
-    if (filter.groupBy === undefined) {
+    const { sql: whereSql, params } = buildWhere(filter, COUNT_KEYS);
+    if (filter.group_by === undefined) {
       const row = this.db
-        .query(`SELECT COUNT(*) AS count ${from}${whereSql}`)
+        .query(`SELECT COUNT(*) AS count ${MESSAGES_FROM}${whereSql}`)
         .get(...params) as { count: number };
-      return [{ group: null, count: row.count }];
+      return [{ value: null, count: row.count }];
     }
-    const expr = GROUP_EXPRS[filter.groupBy];
+    const expr = GROUP_EXPRS[filter.group_by];
     return this.db
       .query(
-        `SELECT ${expr} AS "group", COUNT(*) AS count ${from}${whereSql} GROUP BY ${expr} ORDER BY count DESC, "group" ASC`
+        `SELECT ${expr} AS value, COUNT(*) AS count ${MESSAGES_FROM}${whereSql}
+         GROUP BY ${expr} ORDER BY count DESC, value ASC`
       )
       .all(...params) as CountRecord[];
   }
 
-  private getMaxMessageId(): number {
+  private getLatestMessageId(): number {
     const row = this.db
       .query("SELECT COALESCE(MAX(id), 0) AS max_id FROM messages")
       .get() as { max_id: number };
@@ -268,38 +258,37 @@ export class SqliteAdminModule implements AdminModulePort {
 
   // --- Write surface ---
 
-  private ensureAgent(id: string): AgentRecord {
+  private createAgentIfMissing(id: string): AgentRecord {
     validateAgentName(id);
-    const doEnsure = this.db.transaction(() => this.insertAgentIfMissing(id));
-    withRetrySync(() => doEnsure.immediate());
-    return this.getAgent(id)!;
+    // Common case is an integration re-registering itself every event: a WAL
+    // read costs nothing, while the insert path takes the DB-wide write lock.
+    const existing = this.getAgent(id);
+    if (existing) return existing;
+    const doCreate = this.db.transaction(() => {
+      this.insertAgentIfMissing(id);
+      return this.getAgent(id)!;
+    });
+    return withRetrySync(() => doCreate.immediate());
   }
 
-  private ensureChannel(name: string, createdBy: string): ChannelRecord {
+  private createChannelIfMissing(name: string, createdBy: string): ChannelRecord {
     validateChannelName(name);
     if (isDmChannel(name)) {
       throw new Error(
-        `"${name}" is a DM-style name; use postDirectMessage for direct messages`
+        `"${name}" is a DM-style name; use sendDirectMessage for direct messages`
       );
     }
     validateAgentName(createdBy);
-    const doEnsure = this.db.transaction(() => {
+    const doCreate = this.db.transaction(() => {
       this.insertAgentIfMissing(createdBy);
-      this.db
-        .query(
-          "INSERT INTO channels (name, created_by, created_at) VALUES (?, ?, ?) ON CONFLICT(name) DO NOTHING"
-        )
-        .run(name, createdBy, Date.now());
-      const channel = this.getChannel(name)!;
-      // The channel's actual creator joins, mirroring
-      // messaging_create_channel's auto-join. On an already-existing channel
-      // that is the original creator, not this idempotent caller — so a
-      // repeat ensureChannel with a different name doesn't silently subscribe
-      // a bystander. Use addMember to join others explicitly.
+      const channel = this.insertChannelIfMissing(name, createdBy);
+      // The channel's actual creator joins, mirroring messaging_create_channel.
+      // On an existing channel that is the original creator, not this caller —
+      // so a repeat call doesn't silently subscribe a bystander.
       this.insertMemberIfMissing(channel.created_by, channel.id);
       return channel;
     });
-    return withRetrySync(() => doEnsure.immediate());
+    return withRetrySync(() => doCreate.immediate());
   }
 
   private addMember(channel: string, agentId: string): void {
@@ -315,52 +304,50 @@ export class SqliteAdminModule implements AdminModulePort {
 
   // Inserting the row IS the delivery: every agent's server process watches
   // the messages table and pushes rows whose mentions match its agent.
-  private postMessage(input: PostMessageInput): MessageRecord {
+  private sendMessage(input: SendMessageInput): MessageRecord {
     const { channel, sender, content } = input;
-    validateContent(content);
+    validateMessageContent(content);
     assertDmAccess(channel, sender);
-    const doPost = this.db.transaction(() => {
+    if (sender !== "_system") validateAgentName(sender);
+
+    // Resolved before the transaction opens: reads are free in WAL, and the
+    // write lock serializes every process on the shared database, so no query
+    // that can run outside belongs inside. Mirrors MessagingService.send,
+    // which reads the agent list before entering the insert transaction.
+    const mentions =
+      input.mentions !== undefined
+        ? validateMentions(input.mentions)
+        : extractMentions(content, this.allAgentIds());
+    if (mentions.includes(sender)) {
+      throw new Error("Cannot @mention yourself in a message");
+    }
+
+    const doSend = this.db.transaction(() => {
       const ch = this.requireChannel(channel);
-      if (sender !== "_system") {
-        validateAgentName(sender);
-        this.insertAgentIfMissing(sender);
-      }
-      const mentions =
-        input.mentions !== undefined
-          ? validateMentions(input.mentions)
-          : extractMentions(content, this.allAgentIds());
-      if (mentions.includes(sender)) {
-        throw new Error("Cannot @mention yourself in a message");
-      }
+      if (sender !== "_system") this.insertAgentIfMissing(sender);
       return this.insertMessage(ch, sender, content, mentions);
     });
-    return withRetrySync(() => doPost.immediate());
+    return withRetrySync(() => doSend.immediate());
   }
 
-  private postDirectMessage(input: { from: string; to: string; content: string }): MessageRecord {
+  private sendDirectMessage(input: { from: string; to: string; content: string }): MessageRecord {
     const { from, to, content } = input;
     validateAgentName(from);
     validateAgentName(to);
     if (from === to) throw new Error("Cannot DM yourself");
-    validateContent(content);
-    const doPost = this.db.transaction(() => {
+    validateMessageContent(content);
+    const doSend = this.db.transaction(() => {
       // The target must already exist — a DM to an agent nobody has ever
       // registered would never be received.
       if (this.getAgent(to) === null) throw new Error(`Agent "${to}" not found`);
       this.insertAgentIfMissing(from);
-      const name = dmChannelName(from, to);
-      this.db
-        .query(
-          "INSERT INTO channels (name, created_by, created_at) VALUES (?, ?, ?) ON CONFLICT(name) DO NOTHING"
-        )
-        .run(name, from, Date.now());
-      const channel = this.getChannel(name)!;
+      const channel = this.insertChannelIfMissing(dmChannelName(from, to), from);
       this.insertMemberIfMissing(from, channel.id);
       this.insertMemberIfMissing(to, channel.id);
       // DM channels push every message regardless of mentions.
       return this.insertMessage(channel, from, content, []);
     });
-    return withRetrySync(() => doPost.immediate());
+    return withRetrySync(() => doSend.immediate());
   }
 
   // --- Internals (all called inside a transaction where it matters) ---
@@ -385,6 +372,15 @@ export class SqliteAdminModule implements AdminModulePort {
       .run(id, now, now);
   }
 
+  private insertChannelIfMissing(name: string, createdBy: string): ChannelRecord {
+    this.db
+      .query(
+        "INSERT INTO channels (name, created_by, created_at) VALUES (?, ?, ?) ON CONFLICT(name) DO NOTHING"
+      )
+      .run(name, createdBy, Date.now());
+    return this.getChannel(name)!;
+  }
+
   private insertMemberIfMissing(agentId: string, channelId: number): void {
     this.db
       .query(
@@ -401,12 +397,11 @@ export class SqliteAdminModule implements AdminModulePort {
     mentions: string[]
   ): MessageRecord {
     const now = Date.now();
-    const mentionsJson = JSON.stringify(mentions);
     this.db
       .query(
         "INSERT INTO messages (channel_id, agent_id, content, created_at, mentions) VALUES (?, ?, ?, ?, ?)"
       )
-      .run(channel.id, sender, content, now, mentionsJson);
+      .run(channel.id, sender, content, now, JSON.stringify(mentions));
     const idRow = this.db.query("SELECT last_insert_rowid() AS id").get() as { id: number };
     // Sender joins on send, mirroring insertAndJoinSender.
     this.insertMemberIfMissing(sender, channel.id);
@@ -421,12 +416,25 @@ export class SqliteAdminModule implements AdminModulePort {
   }
 }
 
-function toAgentRecord(row: {
-  id: string;
-  created_at: number;
-  last_seen_at: number;
-  pid: number | null;
-}): AgentRecord {
+function buildWhere(
+  filter: Partial<Record<FilterKey, unknown>>,
+  keys: readonly FilterKey[]
+): { sql: string; params: (string | number)[] } {
+  const clauses: string[] = [];
+  const params: (string | number)[] = [];
+  for (const key of keys) {
+    const value = filter[key];
+    if (value === undefined) continue;
+    clauses.push(FILTER_CLAUSES[key]);
+    params.push(value as string | number);
+  }
+  return {
+    sql: clauses.length > 0 ? ` WHERE ${clauses.join(" AND ")}` : "",
+    params,
+  };
+}
+
+function toAgentRecord(row: AgentRow): AgentRecord {
   return {
     id: row.id,
     created_at: row.created_at,
@@ -435,27 +443,10 @@ function toAgentRecord(row: {
   };
 }
 
-function validateChannelName(name: string): void {
-  if (!name.trim()) throw new Error("channel name must not be empty");
-  if (name.length > 128) throw new Error("channel name must not exceed 128 characters");
-  if (!CHANNEL_NAME_RE.test(name)) {
-    throw new Error(
-      "channel name must contain only letters, digits, underscores, hyphens, dots, commas, @ or #"
-    );
-  }
-}
-
-function validateContent(content: string): void {
-  if (!content.trim()) throw new Error("message content must not be empty");
-  if (content.length > MAX_CONTENT_LENGTH) {
-    throw new Error(`message content must not exceed ${MAX_CONTENT_LENGTH} characters`);
-  }
-}
-
 function validateMentions(mentions: string[]): string[] {
   for (const name of mentions) {
-    if (name !== "*" && !MENTION_NAME_RE.test(name)) {
-      throw new Error(`invalid mention "${name}" (use agent names or "*" for @all)`);
+    if (name !== "*" && !AGENT_NAME_RE.test(name)) {
+      throw new Error(`invalid mention "${name}" (use agent names or "*" for everyone)`);
     }
   }
   return mentions;
