@@ -190,14 +190,17 @@ class Evidence {
     this.set("claude", "compaction-persistence", "documented", "Pinned SDK documents resume/compaction controls; exact nonce survival remains unverified.", true);
     this.set("codex", "steer-placement", "documented", "turn/steer queues input for a later provider sample in the active regular turn.", true);
     this.set("codex", "harness-managed-follow-up", "documented", "No native queue; client waits for turn/completed and then starts a turn.");
+    this.set("codex", "origin-transport-visibility", "unsupported", "clientUserMessageId and thread source are correlation/client-class metadata, not per-delivery sender origin.");
     this.set("codex", "origin-model-visibility", "unsupported", "clientUserMessageId is transport correlation, not model-visible sender origin.");
     this.set("codex", "compaction-persistence", "documented", "Manual compaction lifecycle is documented; this run does not spend a compaction turn.", true);
     this.set("pi", "steer-placement", "documented", "Native steer queue is documented to drain before the next model call.", true);
     this.set("pi", "harness-managed-follow-up", "documented", "Native follow_up queue is documented to run when the agent would otherwise stop.", true);
+    this.set("pi", "origin-transport-visibility", "unsupported", "InputSource is extension-facing and is not persisted as per-message sender origin.");
     this.set("pi", "origin-model-visibility", "unsupported", "InputSource/custom metadata is removed from model form unless encoded in content.");
     this.set("pi", "compaction-persistence", "documented", "Session context construction across compaction is documented; queued-message durability is not.", true);
     this.set("opencode", "steer-placement", "unsupported", "OpenCode 1.18.15 has no server or SDK steer primitive.");
     this.set("opencode", "harness-managed-follow-up", "documented", "The first-party app uses an idle-gated client queue; the server has no queue API.");
+    this.set("opencode", "origin-transport-visibility", "unsupported", "Message IDs provide correlation, but OpenCode has no structured per-delivery sender-origin field.");
     this.set("opencode", "origin-model-visibility", "unsupported", "Stored part metadata is not lowered into model input at this pin.");
     this.set("opencode", "compaction-persistence", "documented", "Compaction and continued prompting are documented; exact nonce retention is not probed.", true);
   }
@@ -880,7 +883,6 @@ async function probePi(evidence: Evidence): Promise<void> {
     const ordered = [...steerNonces, ...followNonces].every((nonce, index, values) => index === 0 || transcript.lastIndexOf(values[index - 1]) < transcript.lastIndexOf(nonce));
     evidence.set(harness, "two-message-burst-order", steerObserved && followObserved && ordered ? "empirically-verified" : "unverified", "Compared model-visible nonce order across native steer and follow_up queue bursts.", true);
     evidence.set(harness, "reply-correlation", steerObserved || followObserved ? "degraded-fallback" : "unverified", "RPC response IDs end at acceptance; event/reply correlation required wrapper nonce attestation.");
-    evidence.set(harness, "origin-transport-visibility", "unverified", "RPC input source is extension-hook metadata and is not retained as per-message origin in ordinary history.");
     evidence.set(harness, "origin-model-visibility", "unsupported", "InputSource/custom metadata is removed from model form unless encoded in content.");
     evidence.set(harness, "permission-wait-interaction", "unsupported", "The explicit custom-only tool surface has no permission-wait protocol.");
     evidence.set(harness, "busy-delivery-text", "unverified", "The deterministic injection gate was tool execution, not a separately proven text-stream window.");
@@ -1026,7 +1028,7 @@ async function probeCodex(evidence: Evidence): Promise<void> {
     evidence.set(harness, "two-message-burst-order", steerObserved && initialTranscript.lastIndexOf(state.steerNonces[0]) < initialTranscript.lastIndexOf(state.steerNonces[1]) ? "empirically-verified" : "unverified", "Compared two accepted steer client IDs and model nonce echoes.", true);
     evidence.set(harness, "reply-correlation", fixtureProof ? "empirically-verified" : "unverified", "Turn/item IDs and clientUserMessageId provide native transport correlation; nonce echo proves model observation.", true);
     const clientIdVisible = state.values.some((message) => JSON.stringify(message).includes(runId) && JSON.stringify(message).includes("clientId"));
-    evidence.set(harness, "origin-transport-visibility", clientIdVisible ? "empirically-verified" : "unverified", clientIdVisible ? "User item echoed clientUserMessageId as clientId." : "No user item with echoed clientId was captured.", true);
+    if (clientIdVisible) evidence.trace(harness, "reply-correlation", runId, "durable", "user item echoed clientUserMessageId as clientId");
     evidence.set(harness, "origin-model-visibility", "unsupported", "clientUserMessageId is transport correlation, not model-visible sender origin.");
     const followNonces = [`${runId}-follow-1`, `${runId}-follow-2`];
     let followVerified = true;
@@ -1066,7 +1068,7 @@ async function probeCodex(evidence: Evidence): Promise<void> {
     evidence.trace(harness, "fixture-validity", runId, "failed", reason);
     if (state?.threadId) {
       const clientIdVisible = state.values.some((message) => JSON.stringify(message).includes(runId) && JSON.stringify(message).includes("clientId"));
-      if (clientIdVisible) evidence.set(harness, "origin-transport-visibility", "empirically-verified", "App Server persisted and emitted clientUserMessageId as user-item clientId before provider authentication failed.", true, ["codex/raw-protocol.jsonl"]);
+      if (clientIdVisible) evidence.trace(harness, "reply-correlation", runId, "durable", "App Server persisted clientUserMessageId as user-item clientId before provider authentication failed");
       evidence.set(harness, "origin-model-visibility", "unsupported", "clientUserMessageId is transport correlation, not model-visible sender origin.");
       const threadId = state.threadId;
       try {
@@ -1240,7 +1242,6 @@ async function probeOpenCode(evidence: Evidence): Promise<void> {
     const nativeParent = history.some((entry) => entry?.info?.role === "assistant" && [initialMessageId, ...busyMessageIds.values()].includes(entry.info.parentID));
     evidence.set(harness, "reply-correlation", nativeParent ? "empirically-verified" : "unverified", nativeParent ? "Assistant parentID supplied a native edge to a client-supplied user message ID." : "No assistant parentID edge to a probe delivery was captured.", true);
     if (nativeParent) evidence.trace(harness, "reply-correlation", runId, "replied", "assistant parentID matched a client-supplied user message ID");
-    evidence.set(harness, "origin-transport-visibility", durableBusy ? "empirically-verified" : "unverified", durableBusy ? "Client message IDs survived in stored transport rows; no sender-kind field exists." : "Client IDs were not backfilled.", true);
     const followNonces = [`${runId}-follow-1`, `${runId}-follow-2`];
     let followVerified = true;
     for (const nonce of followNonces) {
