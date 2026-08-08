@@ -1,0 +1,6112 @@
+{
+  "prototype": "PROTOTYPE/WIPE process topology evidence",
+  "question": "What measured process-level differences constrain a central single-writer gateway versus federated N-writer processes?",
+  "baseline": {
+    "repositoryCommit": "e99988029ab01191a02bf0144e0dee58916a9aae",
+    "bunVersion": "1.3.14",
+    "sqliteVersion": "3.51.0",
+    "platform": "darwin",
+    "arch": "arm64",
+    "scratchDirectory": "<temporary-directory>"
+  },
+  "structuralEnforcement": {
+    "central": "One persistent gateway worker receives every request and is the only steady-state process given the database path.",
+    "federated": "Each persistent worker receives the database path, opens its own SQLite connection, and handles only its assigned clients.",
+    "audit": "Every SQLite-opening worker records its PID and role in connection_audit; load results report the observed rows."
+  },
+  "measurements": {
+    "loadMatrix": [
+      {
+        "topology": "central",
+        "synchronous": "NORMAL",
+        "clientCount": 1,
+        "workerCount": 1,
+        "writesPerClient": 8,
+        "transactionHoldMs": 2,
+        "startupMs": 19.141,
+        "wallMs": 23.771,
+        "throughputPerSecond": 336.54,
+        "latencyMs": {
+          "min": 2.484,
+          "p50": 2.77,
+          "p95": 4.352,
+          "p99": 4.352,
+          "max": 4.352
+        },
+        "writerLockAcquisitionMs": {
+          "min": 0.005,
+          "p50": 0.007,
+          "p95": 0.019,
+          "p99": 0.019,
+          "max": 0.019
+        },
+        "transactionMs": {
+          "min": 2.408,
+          "p50": 2.614,
+          "p95": 2.746,
+          "p99": 2.746,
+          "max": 2.746
+        },
+        "busyRetries": 0,
+        "clientCompletionMs": [
+          23.689
+        ],
+        "clientCompletionSpreadRatio": 1,
+        "distinctObservedWriterPids": 1,
+        "walBeforeCheckpointBytes": 107152,
+        "walAfterCheckpointBytes": 107152,
+        "checkpointPids": [
+          12297
+        ],
+        "checkpointResponses": [
+          {
+            "id": "request-9",
+            "ok": true,
+            "op": "checkpoint",
+            "pid": 12297,
+            "result": {
+              "busy": 0,
+              "log": 26,
+              "checkpointed": 26
+            }
+          }
+        ],
+        "inspection": {
+          "deliveryCount": 8,
+          "connectionAudit": [
+            {
+              "pid": 12297,
+              "topology": "central",
+              "worker_id": "worker-0",
+              "opened_at_ms": 1786207253160.9148
+            }
+          ],
+          "integrityCheck": "ok"
+        },
+        "samples": [
+          {
+            "clientId": "client-0",
+            "sequence": 0,
+            "latencyMs": 4.352,
+            "acquisitionMs": 0.019,
+            "transactionMs": 2.746,
+            "busyRetries": 0,
+            "writerPid": 12297
+          },
+          {
+            "clientId": "client-0",
+            "sequence": 1,
+            "latencyMs": 2.802,
+            "acquisitionMs": 0.008,
+            "transactionMs": 2.566,
+            "busyRetries": 0,
+            "writerPid": 12297
+          },
+          {
+            "clientId": "client-0",
+            "sequence": 2,
+            "latencyMs": 2.77,
+            "acquisitionMs": 0.006,
+            "transactionMs": 2.626,
+            "busyRetries": 0,
+            "writerPid": 12297
+          },
+          {
+            "clientId": "client-0",
+            "sequence": 3,
+            "latencyMs": 2.761,
+            "acquisitionMs": 0.01,
+            "transactionMs": 2.638,
+            "busyRetries": 0,
+            "writerPid": 12297
+          },
+          {
+            "clientId": "client-0",
+            "sequence": 4,
+            "latencyMs": 2.908,
+            "acquisitionMs": 0.006,
+            "transactionMs": 2.614,
+            "busyRetries": 0,
+            "writerPid": 12297
+          },
+          {
+            "clientId": "client-0",
+            "sequence": 5,
+            "latencyMs": 2.951,
+            "acquisitionMs": 0.011,
+            "transactionMs": 2.633,
+            "busyRetries": 0,
+            "writerPid": 12297
+          },
+          {
+            "clientId": "client-0",
+            "sequence": 6,
+            "latencyMs": 2.656,
+            "acquisitionMs": 0.007,
+            "transactionMs": 2.563,
+            "busyRetries": 0,
+            "writerPid": 12297
+          },
+          {
+            "clientId": "client-0",
+            "sequence": 7,
+            "latencyMs": 2.484,
+            "acquisitionMs": 0.005,
+            "transactionMs": 2.408,
+            "busyRetries": 0,
+            "writerPid": 12297
+          }
+        ]
+      },
+      {
+        "topology": "federated",
+        "synchronous": "NORMAL",
+        "clientCount": 1,
+        "workerCount": 1,
+        "writesPerClient": 8,
+        "transactionHoldMs": 2,
+        "startupMs": 17.063,
+        "wallMs": 23.535,
+        "throughputPerSecond": 339.915,
+        "latencyMs": {
+          "min": 2.651,
+          "p50": 2.712,
+          "p95": 4.364,
+          "p99": 4.364,
+          "max": 4.364
+        },
+        "writerLockAcquisitionMs": {
+          "min": 0.005,
+          "p50": 0.006,
+          "p95": 0.01,
+          "p99": 0.01,
+          "max": 0.01
+        },
+        "transactionMs": {
+          "min": 2.544,
+          "p50": 2.6,
+          "p95": 2.674,
+          "p99": 2.674,
+          "max": 2.674
+        },
+        "busyRetries": 0,
+        "clientCompletionMs": [
+          23.529
+        ],
+        "clientCompletionSpreadRatio": 1,
+        "distinctObservedWriterPids": 1,
+        "walBeforeCheckpointBytes": 107152,
+        "walAfterCheckpointBytes": 107152,
+        "checkpointPids": [
+          12298
+        ],
+        "checkpointResponses": [
+          {
+            "id": "request-19",
+            "ok": true,
+            "op": "checkpoint",
+            "pid": 12298,
+            "result": {
+              "busy": 0,
+              "log": 26,
+              "checkpointed": 26
+            }
+          }
+        ],
+        "inspection": {
+          "deliveryCount": 8,
+          "connectionAudit": [
+            {
+              "pid": 12298,
+              "topology": "federated",
+              "worker_id": "worker-0",
+              "opened_at_ms": 1786207253210.7307
+            }
+          ],
+          "integrityCheck": "ok"
+        },
+        "samples": [
+          {
+            "clientId": "client-0",
+            "sequence": 0,
+            "latencyMs": 4.364,
+            "acquisitionMs": 0.01,
+            "transactionMs": 2.674,
+            "busyRetries": 0,
+            "writerPid": 12298
+          },
+          {
+            "clientId": "client-0",
+            "sequence": 1,
+            "latencyMs": 2.851,
+            "acquisitionMs": 0.007,
+            "transactionMs": 2.618,
+            "busyRetries": 0,
+            "writerPid": 12298
+          },
+          {
+            "clientId": "client-0",
+            "sequence": 2,
+            "latencyMs": 2.716,
+            "acquisitionMs": 0.009,
+            "transactionMs": 2.6,
+            "busyRetries": 0,
+            "writerPid": 12298
+          },
+          {
+            "clientId": "client-0",
+            "sequence": 3,
+            "latencyMs": 2.661,
+            "acquisitionMs": 0.005,
+            "transactionMs": 2.553,
+            "busyRetries": 0,
+            "writerPid": 12298
+          },
+          {
+            "clientId": "client-0",
+            "sequence": 4,
+            "latencyMs": 2.861,
+            "acquisitionMs": 0.005,
+            "transactionMs": 2.601,
+            "busyRetries": 0,
+            "writerPid": 12298
+          },
+          {
+            "clientId": "client-0",
+            "sequence": 5,
+            "latencyMs": 2.709,
+            "acquisitionMs": 0.008,
+            "transactionMs": 2.616,
+            "busyRetries": 0,
+            "writerPid": 12298
+          },
+          {
+            "clientId": "client-0",
+            "sequence": 6,
+            "latencyMs": 2.712,
+            "acquisitionMs": 0.005,
+            "transactionMs": 2.592,
+            "busyRetries": 0,
+            "writerPid": 12298
+          },
+          {
+            "clientId": "client-0",
+            "sequence": 7,
+            "latencyMs": 2.651,
+            "acquisitionMs": 0.006,
+            "transactionMs": 2.544,
+            "busyRetries": 0,
+            "writerPid": 12298
+          }
+        ]
+      },
+      {
+        "topology": "central",
+        "synchronous": "NORMAL",
+        "clientCount": 5,
+        "workerCount": 1,
+        "writesPerClient": 8,
+        "transactionHoldMs": 2,
+        "startupMs": 16.354,
+        "wallMs": 105.994,
+        "throughputPerSecond": 377.381,
+        "latencyMs": {
+          "min": 4.499,
+          "p50": 13.052,
+          "p95": 13.46,
+          "p99": 14.814,
+          "max": 14.814
+        },
+        "writerLockAcquisitionMs": {
+          "min": 0.003,
+          "p50": 0.005,
+          "p95": 0.012,
+          "p99": 0.026,
+          "max": 0.026
+        },
+        "transactionMs": {
+          "min": 2.102,
+          "p50": 2.589,
+          "p95": 2.652,
+          "p99": 2.735,
+          "max": 2.735
+        },
+        "busyRetries": 0,
+        "clientCompletionMs": [
+          95.732,
+          98.36,
+          100.94,
+          103.529,
+          105.951
+        ],
+        "clientCompletionSpreadRatio": 1.107,
+        "distinctObservedWriterPids": 1,
+        "walBeforeCheckpointBytes": 502672,
+        "walAfterCheckpointBytes": 502672,
+        "checkpointPids": [
+          12299
+        ],
+        "checkpointResponses": [
+          {
+            "id": "request-61",
+            "ok": true,
+            "op": "checkpoint",
+            "pid": 12299,
+            "result": {
+              "busy": 0,
+              "log": 122,
+              "checkpointed": 122
+            }
+          }
+        ],
+        "inspection": {
+          "deliveryCount": 40,
+          "connectionAudit": [
+            {
+              "pid": 12299,
+              "topology": "central",
+              "worker_id": "worker-0",
+              "opened_at_ms": 1786207253256.2866
+            }
+          ],
+          "integrityCheck": "ok"
+        },
+        "samples": [
+          {
+            "clientId": "client-0",
+            "sequence": 0,
+            "latencyMs": 4.499,
+            "acquisitionMs": 0.015,
+            "transactionMs": 2.735,
+            "busyRetries": 0,
+            "writerPid": 12299
+          },
+          {
+            "clientId": "client-1",
+            "sequence": 0,
+            "latencyMs": 7.12,
+            "acquisitionMs": 0.006,
+            "transactionMs": 2.623,
+            "busyRetries": 0,
+            "writerPid": 12299
+          },
+          {
+            "clientId": "client-2",
+            "sequence": 0,
+            "latencyMs": 9.662,
+            "acquisitionMs": 0.004,
+            "transactionMs": 2.545,
+            "busyRetries": 0,
+            "writerPid": 12299
+          },
+          {
+            "clientId": "client-3",
+            "sequence": 0,
+            "latencyMs": 12.256,
+            "acquisitionMs": 0.004,
+            "transactionMs": 2.591,
+            "busyRetries": 0,
+            "writerPid": 12299
+          },
+          {
+            "clientId": "client-4",
+            "sequence": 0,
+            "latencyMs": 14.814,
+            "acquisitionMs": 0.004,
+            "transactionMs": 2.545,
+            "busyRetries": 0,
+            "writerPid": 12299
+          },
+          {
+            "clientId": "client-0",
+            "sequence": 1,
+            "latencyMs": 13.08,
+            "acquisitionMs": 0.004,
+            "transactionMs": 2.544,
+            "busyRetries": 0,
+            "writerPid": 12299
+          },
+          {
+            "clientId": "client-1",
+            "sequence": 1,
+            "latencyMs": 13.063,
+            "acquisitionMs": 0.004,
+            "transactionMs": 2.6,
+            "busyRetries": 0,
+            "writerPid": 12299
+          },
+          {
+            "clientId": "client-2",
+            "sequence": 1,
+            "latencyMs": 13.125,
+            "acquisitionMs": 0.011,
+            "transactionMs": 2.602,
+            "busyRetries": 0,
+            "writerPid": 12299
+          },
+          {
+            "clientId": "client-3",
+            "sequence": 1,
+            "latencyMs": 13.113,
+            "acquisitionMs": 0.007,
+            "transactionMs": 2.589,
+            "busyRetries": 0,
+            "writerPid": 12299
+          },
+          {
+            "clientId": "client-4",
+            "sequence": 1,
+            "latencyMs": 13.258,
+            "acquisitionMs": 0.01,
+            "transactionMs": 2.611,
+            "busyRetries": 0,
+            "writerPid": 12299
+          },
+          {
+            "clientId": "client-0",
+            "sequence": 2,
+            "latencyMs": 13.145,
+            "acquisitionMs": 0.026,
+            "transactionMs": 2.608,
+            "busyRetries": 0,
+            "writerPid": 12299
+          },
+          {
+            "clientId": "client-1",
+            "sequence": 2,
+            "latencyMs": 13.109,
+            "acquisitionMs": 0.006,
+            "transactionMs": 2.594,
+            "busyRetries": 0,
+            "writerPid": 12299
+          },
+          {
+            "clientId": "client-2",
+            "sequence": 2,
+            "latencyMs": 13.053,
+            "acquisitionMs": 0.003,
+            "transactionMs": 2.535,
+            "busyRetries": 0,
+            "writerPid": 12299
+          },
+          {
+            "clientId": "client-3",
+            "sequence": 2,
+            "latencyMs": 13.062,
+            "acquisitionMs": 0.004,
+            "transactionMs": 2.55,
+            "busyRetries": 0,
+            "writerPid": 12299
+          },
+          {
+            "clientId": "client-4",
+            "sequence": 2,
+            "latencyMs": 12.971,
+            "acquisitionMs": 0.008,
+            "transactionMs": 2.603,
+            "busyRetries": 0,
+            "writerPid": 12299
+          },
+          {
+            "clientId": "client-0",
+            "sequence": 3,
+            "latencyMs": 12.922,
+            "acquisitionMs": 0.012,
+            "transactionMs": 2.566,
+            "busyRetries": 0,
+            "writerPid": 12299
+          },
+          {
+            "clientId": "client-1",
+            "sequence": 3,
+            "latencyMs": 12.945,
+            "acquisitionMs": 0.003,
+            "transactionMs": 2.593,
+            "busyRetries": 0,
+            "writerPid": 12299
+          },
+          {
+            "clientId": "client-2",
+            "sequence": 3,
+            "latencyMs": 13.423,
+            "acquisitionMs": 0.008,
+            "transactionMs": 2.633,
+            "busyRetries": 0,
+            "writerPid": 12299
+          },
+          {
+            "clientId": "client-3",
+            "sequence": 3,
+            "latencyMs": 13.424,
+            "acquisitionMs": 0.006,
+            "transactionMs": 2.606,
+            "busyRetries": 0,
+            "writerPid": 12299
+          },
+          {
+            "clientId": "client-4",
+            "sequence": 3,
+            "latencyMs": 13.368,
+            "acquisitionMs": 0.005,
+            "transactionMs": 2.551,
+            "busyRetries": 0,
+            "writerPid": 12299
+          },
+          {
+            "clientId": "client-0",
+            "sequence": 4,
+            "latencyMs": 13.356,
+            "acquisitionMs": 0.004,
+            "transactionMs": 2.545,
+            "busyRetries": 0,
+            "writerPid": 12299
+          },
+          {
+            "clientId": "client-1",
+            "sequence": 4,
+            "latencyMs": 13.312,
+            "acquisitionMs": 0.004,
+            "transactionMs": 2.553,
+            "busyRetries": 0,
+            "writerPid": 12299
+          },
+          {
+            "clientId": "client-2",
+            "sequence": 4,
+            "latencyMs": 12.936,
+            "acquisitionMs": 0.004,
+            "transactionMs": 2.6,
+            "busyRetries": 0,
+            "writerPid": 12299
+          },
+          {
+            "clientId": "client-3",
+            "sequence": 4,
+            "latencyMs": 13,
+            "acquisitionMs": 0.004,
+            "transactionMs": 2.556,
+            "busyRetries": 0,
+            "writerPid": 12299
+          },
+          {
+            "clientId": "client-4",
+            "sequence": 4,
+            "latencyMs": 12.512,
+            "acquisitionMs": 0.006,
+            "transactionMs": 2.146,
+            "busyRetries": 0,
+            "writerPid": 12299
+          },
+          {
+            "clientId": "client-0",
+            "sequence": 5,
+            "latencyMs": 12.569,
+            "acquisitionMs": 0.005,
+            "transactionMs": 2.596,
+            "busyRetries": 0,
+            "writerPid": 12299
+          },
+          {
+            "clientId": "client-1",
+            "sequence": 5,
+            "latencyMs": 12.705,
+            "acquisitionMs": 0.004,
+            "transactionMs": 2.583,
+            "busyRetries": 0,
+            "writerPid": 12299
+          },
+          {
+            "clientId": "client-2",
+            "sequence": 5,
+            "latencyMs": 12.197,
+            "acquisitionMs": 0.004,
+            "transactionMs": 2.102,
+            "busyRetries": 0,
+            "writerPid": 12299
+          },
+          {
+            "clientId": "client-3",
+            "sequence": 5,
+            "latencyMs": 12.159,
+            "acquisitionMs": 0.007,
+            "transactionMs": 2.655,
+            "busyRetries": 0,
+            "writerPid": 12299
+          },
+          {
+            "clientId": "client-4",
+            "sequence": 5,
+            "latencyMs": 12.739,
+            "acquisitionMs": 0.005,
+            "transactionMs": 2.623,
+            "busyRetries": 0,
+            "writerPid": 12299
+          },
+          {
+            "clientId": "client-0",
+            "sequence": 6,
+            "latencyMs": 12.694,
+            "acquisitionMs": 0.011,
+            "transactionMs": 2.562,
+            "busyRetries": 0,
+            "writerPid": 12299
+          },
+          {
+            "clientId": "client-1",
+            "sequence": 6,
+            "latencyMs": 13.022,
+            "acquisitionMs": 0.006,
+            "transactionMs": 2.652,
+            "busyRetries": 0,
+            "writerPid": 12299
+          },
+          {
+            "clientId": "client-2",
+            "sequence": 6,
+            "latencyMs": 13.512,
+            "acquisitionMs": 0.006,
+            "transactionMs": 2.607,
+            "busyRetries": 0,
+            "writerPid": 12299
+          },
+          {
+            "clientId": "client-3",
+            "sequence": 6,
+            "latencyMs": 13.457,
+            "acquisitionMs": 0.005,
+            "transactionMs": 2.577,
+            "busyRetries": 0,
+            "writerPid": 12299
+          },
+          {
+            "clientId": "client-4",
+            "sequence": 6,
+            "latencyMs": 13.404,
+            "acquisitionMs": 0.009,
+            "transactionMs": 2.58,
+            "busyRetries": 0,
+            "writerPid": 12299
+          },
+          {
+            "clientId": "client-0",
+            "sequence": 7,
+            "latencyMs": 13.46,
+            "acquisitionMs": 0.009,
+            "transactionMs": 2.623,
+            "busyRetries": 0,
+            "writerPid": 12299
+          },
+          {
+            "clientId": "client-1",
+            "sequence": 7,
+            "latencyMs": 13.069,
+            "acquisitionMs": 0.005,
+            "transactionMs": 2.548,
+            "busyRetries": 0,
+            "writerPid": 12299
+          },
+          {
+            "clientId": "client-2",
+            "sequence": 7,
+            "latencyMs": 13.028,
+            "acquisitionMs": 0.004,
+            "transactionMs": 2.591,
+            "busyRetries": 0,
+            "writerPid": 12299
+          },
+          {
+            "clientId": "client-3",
+            "sequence": 7,
+            "latencyMs": 13.052,
+            "acquisitionMs": 0.004,
+            "transactionMs": 2.584,
+            "busyRetries": 0,
+            "writerPid": 12299
+          },
+          {
+            "clientId": "client-4",
+            "sequence": 7,
+            "latencyMs": 12.881,
+            "acquisitionMs": 0.005,
+            "transactionMs": 2.421,
+            "busyRetries": 0,
+            "writerPid": 12299
+          }
+        ]
+      },
+      {
+        "topology": "federated",
+        "synchronous": "NORMAL",
+        "clientCount": 5,
+        "workerCount": 5,
+        "writesPerClient": 8,
+        "transactionHoldMs": 2,
+        "startupMs": 77.046,
+        "wallMs": 105.431,
+        "throughputPerSecond": 379.396,
+        "latencyMs": {
+          "min": 2.258,
+          "p50": 5.211,
+          "p95": 46.888,
+          "p99": 81.235,
+          "max": 81.235
+        },
+        "writerLockAcquisitionMs": {
+          "min": 0.006,
+          "p50": 2.485,
+          "p95": 44.241,
+          "p99": 78.036,
+          "max": 78.036
+        },
+        "transactionMs": {
+          "min": 2.17,
+          "p50": 5.018,
+          "p95": 46.816,
+          "p99": 80.85,
+          "max": 80.85
+        },
+        "busyRetries": 0,
+        "clientCompletionMs": [
+          83.823,
+          60.545,
+          105.391,
+          89.059,
+          42.467
+        ],
+        "clientCompletionSpreadRatio": 2.482,
+        "distinctObservedWriterPids": 5,
+        "walBeforeCheckpointBytes": 535632,
+        "walAfterCheckpointBytes": 535632,
+        "checkpointPids": [
+          12300,
+          12301,
+          12302,
+          12303,
+          12304
+        ],
+        "checkpointResponses": [
+          {
+            "id": "request-103",
+            "ok": true,
+            "op": "checkpoint",
+            "pid": 12300,
+            "result": {
+              "busy": 0,
+              "log": 130,
+              "checkpointed": 130
+            }
+          },
+          {
+            "id": "request-104",
+            "ok": true,
+            "op": "checkpoint",
+            "pid": 12301,
+            "result": {
+              "busy": 1,
+              "log": -1,
+              "checkpointed": -1
+            }
+          },
+          {
+            "id": "request-105",
+            "ok": true,
+            "op": "checkpoint",
+            "pid": 12302,
+            "result": {
+              "busy": 1,
+              "log": -1,
+              "checkpointed": -1
+            }
+          },
+          {
+            "id": "request-106",
+            "ok": true,
+            "op": "checkpoint",
+            "pid": 12303,
+            "result": {
+              "busy": 1,
+              "log": -1,
+              "checkpointed": -1
+            }
+          },
+          {
+            "id": "request-107",
+            "ok": true,
+            "op": "checkpoint",
+            "pid": 12304,
+            "result": {
+              "busy": 1,
+              "log": -1,
+              "checkpointed": -1
+            }
+          }
+        ],
+        "inspection": {
+          "deliveryCount": 40,
+          "connectionAudit": [
+            {
+              "pid": 12300,
+              "topology": "federated",
+              "worker_id": "worker-0",
+              "opened_at_ms": 1786207253388.0706
+            },
+            {
+              "pid": 12301,
+              "topology": "federated",
+              "worker_id": "worker-1",
+              "opened_at_ms": 1786207253404.8804
+            },
+            {
+              "pid": 12302,
+              "topology": "federated",
+              "worker_id": "worker-2",
+              "opened_at_ms": 1786207253419.24
+            },
+            {
+              "pid": 12303,
+              "topology": "federated",
+              "worker_id": "worker-3",
+              "opened_at_ms": 1786207253433.3567
+            },
+            {
+              "pid": 12304,
+              "topology": "federated",
+              "worker_id": "worker-4",
+              "opened_at_ms": 1786207253447.1091
+            }
+          ],
+          "integrityCheck": "ok"
+        },
+        "samples": [
+          {
+            "clientId": "client-3",
+            "sequence": 0,
+            "latencyMs": 3.076,
+            "acquisitionMs": 0.014,
+            "transactionMs": 2.717,
+            "busyRetries": 0,
+            "writerPid": 12303
+          },
+          {
+            "clientId": "client-4",
+            "sequence": 0,
+            "latencyMs": 5.702,
+            "acquisitionMs": 1.464,
+            "transactionMs": 4.137,
+            "busyRetries": 0,
+            "writerPid": 12304
+          },
+          {
+            "clientId": "client-3",
+            "sequence": 1,
+            "latencyMs": 5.19,
+            "acquisitionMs": 2.416,
+            "transactionMs": 4.972,
+            "busyRetries": 0,
+            "writerPid": 12303
+          },
+          {
+            "clientId": "client-4",
+            "sequence": 1,
+            "latencyMs": 5.222,
+            "acquisitionMs": 2.416,
+            "transactionMs": 5.026,
+            "busyRetries": 0,
+            "writerPid": 12304
+          },
+          {
+            "clientId": "client-3",
+            "sequence": 2,
+            "latencyMs": 5.315,
+            "acquisitionMs": 2.338,
+            "transactionMs": 4.999,
+            "busyRetries": 0,
+            "writerPid": 12303
+          },
+          {
+            "clientId": "client-4",
+            "sequence": 2,
+            "latencyMs": 5.324,
+            "acquisitionMs": 2.504,
+            "transactionMs": 5.142,
+            "busyRetries": 0,
+            "writerPid": 12304
+          },
+          {
+            "clientId": "client-3",
+            "sequence": 3,
+            "latencyMs": 5.294,
+            "acquisitionMs": 2.551,
+            "transactionMs": 5.207,
+            "busyRetries": 0,
+            "writerPid": 12303
+          },
+          {
+            "clientId": "client-4",
+            "sequence": 3,
+            "latencyMs": 5.281,
+            "acquisitionMs": 2.548,
+            "transactionMs": 5.184,
+            "busyRetries": 0,
+            "writerPid": 12304
+          },
+          {
+            "clientId": "client-1",
+            "sequence": 0,
+            "latencyMs": 24.389,
+            "acquisitionMs": 21.175,
+            "transactionMs": 24.013,
+            "busyRetries": 0,
+            "writerPid": 12301
+          },
+          {
+            "clientId": "client-4",
+            "sequence": 4,
+            "latencyMs": 5.294,
+            "acquisitionMs": 2.575,
+            "transactionMs": 5.01,
+            "busyRetries": 0,
+            "writerPid": 12304
+          },
+          {
+            "clientId": "client-1",
+            "sequence": 1,
+            "latencyMs": 5.067,
+            "acquisitionMs": 2.227,
+            "transactionMs": 4.854,
+            "busyRetries": 0,
+            "writerPid": 12301
+          },
+          {
+            "clientId": "client-4",
+            "sequence": 5,
+            "latencyMs": 5.231,
+            "acquisitionMs": 2.398,
+            "transactionMs": 5.018,
+            "busyRetries": 0,
+            "writerPid": 12304
+          },
+          {
+            "clientId": "client-1",
+            "sequence": 2,
+            "latencyMs": 5.256,
+            "acquisitionMs": 2.56,
+            "transactionMs": 5.178,
+            "busyRetries": 0,
+            "writerPid": 12301
+          },
+          {
+            "clientId": "client-4",
+            "sequence": 6,
+            "latencyMs": 5.211,
+            "acquisitionMs": 2.56,
+            "transactionMs": 5.123,
+            "busyRetries": 0,
+            "writerPid": 12304
+          },
+          {
+            "clientId": "client-1",
+            "sequence": 3,
+            "latencyMs": 5.207,
+            "acquisitionMs": 2.495,
+            "transactionMs": 5.112,
+            "busyRetries": 0,
+            "writerPid": 12301
+          },
+          {
+            "clientId": "client-4",
+            "sequence": 7,
+            "latencyMs": 5.196,
+            "acquisitionMs": 2.567,
+            "transactionMs": 5.117,
+            "busyRetries": 0,
+            "writerPid": 12304
+          },
+          {
+            "clientId": "client-1",
+            "sequence": 4,
+            "latencyMs": 5.191,
+            "acquisitionMs": 2.5,
+            "transactionMs": 5.122,
+            "busyRetries": 0,
+            "writerPid": 12301
+          },
+          {
+            "clientId": "client-0",
+            "sequence": 0,
+            "latencyMs": 47.905,
+            "acquisitionMs": 44.761,
+            "transactionMs": 47.529,
+            "busyRetries": 0,
+            "writerPid": 12300
+          },
+          {
+            "clientId": "client-1",
+            "sequence": 5,
+            "latencyMs": 5.086,
+            "acquisitionMs": 2.485,
+            "transactionMs": 4.792,
+            "busyRetries": 0,
+            "writerPid": 12301
+          },
+          {
+            "clientId": "client-0",
+            "sequence": 1,
+            "latencyMs": 4.883,
+            "acquisitionMs": 2.114,
+            "transactionMs": 4.678,
+            "busyRetries": 0,
+            "writerPid": 12300
+          },
+          {
+            "clientId": "client-1",
+            "sequence": 6,
+            "latencyMs": 5.143,
+            "acquisitionMs": 2.5,
+            "transactionMs": 5.05,
+            "busyRetries": 0,
+            "writerPid": 12301
+          },
+          {
+            "clientId": "client-0",
+            "sequence": 2,
+            "latencyMs": 5.464,
+            "acquisitionMs": 2.504,
+            "transactionMs": 5.127,
+            "busyRetries": 0,
+            "writerPid": 12300
+          },
+          {
+            "clientId": "client-1",
+            "sequence": 7,
+            "latencyMs": 5.203,
+            "acquisitionMs": 2.558,
+            "transactionMs": 5.129,
+            "busyRetries": 0,
+            "writerPid": 12301
+          },
+          {
+            "clientId": "client-0",
+            "sequence": 3,
+            "latencyMs": 4.935,
+            "acquisitionMs": 2.243,
+            "transactionMs": 4.86,
+            "busyRetries": 0,
+            "writerPid": 12300
+          },
+          {
+            "clientId": "client-3",
+            "sequence": 4,
+            "latencyMs": 46.888,
+            "acquisitionMs": 44.241,
+            "transactionMs": 46.816,
+            "busyRetries": 0,
+            "writerPid": 12303
+          },
+          {
+            "clientId": "client-0",
+            "sequence": 4,
+            "latencyMs": 5.249,
+            "acquisitionMs": 2.528,
+            "transactionMs": 5.15,
+            "busyRetries": 0,
+            "writerPid": 12300
+          },
+          {
+            "clientId": "client-3",
+            "sequence": 5,
+            "latencyMs": 5.277,
+            "acquisitionMs": 2.361,
+            "transactionMs": 4.983,
+            "busyRetries": 0,
+            "writerPid": 12303
+          },
+          {
+            "clientId": "client-0",
+            "sequence": 5,
+            "latencyMs": 4.856,
+            "acquisitionMs": 2.335,
+            "transactionMs": 4.529,
+            "busyRetries": 0,
+            "writerPid": 12300
+          },
+          {
+            "clientId": "client-3",
+            "sequence": 6,
+            "latencyMs": 4.786,
+            "acquisitionMs": 2.121,
+            "transactionMs": 4.677,
+            "busyRetries": 0,
+            "writerPid": 12303
+          },
+          {
+            "clientId": "client-0",
+            "sequence": 6,
+            "latencyMs": 5.167,
+            "acquisitionMs": 2.49,
+            "transactionMs": 5.072,
+            "busyRetries": 0,
+            "writerPid": 12300
+          },
+          {
+            "clientId": "client-2",
+            "sequence": 0,
+            "latencyMs": 81.235,
+            "acquisitionMs": 78.036,
+            "transactionMs": 80.85,
+            "busyRetries": 0,
+            "writerPid": 12302
+          },
+          {
+            "clientId": "client-0",
+            "sequence": 7,
+            "latencyMs": 5.361,
+            "acquisitionMs": 2.722,
+            "transactionMs": 5.284,
+            "busyRetries": 0,
+            "writerPid": 12300
+          },
+          {
+            "clientId": "client-2",
+            "sequence": 1,
+            "latencyMs": 5.282,
+            "acquisitionMs": 2.09,
+            "transactionMs": 4.744,
+            "busyRetries": 0,
+            "writerPid": 12302
+          },
+          {
+            "clientId": "client-3",
+            "sequence": 7,
+            "latencyMs": 13.233,
+            "acquisitionMs": 10.545,
+            "transactionMs": 13.129,
+            "busyRetries": 0,
+            "writerPid": 12303
+          },
+          {
+            "clientId": "client-2",
+            "sequence": 2,
+            "latencyMs": 5.495,
+            "acquisitionMs": 2.429,
+            "transactionMs": 4.996,
+            "busyRetries": 0,
+            "writerPid": 12302
+          },
+          {
+            "clientId": "client-2",
+            "sequence": 3,
+            "latencyMs": 2.258,
+            "acquisitionMs": 0.007,
+            "transactionMs": 2.17,
+            "busyRetries": 0,
+            "writerPid": 12302
+          },
+          {
+            "clientId": "client-2",
+            "sequence": 4,
+            "latencyMs": 2.726,
+            "acquisitionMs": 0.01,
+            "transactionMs": 2.63,
+            "busyRetries": 0,
+            "writerPid": 12302
+          },
+          {
+            "clientId": "client-2",
+            "sequence": 5,
+            "latencyMs": 2.7,
+            "acquisitionMs": 0.009,
+            "transactionMs": 2.613,
+            "busyRetries": 0,
+            "writerPid": 12302
+          },
+          {
+            "clientId": "client-2",
+            "sequence": 6,
+            "latencyMs": 2.688,
+            "acquisitionMs": 0.006,
+            "transactionMs": 2.6,
+            "busyRetries": 0,
+            "writerPid": 12302
+          },
+          {
+            "clientId": "client-2",
+            "sequence": 7,
+            "latencyMs": 3.004,
+            "acquisitionMs": 0.006,
+            "transactionMs": 2.624,
+            "busyRetries": 0,
+            "writerPid": 12302
+          }
+        ]
+      },
+      {
+        "topology": "central",
+        "synchronous": "NORMAL",
+        "clientCount": 10,
+        "workerCount": 1,
+        "writesPerClient": 8,
+        "transactionHoldMs": 2,
+        "startupMs": 17.409,
+        "wallMs": 210.432,
+        "throughputPerSecond": 380.17,
+        "latencyMs": {
+          "min": 4.392,
+          "p50": 26.077,
+          "p95": 26.412,
+          "p99": 27.708,
+          "max": 27.708
+        },
+        "writerLockAcquisitionMs": {
+          "min": 0.003,
+          "p50": 0.005,
+          "p95": 0.013,
+          "p99": 0.023,
+          "max": 0.023
+        },
+        "transactionMs": {
+          "min": 2.14,
+          "p50": 2.588,
+          "p95": 2.615,
+          "p99": 2.691,
+          "max": 2.691
+        },
+        "busyRetries": 0,
+        "clientCompletionMs": [
+          187.153,
+          189.741,
+          192.344,
+          194.933,
+          197.507,
+          200.043,
+          202.65,
+          205.281,
+          207.803,
+          210.387
+        ],
+        "clientCompletionSpreadRatio": 1.124,
+        "distinctObservedWriterPids": 1,
+        "walBeforeCheckpointBytes": 1009432,
+        "walAfterCheckpointBytes": 1009432,
+        "checkpointPids": [
+          12305
+        ],
+        "checkpointResponses": [
+          {
+            "id": "request-193",
+            "ok": true,
+            "op": "checkpoint",
+            "pid": 12305,
+            "result": {
+              "busy": 0,
+              "log": 245,
+              "checkpointed": 245
+            }
+          }
+        ],
+        "inspection": {
+          "deliveryCount": 80,
+          "connectionAudit": [
+            {
+              "pid": 12305,
+              "topology": "central",
+              "worker_id": "worker-0",
+              "opened_at_ms": 1786207253576.291
+            }
+          ],
+          "integrityCheck": "ok"
+        },
+        "samples": [
+          {
+            "clientId": "client-0",
+            "sequence": 0,
+            "latencyMs": 4.392,
+            "acquisitionMs": 0.008,
+            "transactionMs": 2.691,
+            "busyRetries": 0,
+            "writerPid": 12305
+          },
+          {
+            "clientId": "client-1",
+            "sequence": 0,
+            "latencyMs": 6.977,
+            "acquisitionMs": 0.011,
+            "transactionMs": 2.591,
+            "busyRetries": 0,
+            "writerPid": 12305
+          },
+          {
+            "clientId": "client-2",
+            "sequence": 0,
+            "latencyMs": 9.577,
+            "acquisitionMs": 0.004,
+            "transactionMs": 2.598,
+            "busyRetries": 0,
+            "writerPid": 12305
+          },
+          {
+            "clientId": "client-3",
+            "sequence": 0,
+            "latencyMs": 12.128,
+            "acquisitionMs": 0.004,
+            "transactionMs": 2.535,
+            "busyRetries": 0,
+            "writerPid": 12305
+          },
+          {
+            "clientId": "client-4",
+            "sequence": 0,
+            "latencyMs": 14.722,
+            "acquisitionMs": 0.004,
+            "transactionMs": 2.578,
+            "busyRetries": 0,
+            "writerPid": 12305
+          },
+          {
+            "clientId": "client-5",
+            "sequence": 0,
+            "latencyMs": 17.33,
+            "acquisitionMs": 0.005,
+            "transactionMs": 2.61,
+            "busyRetries": 0,
+            "writerPid": 12305
+          },
+          {
+            "clientId": "client-6",
+            "sequence": 0,
+            "latencyMs": 19.921,
+            "acquisitionMs": 0.005,
+            "transactionMs": 2.586,
+            "busyRetries": 0,
+            "writerPid": 12305
+          },
+          {
+            "clientId": "client-7",
+            "sequence": 0,
+            "latencyMs": 22.529,
+            "acquisitionMs": 0.003,
+            "transactionMs": 2.584,
+            "busyRetries": 0,
+            "writerPid": 12305
+          },
+          {
+            "clientId": "client-8",
+            "sequence": 0,
+            "latencyMs": 25.122,
+            "acquisitionMs": 0.005,
+            "transactionMs": 2.584,
+            "busyRetries": 0,
+            "writerPid": 12305
+          },
+          {
+            "clientId": "client-9",
+            "sequence": 0,
+            "latencyMs": 27.708,
+            "acquisitionMs": 0.023,
+            "transactionMs": 2.582,
+            "busyRetries": 0,
+            "writerPid": 12305
+          },
+          {
+            "clientId": "client-0",
+            "sequence": 1,
+            "latencyMs": 26.152,
+            "acquisitionMs": 0.013,
+            "transactionMs": 2.58,
+            "busyRetries": 0,
+            "writerPid": 12305
+          },
+          {
+            "clientId": "client-1",
+            "sequence": 1,
+            "latencyMs": 25.696,
+            "acquisitionMs": 0.006,
+            "transactionMs": 2.14,
+            "busyRetries": 0,
+            "writerPid": 12305
+          },
+          {
+            "clientId": "client-2",
+            "sequence": 1,
+            "latencyMs": 25.701,
+            "acquisitionMs": 0.007,
+            "transactionMs": 2.599,
+            "busyRetries": 0,
+            "writerPid": 12305
+          },
+          {
+            "clientId": "client-3",
+            "sequence": 1,
+            "latencyMs": 25.622,
+            "acquisitionMs": 0.005,
+            "transactionMs": 2.47,
+            "busyRetries": 0,
+            "writerPid": 12305
+          },
+          {
+            "clientId": "client-4",
+            "sequence": 1,
+            "latencyMs": 25.657,
+            "acquisitionMs": 0.013,
+            "transactionMs": 2.625,
+            "busyRetries": 0,
+            "writerPid": 12305
+          },
+          {
+            "clientId": "client-5",
+            "sequence": 1,
+            "latencyMs": 25.652,
+            "acquisitionMs": 0.019,
+            "transactionMs": 2.589,
+            "busyRetries": 0,
+            "writerPid": 12305
+          },
+          {
+            "clientId": "client-6",
+            "sequence": 1,
+            "latencyMs": 25.649,
+            "acquisitionMs": 0.004,
+            "transactionMs": 2.582,
+            "busyRetries": 0,
+            "writerPid": 12305
+          },
+          {
+            "clientId": "client-7",
+            "sequence": 1,
+            "latencyMs": 25.657,
+            "acquisitionMs": 0.004,
+            "transactionMs": 2.607,
+            "busyRetries": 0,
+            "writerPid": 12305
+          },
+          {
+            "clientId": "client-8",
+            "sequence": 1,
+            "latencyMs": 25.65,
+            "acquisitionMs": 0.005,
+            "transactionMs": 2.575,
+            "busyRetries": 0,
+            "writerPid": 12305
+          },
+          {
+            "clientId": "client-9",
+            "sequence": 1,
+            "latencyMs": 25.66,
+            "acquisitionMs": 0.006,
+            "transactionMs": 2.592,
+            "busyRetries": 0,
+            "writerPid": 12305
+          },
+          {
+            "clientId": "client-0",
+            "sequence": 2,
+            "latencyMs": 25.557,
+            "acquisitionMs": 0.004,
+            "transactionMs": 2.554,
+            "busyRetries": 0,
+            "writerPid": 12305
+          },
+          {
+            "clientId": "client-1",
+            "sequence": 2,
+            "latencyMs": 26.006,
+            "acquisitionMs": 0.004,
+            "transactionMs": 2.584,
+            "busyRetries": 0,
+            "writerPid": 12305
+          },
+          {
+            "clientId": "client-2",
+            "sequence": 2,
+            "latencyMs": 25.991,
+            "acquisitionMs": 0.004,
+            "transactionMs": 2.584,
+            "busyRetries": 0,
+            "writerPid": 12305
+          },
+          {
+            "clientId": "client-3",
+            "sequence": 2,
+            "latencyMs": 26.11,
+            "acquisitionMs": 0.005,
+            "transactionMs": 2.553,
+            "busyRetries": 0,
+            "writerPid": 12305
+          },
+          {
+            "clientId": "client-4",
+            "sequence": 2,
+            "latencyMs": 26.069,
+            "acquisitionMs": 0.004,
+            "transactionMs": 2.588,
+            "busyRetries": 0,
+            "writerPid": 12305
+          },
+          {
+            "clientId": "client-5",
+            "sequence": 2,
+            "latencyMs": 26.062,
+            "acquisitionMs": 0.004,
+            "transactionMs": 2.579,
+            "busyRetries": 0,
+            "writerPid": 12305
+          },
+          {
+            "clientId": "client-6",
+            "sequence": 2,
+            "latencyMs": 26.052,
+            "acquisitionMs": 0.004,
+            "transactionMs": 2.588,
+            "busyRetries": 0,
+            "writerPid": 12305
+          },
+          {
+            "clientId": "client-7",
+            "sequence": 2,
+            "latencyMs": 26.044,
+            "acquisitionMs": 0.004,
+            "transactionMs": 2.592,
+            "busyRetries": 0,
+            "writerPid": 12305
+          },
+          {
+            "clientId": "client-8",
+            "sequence": 2,
+            "latencyMs": 26.075,
+            "acquisitionMs": 0.005,
+            "transactionMs": 2.608,
+            "busyRetries": 0,
+            "writerPid": 12305
+          },
+          {
+            "clientId": "client-9",
+            "sequence": 2,
+            "latencyMs": 26.017,
+            "acquisitionMs": 0.004,
+            "transactionMs": 2.546,
+            "busyRetries": 0,
+            "writerPid": 12305
+          },
+          {
+            "clientId": "client-0",
+            "sequence": 3,
+            "latencyMs": 26.26,
+            "acquisitionMs": 0.006,
+            "transactionMs": 2.61,
+            "busyRetries": 0,
+            "writerPid": 12305
+          },
+          {
+            "clientId": "client-1",
+            "sequence": 3,
+            "latencyMs": 26.309,
+            "acquisitionMs": 0.004,
+            "transactionMs": 2.623,
+            "busyRetries": 0,
+            "writerPid": 12305
+          },
+          {
+            "clientId": "client-2",
+            "sequence": 3,
+            "latencyMs": 26.357,
+            "acquisitionMs": 0.004,
+            "transactionMs": 2.602,
+            "busyRetries": 0,
+            "writerPid": 12305
+          },
+          {
+            "clientId": "client-3",
+            "sequence": 3,
+            "latencyMs": 26.377,
+            "acquisitionMs": 0.005,
+            "transactionMs": 2.604,
+            "busyRetries": 0,
+            "writerPid": 12305
+          },
+          {
+            "clientId": "client-4",
+            "sequence": 3,
+            "latencyMs": 26.422,
+            "acquisitionMs": 0.007,
+            "transactionMs": 2.613,
+            "busyRetries": 0,
+            "writerPid": 12305
+          },
+          {
+            "clientId": "client-5",
+            "sequence": 3,
+            "latencyMs": 26.401,
+            "acquisitionMs": 0.007,
+            "transactionMs": 2.587,
+            "busyRetries": 0,
+            "writerPid": 12305
+          },
+          {
+            "clientId": "client-6",
+            "sequence": 3,
+            "latencyMs": 26.399,
+            "acquisitionMs": 0.005,
+            "transactionMs": 2.568,
+            "busyRetries": 0,
+            "writerPid": 12305
+          },
+          {
+            "clientId": "client-7",
+            "sequence": 3,
+            "latencyMs": 26.4,
+            "acquisitionMs": 0.006,
+            "transactionMs": 2.602,
+            "busyRetries": 0,
+            "writerPid": 12305
+          },
+          {
+            "clientId": "client-8",
+            "sequence": 3,
+            "latencyMs": 26.395,
+            "acquisitionMs": 0.005,
+            "transactionMs": 2.596,
+            "busyRetries": 0,
+            "writerPid": 12305
+          },
+          {
+            "clientId": "client-9",
+            "sequence": 3,
+            "latencyMs": 26.489,
+            "acquisitionMs": 0.014,
+            "transactionMs": 2.615,
+            "busyRetries": 0,
+            "writerPid": 12305
+          },
+          {
+            "clientId": "client-0",
+            "sequence": 4,
+            "latencyMs": 26.272,
+            "acquisitionMs": 0.005,
+            "transactionMs": 2.588,
+            "busyRetries": 0,
+            "writerPid": 12305
+          },
+          {
+            "clientId": "client-1",
+            "sequence": 4,
+            "latencyMs": 26.173,
+            "acquisitionMs": 0.005,
+            "transactionMs": 2.553,
+            "busyRetries": 0,
+            "writerPid": 12305
+          },
+          {
+            "clientId": "client-2",
+            "sequence": 4,
+            "latencyMs": 26.11,
+            "acquisitionMs": 0.005,
+            "transactionMs": 2.556,
+            "busyRetries": 0,
+            "writerPid": 12305
+          },
+          {
+            "clientId": "client-3",
+            "sequence": 4,
+            "latencyMs": 26.122,
+            "acquisitionMs": 0.005,
+            "transactionMs": 2.629,
+            "busyRetries": 0,
+            "writerPid": 12305
+          },
+          {
+            "clientId": "client-4",
+            "sequence": 4,
+            "latencyMs": 26.053,
+            "acquisitionMs": 0.011,
+            "transactionMs": 2.55,
+            "busyRetries": 0,
+            "writerPid": 12305
+          },
+          {
+            "clientId": "client-5",
+            "sequence": 4,
+            "latencyMs": 26.064,
+            "acquisitionMs": 0.004,
+            "transactionMs": 2.596,
+            "busyRetries": 0,
+            "writerPid": 12305
+          },
+          {
+            "clientId": "client-6",
+            "sequence": 4,
+            "latencyMs": 26.088,
+            "acquisitionMs": 0.004,
+            "transactionMs": 2.586,
+            "busyRetries": 0,
+            "writerPid": 12305
+          },
+          {
+            "clientId": "client-7",
+            "sequence": 4,
+            "latencyMs": 26.077,
+            "acquisitionMs": 0.008,
+            "transactionMs": 2.595,
+            "busyRetries": 0,
+            "writerPid": 12305
+          },
+          {
+            "clientId": "client-8",
+            "sequence": 4,
+            "latencyMs": 26.03,
+            "acquisitionMs": 0.005,
+            "transactionMs": 2.547,
+            "busyRetries": 0,
+            "writerPid": 12305
+          },
+          {
+            "clientId": "client-9",
+            "sequence": 4,
+            "latencyMs": 26.013,
+            "acquisitionMs": 0.003,
+            "transactionMs": 2.609,
+            "busyRetries": 0,
+            "writerPid": 12305
+          },
+          {
+            "clientId": "client-0",
+            "sequence": 5,
+            "latencyMs": 26.304,
+            "acquisitionMs": 0.007,
+            "transactionMs": 2.545,
+            "busyRetries": 0,
+            "writerPid": 12305
+          },
+          {
+            "clientId": "client-1",
+            "sequence": 5,
+            "latencyMs": 26.371,
+            "acquisitionMs": 0.004,
+            "transactionMs": 2.59,
+            "busyRetries": 0,
+            "writerPid": 12305
+          },
+          {
+            "clientId": "client-2",
+            "sequence": 5,
+            "latencyMs": 26.4,
+            "acquisitionMs": 0.006,
+            "transactionMs": 2.595,
+            "busyRetries": 0,
+            "writerPid": 12305
+          },
+          {
+            "clientId": "client-3",
+            "sequence": 5,
+            "latencyMs": 26.377,
+            "acquisitionMs": 0.007,
+            "transactionMs": 2.591,
+            "busyRetries": 0,
+            "writerPid": 12305
+          },
+          {
+            "clientId": "client-4",
+            "sequence": 5,
+            "latencyMs": 26.397,
+            "acquisitionMs": 0.005,
+            "transactionMs": 2.564,
+            "busyRetries": 0,
+            "writerPid": 12305
+          },
+          {
+            "clientId": "client-5",
+            "sequence": 5,
+            "latencyMs": 26.38,
+            "acquisitionMs": 0.006,
+            "transactionMs": 2.576,
+            "busyRetries": 0,
+            "writerPid": 12305
+          },
+          {
+            "clientId": "client-6",
+            "sequence": 5,
+            "latencyMs": 26.396,
+            "acquisitionMs": 0.006,
+            "transactionMs": 2.601,
+            "busyRetries": 0,
+            "writerPid": 12305
+          },
+          {
+            "clientId": "client-7",
+            "sequence": 5,
+            "latencyMs": 26.401,
+            "acquisitionMs": 0.005,
+            "transactionMs": 2.594,
+            "busyRetries": 0,
+            "writerPid": 12305
+          },
+          {
+            "clientId": "client-8",
+            "sequence": 5,
+            "latencyMs": 26.434,
+            "acquisitionMs": 0.005,
+            "transactionMs": 2.588,
+            "busyRetries": 0,
+            "writerPid": 12305
+          },
+          {
+            "clientId": "client-9",
+            "sequence": 5,
+            "latencyMs": 26.412,
+            "acquisitionMs": 0.005,
+            "transactionMs": 2.59,
+            "busyRetries": 0,
+            "writerPid": 12305
+          },
+          {
+            "clientId": "client-0",
+            "sequence": 6,
+            "latencyMs": 26.153,
+            "acquisitionMs": 0.005,
+            "transactionMs": 2.593,
+            "busyRetries": 0,
+            "writerPid": 12305
+          },
+          {
+            "clientId": "client-1",
+            "sequence": 6,
+            "latencyMs": 26.119,
+            "acquisitionMs": 0.005,
+            "transactionMs": 2.554,
+            "busyRetries": 0,
+            "writerPid": 12305
+          },
+          {
+            "clientId": "client-2",
+            "sequence": 6,
+            "latencyMs": 26.13,
+            "acquisitionMs": 0.004,
+            "transactionMs": 2.589,
+            "busyRetries": 0,
+            "writerPid": 12305
+          },
+          {
+            "clientId": "client-3",
+            "sequence": 6,
+            "latencyMs": 26.075,
+            "acquisitionMs": 0.005,
+            "transactionMs": 2.589,
+            "busyRetries": 0,
+            "writerPid": 12305
+          },
+          {
+            "clientId": "client-4",
+            "sequence": 6,
+            "latencyMs": 26.103,
+            "acquisitionMs": 0.005,
+            "transactionMs": 2.591,
+            "busyRetries": 0,
+            "writerPid": 12305
+          },
+          {
+            "clientId": "client-5",
+            "sequence": 6,
+            "latencyMs": 26.115,
+            "acquisitionMs": 0.005,
+            "transactionMs": 2.582,
+            "busyRetries": 0,
+            "writerPid": 12305
+          },
+          {
+            "clientId": "client-6",
+            "sequence": 6,
+            "latencyMs": 26.082,
+            "acquisitionMs": 0.004,
+            "transactionMs": 2.57,
+            "busyRetries": 0,
+            "writerPid": 12305
+          },
+          {
+            "clientId": "client-7",
+            "sequence": 6,
+            "latencyMs": 25.835,
+            "acquisitionMs": 0.005,
+            "transactionMs": 2.338,
+            "busyRetries": 0,
+            "writerPid": 12305
+          },
+          {
+            "clientId": "client-8",
+            "sequence": 6,
+            "latencyMs": 25.803,
+            "acquisitionMs": 0.004,
+            "transactionMs": 2.572,
+            "busyRetries": 0,
+            "writerPid": 12305
+          },
+          {
+            "clientId": "client-9",
+            "sequence": 6,
+            "latencyMs": 25.759,
+            "acquisitionMs": 0.006,
+            "transactionMs": 2.553,
+            "busyRetries": 0,
+            "writerPid": 12305
+          },
+          {
+            "clientId": "client-0",
+            "sequence": 7,
+            "latencyMs": 26.062,
+            "acquisitionMs": 0.006,
+            "transactionMs": 2.6,
+            "busyRetries": 0,
+            "writerPid": 12305
+          },
+          {
+            "clientId": "client-1",
+            "sequence": 7,
+            "latencyMs": 26.087,
+            "acquisitionMs": 0.005,
+            "transactionMs": 2.595,
+            "busyRetries": 0,
+            "writerPid": 12305
+          },
+          {
+            "clientId": "client-2",
+            "sequence": 7,
+            "latencyMs": 26.076,
+            "acquisitionMs": 0.004,
+            "transactionMs": 2.59,
+            "busyRetries": 0,
+            "writerPid": 12305
+          },
+          {
+            "clientId": "client-3",
+            "sequence": 7,
+            "latencyMs": 26.109,
+            "acquisitionMs": 0.004,
+            "transactionMs": 2.589,
+            "busyRetries": 0,
+            "writerPid": 12305
+          },
+          {
+            "clientId": "client-4",
+            "sequence": 7,
+            "latencyMs": 26.083,
+            "acquisitionMs": 0.004,
+            "transactionMs": 2.554,
+            "busyRetries": 0,
+            "writerPid": 12305
+          },
+          {
+            "clientId": "client-5",
+            "sequence": 7,
+            "latencyMs": 26.035,
+            "acquisitionMs": 0.004,
+            "transactionMs": 2.549,
+            "busyRetries": 0,
+            "writerPid": 12305
+          },
+          {
+            "clientId": "client-6",
+            "sequence": 7,
+            "latencyMs": 26.062,
+            "acquisitionMs": 0.004,
+            "transactionMs": 2.592,
+            "busyRetries": 0,
+            "writerPid": 12305
+          },
+          {
+            "clientId": "client-7",
+            "sequence": 7,
+            "latencyMs": 26.337,
+            "acquisitionMs": 0.004,
+            "transactionMs": 2.595,
+            "busyRetries": 0,
+            "writerPid": 12305
+          },
+          {
+            "clientId": "client-8",
+            "sequence": 7,
+            "latencyMs": 26.293,
+            "acquisitionMs": 0.005,
+            "transactionMs": 2.558,
+            "busyRetries": 0,
+            "writerPid": 12305
+          },
+          {
+            "clientId": "client-9",
+            "sequence": 7,
+            "latencyMs": 26.323,
+            "acquisitionMs": 0.004,
+            "transactionMs": 2.58,
+            "busyRetries": 0,
+            "writerPid": 12305
+          }
+        ]
+      },
+      {
+        "topology": "federated",
+        "synchronous": "NORMAL",
+        "clientCount": 10,
+        "workerCount": 10,
+        "writesPerClient": 8,
+        "transactionHoldMs": 2,
+        "startupMs": 150.257,
+        "wallMs": 210.382,
+        "throughputPerSecond": 380.26,
+        "latencyMs": {
+          "min": 3.193,
+          "p50": 5.247,
+          "p95": 89.194,
+          "p99": 171.768,
+          "max": 171.768
+        },
+        "writerLockAcquisitionMs": {
+          "min": 0.019,
+          "p50": 2.517,
+          "p95": 86.469,
+          "p99": 168.53,
+          "max": 168.53
+        },
+        "transactionMs": {
+          "min": 2.792,
+          "p50": 5.119,
+          "p95": 89.109,
+          "p99": 171.381,
+          "max": 171.381
+        },
+        "busyRetries": 0,
+        "clientCompletionMs": [
+          113.574,
+          39.979,
+          207.671,
+          166.37,
+          134.851,
+          163.694,
+          100.509,
+          58.445,
+          205.008,
+          210.31
+        ],
+        "clientCompletionSpreadRatio": 5.261,
+        "distinctObservedWriterPids": 10,
+        "walBeforeCheckpointBytes": 1083592,
+        "walAfterCheckpointBytes": 1083592,
+        "checkpointPids": [
+          12306,
+          12307,
+          12308,
+          12309,
+          12310,
+          12311,
+          12312,
+          12313,
+          12314,
+          12315
+        ],
+        "checkpointResponses": [
+          {
+            "id": "request-275",
+            "ok": true,
+            "op": "checkpoint",
+            "pid": 12306,
+            "result": {
+              "busy": 1,
+              "log": -1,
+              "checkpointed": -1
+            }
+          },
+          {
+            "id": "request-276",
+            "ok": true,
+            "op": "checkpoint",
+            "pid": 12307,
+            "result": {
+              "busy": 1,
+              "log": -1,
+              "checkpointed": -1
+            }
+          },
+          {
+            "id": "request-277",
+            "ok": true,
+            "op": "checkpoint",
+            "pid": 12308,
+            "result": {
+              "busy": 0,
+              "log": 263,
+              "checkpointed": 263
+            }
+          },
+          {
+            "id": "request-278",
+            "ok": true,
+            "op": "checkpoint",
+            "pid": 12309,
+            "result": {
+              "busy": 1,
+              "log": -1,
+              "checkpointed": -1
+            }
+          },
+          {
+            "id": "request-279",
+            "ok": true,
+            "op": "checkpoint",
+            "pid": 12310,
+            "result": {
+              "busy": 1,
+              "log": -1,
+              "checkpointed": -1
+            }
+          },
+          {
+            "id": "request-280",
+            "ok": true,
+            "op": "checkpoint",
+            "pid": 12311,
+            "result": {
+              "busy": 1,
+              "log": -1,
+              "checkpointed": -1
+            }
+          },
+          {
+            "id": "request-281",
+            "ok": true,
+            "op": "checkpoint",
+            "pid": 12312,
+            "result": {
+              "busy": 1,
+              "log": -1,
+              "checkpointed": -1
+            }
+          },
+          {
+            "id": "request-282",
+            "ok": true,
+            "op": "checkpoint",
+            "pid": 12313,
+            "result": {
+              "busy": 1,
+              "log": -1,
+              "checkpointed": -1
+            }
+          },
+          {
+            "id": "request-283",
+            "ok": true,
+            "op": "checkpoint",
+            "pid": 12314,
+            "result": {
+              "busy": 1,
+              "log": -1,
+              "checkpointed": -1
+            }
+          },
+          {
+            "id": "request-284",
+            "ok": true,
+            "op": "checkpoint",
+            "pid": 12315,
+            "result": {
+              "busy": 1,
+              "log": -1,
+              "checkpointed": -1
+            }
+          }
+        ],
+        "inspection": {
+          "deliveryCount": 80,
+          "connectionAudit": [
+            {
+              "pid": 12306,
+              "topology": "federated",
+              "worker_id": "worker-0",
+              "opened_at_ms": 1786207253814.9966
+            },
+            {
+              "pid": 12307,
+              "topology": "federated",
+              "worker_id": "worker-1",
+              "opened_at_ms": 1786207253832.6272
+            },
+            {
+              "pid": 12308,
+              "topology": "federated",
+              "worker_id": "worker-2",
+              "opened_at_ms": 1786207253848.0134
+            },
+            {
+              "pid": 12309,
+              "topology": "federated",
+              "worker_id": "worker-3",
+              "opened_at_ms": 1786207253863.2253
+            },
+            {
+              "pid": 12310,
+              "topology": "federated",
+              "worker_id": "worker-4",
+              "opened_at_ms": 1786207253877.015
+            },
+            {
+              "pid": 12311,
+              "topology": "federated",
+              "worker_id": "worker-5",
+              "opened_at_ms": 1786207253890.8171
+            },
+            {
+              "pid": 12312,
+              "topology": "federated",
+              "worker_id": "worker-6",
+              "opened_at_ms": 1786207253904.4219
+            },
+            {
+              "pid": 12313,
+              "topology": "federated",
+              "worker_id": "worker-7",
+              "opened_at_ms": 1786207253917.851
+            },
+            {
+              "pid": 12314,
+              "topology": "federated",
+              "worker_id": "worker-8",
+              "opened_at_ms": 1786207253931.471
+            },
+            {
+              "pid": 12315,
+              "topology": "federated",
+              "worker_id": "worker-9",
+              "opened_at_ms": 1786207253945.5518
+            }
+          ],
+          "integrityCheck": "ok"
+        },
+        "samples": [
+          {
+            "clientId": "client-1",
+            "sequence": 0,
+            "latencyMs": 3.193,
+            "acquisitionMs": 0.019,
+            "transactionMs": 2.792,
+            "busyRetries": 0,
+            "writerPid": 12307
+          },
+          {
+            "clientId": "client-9",
+            "sequence": 0,
+            "latencyMs": 5.878,
+            "acquisitionMs": 1.594,
+            "transactionMs": 4.366,
+            "busyRetries": 0,
+            "writerPid": 12315
+          },
+          {
+            "clientId": "client-1",
+            "sequence": 1,
+            "latencyMs": 5.386,
+            "acquisitionMs": 2.516,
+            "transactionMs": 5.169,
+            "busyRetries": 0,
+            "writerPid": 12307
+          },
+          {
+            "clientId": "client-9",
+            "sequence": 1,
+            "latencyMs": 5.227,
+            "acquisitionMs": 2.504,
+            "transactionMs": 5.064,
+            "busyRetries": 0,
+            "writerPid": 12315
+          },
+          {
+            "clientId": "client-1",
+            "sequence": 2,
+            "latencyMs": 5.238,
+            "acquisitionMs": 2.492,
+            "transactionMs": 5.145,
+            "busyRetries": 0,
+            "writerPid": 12307
+          },
+          {
+            "clientId": "client-9",
+            "sequence": 2,
+            "latencyMs": 5.29,
+            "acquisitionMs": 2.591,
+            "transactionMs": 5.23,
+            "busyRetries": 0,
+            "writerPid": 12315
+          },
+          {
+            "clientId": "client-1",
+            "sequence": 3,
+            "latencyMs": 5.305,
+            "acquisitionMs": 2.555,
+            "transactionMs": 5.182,
+            "busyRetries": 0,
+            "writerPid": 12307
+          },
+          {
+            "clientId": "client-7",
+            "sequence": 0,
+            "latencyMs": 21.901,
+            "acquisitionMs": 18.495,
+            "transactionMs": 21.35,
+            "busyRetries": 0,
+            "writerPid": 12313
+          },
+          {
+            "clientId": "client-1",
+            "sequence": 4,
+            "latencyMs": 5.44,
+            "acquisitionMs": 2.701,
+            "transactionMs": 5.326,
+            "busyRetries": 0,
+            "writerPid": 12307
+          },
+          {
+            "clientId": "client-7",
+            "sequence": 1,
+            "latencyMs": 5.19,
+            "acquisitionMs": 2.249,
+            "transactionMs": 4.814,
+            "busyRetries": 0,
+            "writerPid": 12313
+          },
+          {
+            "clientId": "client-1",
+            "sequence": 5,
+            "latencyMs": 5.225,
+            "acquisitionMs": 2.278,
+            "transactionMs": 4.934,
+            "busyRetries": 0,
+            "writerPid": 12307
+          },
+          {
+            "clientId": "client-7",
+            "sequence": 2,
+            "latencyMs": 5.311,
+            "acquisitionMs": 2.581,
+            "transactionMs": 5.221,
+            "busyRetries": 0,
+            "writerPid": 12313
+          },
+          {
+            "clientId": "client-1",
+            "sequence": 6,
+            "latencyMs": 5.372,
+            "acquisitionMs": 2.578,
+            "transactionMs": 5.147,
+            "busyRetries": 0,
+            "writerPid": 12307
+          },
+          {
+            "clientId": "client-7",
+            "sequence": 3,
+            "latencyMs": 5.218,
+            "acquisitionMs": 2.477,
+            "transactionMs": 5.127,
+            "busyRetries": 0,
+            "writerPid": 12313
+          },
+          {
+            "clientId": "client-1",
+            "sequence": 7,
+            "latencyMs": 4.821,
+            "acquisitionMs": 2.428,
+            "transactionMs": 4.753,
+            "busyRetries": 0,
+            "writerPid": 12307
+          },
+          {
+            "clientId": "client-7",
+            "sequence": 4,
+            "latencyMs": 4.957,
+            "acquisitionMs": 2.236,
+            "transactionMs": 4.865,
+            "busyRetries": 0,
+            "writerPid": 12313
+          },
+          {
+            "clientId": "client-4",
+            "sequence": 0,
+            "latencyMs": 45.392,
+            "acquisitionMs": 42.196,
+            "transactionMs": 44.984,
+            "busyRetries": 0,
+            "writerPid": 12310
+          },
+          {
+            "clientId": "client-7",
+            "sequence": 5,
+            "latencyMs": 5.449,
+            "acquisitionMs": 2.516,
+            "transactionMs": 5.161,
+            "busyRetries": 0,
+            "writerPid": 12313
+          },
+          {
+            "clientId": "client-4",
+            "sequence": 1,
+            "latencyMs": 5.233,
+            "acquisitionMs": 2.468,
+            "transactionMs": 5.047,
+            "busyRetries": 0,
+            "writerPid": 12310
+          },
+          {
+            "clientId": "client-7",
+            "sequence": 6,
+            "latencyMs": 5.22,
+            "acquisitionMs": 2.533,
+            "transactionMs": 5.151,
+            "busyRetries": 0,
+            "writerPid": 12313
+          },
+          {
+            "clientId": "client-4",
+            "sequence": 2,
+            "latencyMs": 5.256,
+            "acquisitionMs": 2.545,
+            "transactionMs": 5.175,
+            "busyRetries": 0,
+            "writerPid": 12310
+          },
+          {
+            "clientId": "client-7",
+            "sequence": 7,
+            "latencyMs": 5.196,
+            "acquisitionMs": 2.558,
+            "transactionMs": 5.127,
+            "busyRetries": 0,
+            "writerPid": 12313
+          },
+          {
+            "clientId": "client-4",
+            "sequence": 3,
+            "latencyMs": 5.165,
+            "acquisitionMs": 2.517,
+            "transactionMs": 5.078,
+            "busyRetries": 0,
+            "writerPid": 12310
+          },
+          {
+            "clientId": "client-6",
+            "sequence": 0,
+            "latencyMs": 63.881,
+            "acquisitionMs": 60.457,
+            "transactionMs": 63.321,
+            "busyRetries": 0,
+            "writerPid": 12312
+          },
+          {
+            "clientId": "client-0",
+            "sequence": 0,
+            "latencyMs": 66.748,
+            "acquisitionMs": 63.495,
+            "transactionMs": 66.326,
+            "busyRetries": 0,
+            "writerPid": 12306
+          },
+          {
+            "clientId": "client-6",
+            "sequence": 1,
+            "latencyMs": 5.387,
+            "acquisitionMs": 2.567,
+            "transactionMs": 5.144,
+            "busyRetries": 0,
+            "writerPid": 12312
+          },
+          {
+            "clientId": "client-0",
+            "sequence": 1,
+            "latencyMs": 5.207,
+            "acquisitionMs": 2.266,
+            "transactionMs": 4.906,
+            "busyRetries": 0,
+            "writerPid": 12306
+          },
+          {
+            "clientId": "client-6",
+            "sequence": 2,
+            "latencyMs": 5.25,
+            "acquisitionMs": 2.551,
+            "transactionMs": 5.164,
+            "busyRetries": 0,
+            "writerPid": 12312
+          },
+          {
+            "clientId": "client-0",
+            "sequence": 2,
+            "latencyMs": 5.178,
+            "acquisitionMs": 2.512,
+            "transactionMs": 5.073,
+            "busyRetries": 0,
+            "writerPid": 12306
+          },
+          {
+            "clientId": "client-6",
+            "sequence": 3,
+            "latencyMs": 5.169,
+            "acquisitionMs": 2.471,
+            "transactionMs": 5.055,
+            "busyRetries": 0,
+            "writerPid": 12312
+          },
+          {
+            "clientId": "client-0",
+            "sequence": 3,
+            "latencyMs": 5.166,
+            "acquisitionMs": 2.511,
+            "transactionMs": 5.08,
+            "busyRetries": 0,
+            "writerPid": 12306
+          },
+          {
+            "clientId": "client-6",
+            "sequence": 4,
+            "latencyMs": 5.198,
+            "acquisitionMs": 2.497,
+            "transactionMs": 5.109,
+            "busyRetries": 0,
+            "writerPid": 12312
+          },
+          {
+            "clientId": "client-0",
+            "sequence": 4,
+            "latencyMs": 5.272,
+            "acquisitionMs": 2.565,
+            "transactionMs": 5.179,
+            "busyRetries": 0,
+            "writerPid": 12306
+          },
+          {
+            "clientId": "client-6",
+            "sequence": 5,
+            "latencyMs": 5.22,
+            "acquisitionMs": 2.287,
+            "transactionMs": 4.877,
+            "busyRetries": 0,
+            "writerPid": 12312
+          },
+          {
+            "clientId": "client-0",
+            "sequence": 5,
+            "latencyMs": 5.217,
+            "acquisitionMs": 2.28,
+            "transactionMs": 4.909,
+            "busyRetries": 0,
+            "writerPid": 12306
+          },
+          {
+            "clientId": "client-6",
+            "sequence": 6,
+            "latencyMs": 5.254,
+            "acquisitionMs": 2.586,
+            "transactionMs": 5.199,
+            "busyRetries": 0,
+            "writerPid": 12312
+          },
+          {
+            "clientId": "client-0",
+            "sequence": 6,
+            "latencyMs": 5.185,
+            "acquisitionMs": 2.557,
+            "transactionMs": 5.109,
+            "busyRetries": 0,
+            "writerPid": 12306
+          },
+          {
+            "clientId": "client-6",
+            "sequence": 7,
+            "latencyMs": 5.148,
+            "acquisitionMs": 2.524,
+            "transactionMs": 5.096,
+            "busyRetries": 0,
+            "writerPid": 12312
+          },
+          {
+            "clientId": "client-3",
+            "sequence": 0,
+            "latencyMs": 102.978,
+            "acquisitionMs": 100.141,
+            "transactionMs": 102.585,
+            "busyRetries": 0,
+            "writerPid": 12309
+          },
+          {
+            "clientId": "client-9",
+            "sequence": 3,
+            "latencyMs": 89.194,
+            "acquisitionMs": 86.469,
+            "transactionMs": 89.109,
+            "busyRetries": 0,
+            "writerPid": 12315
+          },
+          {
+            "clientId": "client-3",
+            "sequence": 1,
+            "latencyMs": 5.24,
+            "acquisitionMs": 2.362,
+            "transactionMs": 4.932,
+            "busyRetries": 0,
+            "writerPid": 12309
+          },
+          {
+            "clientId": "client-9",
+            "sequence": 4,
+            "latencyMs": 5.262,
+            "acquisitionMs": 2.219,
+            "transactionMs": 4.871,
+            "busyRetries": 0,
+            "writerPid": 12315
+          },
+          {
+            "clientId": "client-0",
+            "sequence": 7,
+            "latencyMs": 15.601,
+            "acquisitionMs": 12.886,
+            "transactionMs": 15.515,
+            "busyRetries": 0,
+            "writerPid": 12306
+          },
+          {
+            "clientId": "client-9",
+            "sequence": 5,
+            "latencyMs": 5.294,
+            "acquisitionMs": 2.373,
+            "transactionMs": 4.995,
+            "busyRetries": 0,
+            "writerPid": 12315
+          },
+          {
+            "clientId": "client-4",
+            "sequence": 4,
+            "latencyMs": 57.95,
+            "acquisitionMs": 55.065,
+            "transactionMs": 57.679,
+            "busyRetries": 0,
+            "writerPid": 12310
+          },
+          {
+            "clientId": "client-9",
+            "sequence": 6,
+            "latencyMs": 5.303,
+            "acquisitionMs": 2.557,
+            "transactionMs": 5.185,
+            "busyRetries": 0,
+            "writerPid": 12315
+          },
+          {
+            "clientId": "client-4",
+            "sequence": 5,
+            "latencyMs": 5.133,
+            "acquisitionMs": 2.207,
+            "transactionMs": 4.852,
+            "busyRetries": 0,
+            "writerPid": 12310
+          },
+          {
+            "clientId": "client-5",
+            "sequence": 0,
+            "latencyMs": 126.977,
+            "acquisitionMs": 123.564,
+            "transactionMs": 126.422,
+            "busyRetries": 0,
+            "writerPid": 12311
+          },
+          {
+            "clientId": "client-4",
+            "sequence": 6,
+            "latencyMs": 5.463,
+            "acquisitionMs": 2.735,
+            "transactionMs": 5.349,
+            "busyRetries": 0,
+            "writerPid": 12310
+          },
+          {
+            "clientId": "client-5",
+            "sequence": 1,
+            "latencyMs": 5.249,
+            "acquisitionMs": 2.327,
+            "transactionMs": 4.956,
+            "busyRetries": 0,
+            "writerPid": 12311
+          },
+          {
+            "clientId": "client-4",
+            "sequence": 7,
+            "latencyMs": 5.258,
+            "acquisitionMs": 2.572,
+            "transactionMs": 5.18,
+            "busyRetries": 0,
+            "writerPid": 12310
+          },
+          {
+            "clientId": "client-5",
+            "sequence": 2,
+            "latencyMs": 5.236,
+            "acquisitionMs": 2.554,
+            "transactionMs": 5.119,
+            "busyRetries": 0,
+            "writerPid": 12311
+          },
+          {
+            "clientId": "client-3",
+            "sequence": 2,
+            "latencyMs": 31.835,
+            "acquisitionMs": 29.159,
+            "transactionMs": 31.745,
+            "busyRetries": 0,
+            "writerPid": 12309
+          },
+          {
+            "clientId": "client-5",
+            "sequence": 3,
+            "latencyMs": 5.212,
+            "acquisitionMs": 2.493,
+            "transactionMs": 5.115,
+            "busyRetries": 0,
+            "writerPid": 12311
+          },
+          {
+            "clientId": "client-3",
+            "sequence": 3,
+            "latencyMs": 5.293,
+            "acquisitionMs": 2.291,
+            "transactionMs": 4.927,
+            "busyRetries": 0,
+            "writerPid": 12309
+          },
+          {
+            "clientId": "client-5",
+            "sequence": 4,
+            "latencyMs": 5.298,
+            "acquisitionMs": 2.555,
+            "transactionMs": 5.202,
+            "busyRetries": 0,
+            "writerPid": 12311
+          },
+          {
+            "clientId": "client-3",
+            "sequence": 4,
+            "latencyMs": 5.265,
+            "acquisitionMs": 2.531,
+            "transactionMs": 5.131,
+            "busyRetries": 0,
+            "writerPid": 12309
+          },
+          {
+            "clientId": "client-5",
+            "sequence": 5,
+            "latencyMs": 5.262,
+            "acquisitionMs": 2.235,
+            "transactionMs": 4.842,
+            "busyRetries": 0,
+            "writerPid": 12311
+          },
+          {
+            "clientId": "client-3",
+            "sequence": 5,
+            "latencyMs": 5.253,
+            "acquisitionMs": 2.517,
+            "transactionMs": 5.146,
+            "busyRetries": 0,
+            "writerPid": 12309
+          },
+          {
+            "clientId": "client-5",
+            "sequence": 6,
+            "latencyMs": 5.192,
+            "acquisitionMs": 2.557,
+            "transactionMs": 5.123,
+            "busyRetries": 0,
+            "writerPid": 12311
+          },
+          {
+            "clientId": "client-3",
+            "sequence": 6,
+            "latencyMs": 5.16,
+            "acquisitionMs": 2.493,
+            "transactionMs": 5.057,
+            "busyRetries": 0,
+            "writerPid": 12309
+          },
+          {
+            "clientId": "client-5",
+            "sequence": 7,
+            "latencyMs": 5.264,
+            "acquisitionMs": 2.521,
+            "transactionMs": 5.168,
+            "busyRetries": 0,
+            "writerPid": 12311
+          },
+          {
+            "clientId": "client-3",
+            "sequence": 7,
+            "latencyMs": 5.346,
+            "acquisitionMs": 2.324,
+            "transactionMs": 4.989,
+            "busyRetries": 0,
+            "writerPid": 12309
+          },
+          {
+            "clientId": "client-8",
+            "sequence": 0,
+            "latencyMs": 169.121,
+            "acquisitionMs": 165.8,
+            "transactionMs": 168.345,
+            "busyRetries": 0,
+            "writerPid": 12314
+          },
+          {
+            "clientId": "client-2",
+            "sequence": 0,
+            "latencyMs": 171.768,
+            "acquisitionMs": 168.53,
+            "transactionMs": 171.381,
+            "busyRetries": 0,
+            "writerPid": 12308
+          },
+          {
+            "clientId": "client-8",
+            "sequence": 1,
+            "latencyMs": 5.24,
+            "acquisitionMs": 2.276,
+            "transactionMs": 4.903,
+            "busyRetries": 0,
+            "writerPid": 12314
+          },
+          {
+            "clientId": "client-2",
+            "sequence": 1,
+            "latencyMs": 5.223,
+            "acquisitionMs": 2.354,
+            "transactionMs": 4.931,
+            "busyRetries": 0,
+            "writerPid": 12308
+          },
+          {
+            "clientId": "client-8",
+            "sequence": 2,
+            "latencyMs": 5.179,
+            "acquisitionMs": 2.522,
+            "transactionMs": 5.09,
+            "busyRetries": 0,
+            "writerPid": 12314
+          },
+          {
+            "clientId": "client-2",
+            "sequence": 2,
+            "latencyMs": 5.193,
+            "acquisitionMs": 2.511,
+            "transactionMs": 5.095,
+            "busyRetries": 0,
+            "writerPid": 12308
+          },
+          {
+            "clientId": "client-8",
+            "sequence": 3,
+            "latencyMs": 5.211,
+            "acquisitionMs": 2.521,
+            "transactionMs": 5.128,
+            "busyRetries": 0,
+            "writerPid": 12314
+          },
+          {
+            "clientId": "client-2",
+            "sequence": 3,
+            "latencyMs": 5.066,
+            "acquisitionMs": 2.53,
+            "transactionMs": 4.954,
+            "busyRetries": 0,
+            "writerPid": 12308
+          },
+          {
+            "clientId": "client-8",
+            "sequence": 4,
+            "latencyMs": 5.035,
+            "acquisitionMs": 2.373,
+            "transactionMs": 4.953,
+            "busyRetries": 0,
+            "writerPid": 12314
+          },
+          {
+            "clientId": "client-2",
+            "sequence": 4,
+            "latencyMs": 5.166,
+            "acquisitionMs": 2.493,
+            "transactionMs": 5.073,
+            "busyRetries": 0,
+            "writerPid": 12308
+          },
+          {
+            "clientId": "client-8",
+            "sequence": 5,
+            "latencyMs": 4.748,
+            "acquisitionMs": 2.218,
+            "transactionMs": 4.347,
+            "busyRetries": 0,
+            "writerPid": 12314
+          },
+          {
+            "clientId": "client-2",
+            "sequence": 5,
+            "latencyMs": 4.786,
+            "acquisitionMs": 1.758,
+            "transactionMs": 4.369,
+            "busyRetries": 0,
+            "writerPid": 12308
+          },
+          {
+            "clientId": "client-8",
+            "sequence": 6,
+            "latencyMs": 5.247,
+            "acquisitionMs": 2.566,
+            "transactionMs": 5.189,
+            "busyRetries": 0,
+            "writerPid": 12314
+          },
+          {
+            "clientId": "client-2",
+            "sequence": 6,
+            "latencyMs": 5.288,
+            "acquisitionMs": 2.533,
+            "transactionMs": 5.114,
+            "busyRetries": 0,
+            "writerPid": 12308
+          },
+          {
+            "clientId": "client-8",
+            "sequence": 7,
+            "latencyMs": 5.227,
+            "acquisitionMs": 2.514,
+            "transactionMs": 5.135,
+            "busyRetries": 0,
+            "writerPid": 12314
+          },
+          {
+            "clientId": "client-2",
+            "sequence": 7,
+            "latencyMs": 5.178,
+            "acquisitionMs": 2.472,
+            "transactionMs": 5.081,
+            "busyRetries": 0,
+            "writerPid": 12308
+          },
+          {
+            "clientId": "client-9",
+            "sequence": 7,
+            "latencyMs": 88.86,
+            "acquisitionMs": 86.125,
+            "transactionMs": 88.721,
+            "busyRetries": 0,
+            "writerPid": 12315
+          }
+        ]
+      },
+      {
+        "topology": "central",
+        "synchronous": "FULL",
+        "clientCount": 1,
+        "workerCount": 1,
+        "writesPerClient": 8,
+        "transactionHoldMs": 2,
+        "startupMs": 20.748,
+        "wallMs": 24.675,
+        "throughputPerSecond": 324.214,
+        "latencyMs": {
+          "min": 2.69,
+          "p50": 2.801,
+          "p95": 4.706,
+          "p99": 4.706,
+          "max": 4.706
+        },
+        "writerLockAcquisitionMs": {
+          "min": 0.005,
+          "p50": 0.007,
+          "p95": 0.009,
+          "p99": 0.009,
+          "max": 0.009
+        },
+        "transactionMs": {
+          "min": 2.613,
+          "p50": 2.692,
+          "p95": 2.76,
+          "p99": 2.76,
+          "max": 2.76
+        },
+        "busyRetries": 0,
+        "clientCompletionMs": [
+          24.665
+        ],
+        "clientCompletionSpreadRatio": 1,
+        "distinctObservedWriterPids": 1,
+        "walBeforeCheckpointBytes": 107152,
+        "walAfterCheckpointBytes": 107152,
+        "checkpointPids": [
+          12316
+        ],
+        "checkpointResponses": [
+          {
+            "id": "request-303",
+            "ok": true,
+            "op": "checkpoint",
+            "pid": 12316,
+            "result": {
+              "busy": 0,
+              "log": 26,
+              "checkpointed": 26
+            }
+          }
+        ],
+        "inspection": {
+          "deliveryCount": 8,
+          "connectionAudit": [
+            {
+              "pid": 12316,
+              "topology": "central",
+              "worker_id": "worker-0",
+              "opened_at_ms": 1786207254184.7666
+            }
+          ],
+          "integrityCheck": "ok"
+        },
+        "samples": [
+          {
+            "clientId": "client-0",
+            "sequence": 0,
+            "latencyMs": 4.706,
+            "acquisitionMs": 0.009,
+            "transactionMs": 2.76,
+            "busyRetries": 0,
+            "writerPid": 12316
+          },
+          {
+            "clientId": "client-0",
+            "sequence": 1,
+            "latencyMs": 2.903,
+            "acquisitionMs": 0.007,
+            "transactionMs": 2.692,
+            "busyRetries": 0,
+            "writerPid": 12316
+          },
+          {
+            "clientId": "client-0",
+            "sequence": 2,
+            "latencyMs": 2.801,
+            "acquisitionMs": 0.007,
+            "transactionMs": 2.703,
+            "busyRetries": 0,
+            "writerPid": 12316
+          },
+          {
+            "clientId": "client-0",
+            "sequence": 3,
+            "latencyMs": 2.786,
+            "acquisitionMs": 0.005,
+            "transactionMs": 2.682,
+            "busyRetries": 0,
+            "writerPid": 12316
+          },
+          {
+            "clientId": "client-0",
+            "sequence": 4,
+            "latencyMs": 3.053,
+            "acquisitionMs": 0.008,
+            "transactionMs": 2.73,
+            "busyRetries": 0,
+            "writerPid": 12316
+          },
+          {
+            "clientId": "client-0",
+            "sequence": 5,
+            "latencyMs": 2.763,
+            "acquisitionMs": 0.006,
+            "transactionMs": 2.684,
+            "busyRetries": 0,
+            "writerPid": 12316
+          },
+          {
+            "clientId": "client-0",
+            "sequence": 6,
+            "latencyMs": 2.69,
+            "acquisitionMs": 0.005,
+            "transactionMs": 2.613,
+            "busyRetries": 0,
+            "writerPid": 12316
+          },
+          {
+            "clientId": "client-0",
+            "sequence": 7,
+            "latencyMs": 2.96,
+            "acquisitionMs": 0.008,
+            "transactionMs": 2.7,
+            "busyRetries": 0,
+            "writerPid": 12316
+          }
+        ]
+      },
+      {
+        "topology": "federated",
+        "synchronous": "FULL",
+        "clientCount": 1,
+        "workerCount": 1,
+        "writesPerClient": 8,
+        "transactionHoldMs": 2,
+        "startupMs": 18.052,
+        "wallMs": 24.143,
+        "throughputPerSecond": 331.356,
+        "latencyMs": {
+          "min": 2.661,
+          "p50": 2.794,
+          "p95": 4.585,
+          "p99": 4.585,
+          "max": 4.585
+        },
+        "writerLockAcquisitionMs": {
+          "min": 0.004,
+          "p50": 0.005,
+          "p95": 0.008,
+          "p99": 0.008,
+          "max": 0.008
+        },
+        "transactionMs": {
+          "min": 2.592,
+          "p50": 2.682,
+          "p95": 2.757,
+          "p99": 2.757,
+          "max": 2.757
+        },
+        "busyRetries": 0,
+        "clientCompletionMs": [
+          24.125
+        ],
+        "clientCompletionSpreadRatio": 1,
+        "distinctObservedWriterPids": 1,
+        "walBeforeCheckpointBytes": 107152,
+        "walAfterCheckpointBytes": 107152,
+        "checkpointPids": [
+          12317
+        ],
+        "checkpointResponses": [
+          {
+            "id": "request-313",
+            "ok": true,
+            "op": "checkpoint",
+            "pid": 12317,
+            "result": {
+              "busy": 0,
+              "log": 26,
+              "checkpointed": 26
+            }
+          }
+        ],
+        "inspection": {
+          "deliveryCount": 8,
+          "connectionAudit": [
+            {
+              "pid": 12317,
+              "topology": "federated",
+              "worker_id": "worker-0",
+              "opened_at_ms": 1786207254233.9246
+            }
+          ],
+          "integrityCheck": "ok"
+        },
+        "samples": [
+          {
+            "clientId": "client-0",
+            "sequence": 0,
+            "latencyMs": 4.585,
+            "acquisitionMs": 0.008,
+            "transactionMs": 2.757,
+            "busyRetries": 0,
+            "writerPid": 12317
+          },
+          {
+            "clientId": "client-0",
+            "sequence": 1,
+            "latencyMs": 2.847,
+            "acquisitionMs": 0.005,
+            "transactionMs": 2.682,
+            "busyRetries": 0,
+            "writerPid": 12317
+          },
+          {
+            "clientId": "client-0",
+            "sequence": 2,
+            "latencyMs": 2.692,
+            "acquisitionMs": 0.005,
+            "transactionMs": 2.611,
+            "busyRetries": 0,
+            "writerPid": 12317
+          },
+          {
+            "clientId": "client-0",
+            "sequence": 3,
+            "latencyMs": 2.794,
+            "acquisitionMs": 0.007,
+            "transactionMs": 2.721,
+            "busyRetries": 0,
+            "writerPid": 12317
+          },
+          {
+            "clientId": "client-0",
+            "sequence": 4,
+            "latencyMs": 2.892,
+            "acquisitionMs": 0.006,
+            "transactionMs": 2.634,
+            "busyRetries": 0,
+            "writerPid": 12317
+          },
+          {
+            "clientId": "client-0",
+            "sequence": 5,
+            "latencyMs": 2.746,
+            "acquisitionMs": 0.006,
+            "transactionMs": 2.683,
+            "busyRetries": 0,
+            "writerPid": 12317
+          },
+          {
+            "clientId": "client-0",
+            "sequence": 6,
+            "latencyMs": 2.661,
+            "acquisitionMs": 0.004,
+            "transactionMs": 2.592,
+            "busyRetries": 0,
+            "writerPid": 12317
+          },
+          {
+            "clientId": "client-0",
+            "sequence": 7,
+            "latencyMs": 2.906,
+            "acquisitionMs": 0.005,
+            "transactionMs": 2.686,
+            "busyRetries": 0,
+            "writerPid": 12317
+          }
+        ]
+      },
+      {
+        "topology": "central",
+        "synchronous": "FULL",
+        "clientCount": 5,
+        "workerCount": 1,
+        "writesPerClient": 8,
+        "transactionHoldMs": 2,
+        "startupMs": 16.922,
+        "wallMs": 109.431,
+        "throughputPerSecond": 365.528,
+        "latencyMs": {
+          "min": 4.716,
+          "p50": 13.421,
+          "p95": 13.905,
+          "p99": 15.265,
+          "max": 15.265
+        },
+        "writerLockAcquisitionMs": {
+          "min": 0.003,
+          "p50": 0.004,
+          "p95": 0.013,
+          "p99": 0.028,
+          "max": 0.028
+        },
+        "transactionMs": {
+          "min": 2.257,
+          "p50": 2.668,
+          "p95": 2.694,
+          "p99": 2.83,
+          "max": 2.83
+        },
+        "busyRetries": 0,
+        "clientCompletionMs": [
+          98.593,
+          101.233,
+          104.025,
+          106.707,
+          109.382
+        ],
+        "clientCompletionSpreadRatio": 1.109,
+        "distinctObservedWriterPids": 1,
+        "walBeforeCheckpointBytes": 502672,
+        "walAfterCheckpointBytes": 502672,
+        "checkpointPids": [
+          12318
+        ],
+        "checkpointResponses": [
+          {
+            "id": "request-355",
+            "ok": true,
+            "op": "checkpoint",
+            "pid": 12318,
+            "result": {
+              "busy": 0,
+              "log": 122,
+              "checkpointed": 122
+            }
+          }
+        ],
+        "inspection": {
+          "deliveryCount": 40,
+          "connectionAudit": [
+            {
+              "pid": 12318,
+              "topology": "central",
+              "worker_id": "worker-0",
+              "opened_at_ms": 1786207254281.3047
+            }
+          ],
+          "integrityCheck": "ok"
+        },
+        "samples": [
+          {
+            "clientId": "client-0",
+            "sequence": 0,
+            "latencyMs": 4.716,
+            "acquisitionMs": 0.017,
+            "transactionMs": 2.83,
+            "busyRetries": 0,
+            "writerPid": 12318
+          },
+          {
+            "clientId": "client-1",
+            "sequence": 0,
+            "latencyMs": 7.396,
+            "acquisitionMs": 0.006,
+            "transactionMs": 2.687,
+            "busyRetries": 0,
+            "writerPid": 12318
+          },
+          {
+            "clientId": "client-2",
+            "sequence": 0,
+            "latencyMs": 10.017,
+            "acquisitionMs": 0.004,
+            "transactionMs": 2.61,
+            "busyRetries": 0,
+            "writerPid": 12318
+          },
+          {
+            "clientId": "client-3",
+            "sequence": 0,
+            "latencyMs": 12.641,
+            "acquisitionMs": 0.004,
+            "transactionMs": 2.626,
+            "busyRetries": 0,
+            "writerPid": 12318
+          },
+          {
+            "clientId": "client-4",
+            "sequence": 0,
+            "latencyMs": 15.265,
+            "acquisitionMs": 0.004,
+            "transactionMs": 2.607,
+            "busyRetries": 0,
+            "writerPid": 12318
+          },
+          {
+            "clientId": "client-0",
+            "sequence": 1,
+            "latencyMs": 13.41,
+            "acquisitionMs": 0.004,
+            "transactionMs": 2.634,
+            "busyRetries": 0,
+            "writerPid": 12318
+          },
+          {
+            "clientId": "client-1",
+            "sequence": 1,
+            "latencyMs": 13.385,
+            "acquisitionMs": 0.005,
+            "transactionMs": 2.643,
+            "busyRetries": 0,
+            "writerPid": 12318
+          },
+          {
+            "clientId": "client-2",
+            "sequence": 1,
+            "latencyMs": 13.421,
+            "acquisitionMs": 0.004,
+            "transactionMs": 2.68,
+            "busyRetries": 0,
+            "writerPid": 12318
+          },
+          {
+            "clientId": "client-3",
+            "sequence": 1,
+            "latencyMs": 13.475,
+            "acquisitionMs": 0.003,
+            "transactionMs": 2.676,
+            "busyRetries": 0,
+            "writerPid": 12318
+          },
+          {
+            "clientId": "client-4",
+            "sequence": 1,
+            "latencyMs": 13.5,
+            "acquisitionMs": 0.013,
+            "transactionMs": 2.643,
+            "busyRetries": 0,
+            "writerPid": 12318
+          },
+          {
+            "clientId": "client-0",
+            "sequence": 2,
+            "latencyMs": 13.451,
+            "acquisitionMs": 0.028,
+            "transactionMs": 2.691,
+            "busyRetries": 0,
+            "writerPid": 12318
+          },
+          {
+            "clientId": "client-1",
+            "sequence": 2,
+            "latencyMs": 13.371,
+            "acquisitionMs": 0.004,
+            "transactionMs": 2.596,
+            "busyRetries": 0,
+            "writerPid": 12318
+          },
+          {
+            "clientId": "client-2",
+            "sequence": 2,
+            "latencyMs": 13.392,
+            "acquisitionMs": 0.004,
+            "transactionMs": 2.675,
+            "busyRetries": 0,
+            "writerPid": 12318
+          },
+          {
+            "clientId": "client-3",
+            "sequence": 2,
+            "latencyMs": 13.378,
+            "acquisitionMs": 0.004,
+            "transactionMs": 2.662,
+            "busyRetries": 0,
+            "writerPid": 12318
+          },
+          {
+            "clientId": "client-4",
+            "sequence": 2,
+            "latencyMs": 13.396,
+            "acquisitionMs": 0.007,
+            "transactionMs": 2.668,
+            "busyRetries": 0,
+            "writerPid": 12318
+          },
+          {
+            "clientId": "client-0",
+            "sequence": 3,
+            "latencyMs": 13.384,
+            "acquisitionMs": 0.011,
+            "transactionMs": 2.693,
+            "busyRetries": 0,
+            "writerPid": 12318
+          },
+          {
+            "clientId": "client-1",
+            "sequence": 3,
+            "latencyMs": 13.497,
+            "acquisitionMs": 0.004,
+            "transactionMs": 2.694,
+            "busyRetries": 0,
+            "writerPid": 12318
+          },
+          {
+            "clientId": "client-2",
+            "sequence": 3,
+            "latencyMs": 13.534,
+            "acquisitionMs": 0.003,
+            "transactionMs": 2.665,
+            "busyRetries": 0,
+            "writerPid": 12318
+          },
+          {
+            "clientId": "client-3",
+            "sequence": 3,
+            "latencyMs": 13.484,
+            "acquisitionMs": 0.004,
+            "transactionMs": 2.618,
+            "busyRetries": 0,
+            "writerPid": 12318
+          },
+          {
+            "clientId": "client-4",
+            "sequence": 3,
+            "latencyMs": 13.877,
+            "acquisitionMs": 0.008,
+            "transactionMs": 2.737,
+            "busyRetries": 0,
+            "writerPid": 12318
+          },
+          {
+            "clientId": "client-0",
+            "sequence": 4,
+            "latencyMs": 13.734,
+            "acquisitionMs": 0.005,
+            "transactionMs": 2.62,
+            "busyRetries": 0,
+            "writerPid": 12318
+          },
+          {
+            "clientId": "client-1",
+            "sequence": 4,
+            "latencyMs": 13.634,
+            "acquisitionMs": 0.004,
+            "transactionMs": 2.6,
+            "busyRetries": 0,
+            "writerPid": 12318
+          },
+          {
+            "clientId": "client-2",
+            "sequence": 4,
+            "latencyMs": 13.574,
+            "acquisitionMs": 0.003,
+            "transactionMs": 2.655,
+            "busyRetries": 0,
+            "writerPid": 12318
+          },
+          {
+            "clientId": "client-3",
+            "sequence": 4,
+            "latencyMs": 13.589,
+            "acquisitionMs": 0.003,
+            "transactionMs": 2.603,
+            "busyRetries": 0,
+            "writerPid": 12318
+          },
+          {
+            "clientId": "client-4",
+            "sequence": 4,
+            "latencyMs": 13.254,
+            "acquisitionMs": 0.004,
+            "transactionMs": 2.672,
+            "busyRetries": 0,
+            "writerPid": 12318
+          },
+          {
+            "clientId": "client-0",
+            "sequence": 5,
+            "latencyMs": 13.312,
+            "acquisitionMs": 0.004,
+            "transactionMs": 2.67,
+            "busyRetries": 0,
+            "writerPid": 12318
+          },
+          {
+            "clientId": "client-1",
+            "sequence": 5,
+            "latencyMs": 12.996,
+            "acquisitionMs": 0.003,
+            "transactionMs": 2.257,
+            "busyRetries": 0,
+            "writerPid": 12318
+          },
+          {
+            "clientId": "client-2",
+            "sequence": 5,
+            "latencyMs": 12.971,
+            "acquisitionMs": 0.006,
+            "transactionMs": 2.631,
+            "busyRetries": 0,
+            "writerPid": 12318
+          },
+          {
+            "clientId": "client-3",
+            "sequence": 5,
+            "latencyMs": 12.744,
+            "acquisitionMs": 0.004,
+            "transactionMs": 2.344,
+            "busyRetries": 0,
+            "writerPid": 12318
+          },
+          {
+            "clientId": "client-4",
+            "sequence": 5,
+            "latencyMs": 12.717,
+            "acquisitionMs": 0.004,
+            "transactionMs": 2.677,
+            "busyRetries": 0,
+            "writerPid": 12318
+          },
+          {
+            "clientId": "client-0",
+            "sequence": 6,
+            "latencyMs": 12.73,
+            "acquisitionMs": 0.005,
+            "transactionMs": 2.689,
+            "busyRetries": 0,
+            "writerPid": 12318
+          },
+          {
+            "clientId": "client-1",
+            "sequence": 6,
+            "latencyMs": 13.144,
+            "acquisitionMs": 0.005,
+            "transactionMs": 2.693,
+            "busyRetries": 0,
+            "writerPid": 12318
+          },
+          {
+            "clientId": "client-2",
+            "sequence": 6,
+            "latencyMs": 13.627,
+            "acquisitionMs": 0.005,
+            "transactionMs": 2.69,
+            "busyRetries": 0,
+            "writerPid": 12318
+          },
+          {
+            "clientId": "client-3",
+            "sequence": 6,
+            "latencyMs": 13.918,
+            "acquisitionMs": 0.005,
+            "transactionMs": 2.684,
+            "busyRetries": 0,
+            "writerPid": 12318
+          },
+          {
+            "clientId": "client-4",
+            "sequence": 6,
+            "latencyMs": 13.905,
+            "acquisitionMs": 0.006,
+            "transactionMs": 2.678,
+            "busyRetries": 0,
+            "writerPid": 12318
+          },
+          {
+            "clientId": "client-0",
+            "sequence": 7,
+            "latencyMs": 13.856,
+            "acquisitionMs": 0.005,
+            "transactionMs": 2.637,
+            "busyRetries": 0,
+            "writerPid": 12318
+          },
+          {
+            "clientId": "client-1",
+            "sequence": 7,
+            "latencyMs": 13.808,
+            "acquisitionMs": 0.006,
+            "transactionMs": 2.636,
+            "busyRetries": 0,
+            "writerPid": 12318
+          },
+          {
+            "clientId": "client-2",
+            "sequence": 7,
+            "latencyMs": 13.488,
+            "acquisitionMs": 0.006,
+            "transactionMs": 2.693,
+            "busyRetries": 0,
+            "writerPid": 12318
+          },
+          {
+            "clientId": "client-3",
+            "sequence": 7,
+            "latencyMs": 13.478,
+            "acquisitionMs": 0.005,
+            "transactionMs": 2.679,
+            "busyRetries": 0,
+            "writerPid": 12318
+          },
+          {
+            "clientId": "client-4",
+            "sequence": 7,
+            "latencyMs": 13.464,
+            "acquisitionMs": 0.004,
+            "transactionMs": 2.675,
+            "busyRetries": 0,
+            "writerPid": 12318
+          }
+        ]
+      },
+      {
+        "topology": "federated",
+        "synchronous": "FULL",
+        "clientCount": 5,
+        "workerCount": 5,
+        "writesPerClient": 8,
+        "transactionHoldMs": 2,
+        "startupMs": 79.082,
+        "wallMs": 108.994,
+        "throughputPerSecond": 366.991,
+        "latencyMs": {
+          "min": 2.702,
+          "p50": 5.346,
+          "p95": 46.292,
+          "p99": 89.337,
+          "max": 89.337
+        },
+        "writerLockAcquisitionMs": {
+          "min": 0.004,
+          "p50": 2.565,
+          "p95": 43.066,
+          "p99": 86.009,
+          "max": 86.009
+        },
+        "transactionMs": {
+          "min": 2.624,
+          "p50": 5.21,
+          "p95": 45.899,
+          "p99": 88.938,
+          "max": 88.938
+        },
+        "busyRetries": 0,
+        "clientCompletionMs": [
+          40.776,
+          83.706,
+          86.399,
+          108.951,
+          43.423
+        ],
+        "clientCompletionSpreadRatio": 2.672,
+        "distinctObservedWriterPids": 5,
+        "walBeforeCheckpointBytes": 535632,
+        "walAfterCheckpointBytes": 535632,
+        "checkpointPids": [
+          12319,
+          12320,
+          12321,
+          12322,
+          12323
+        ],
+        "checkpointResponses": [
+          {
+            "id": "request-397",
+            "ok": true,
+            "op": "checkpoint",
+            "pid": 12319,
+            "result": {
+              "busy": 1,
+              "log": -1,
+              "checkpointed": -1
+            }
+          },
+          {
+            "id": "request-398",
+            "ok": true,
+            "op": "checkpoint",
+            "pid": 12320,
+            "result": {
+              "busy": 1,
+              "log": -1,
+              "checkpointed": -1
+            }
+          },
+          {
+            "id": "request-399",
+            "ok": true,
+            "op": "checkpoint",
+            "pid": 12321,
+            "result": {
+              "busy": 0,
+              "log": 130,
+              "checkpointed": 130
+            }
+          },
+          {
+            "id": "request-400",
+            "ok": true,
+            "op": "checkpoint",
+            "pid": 12322,
+            "result": {
+              "busy": 1,
+              "log": -1,
+              "checkpointed": -1
+            }
+          },
+          {
+            "id": "request-401",
+            "ok": true,
+            "op": "checkpoint",
+            "pid": 12323,
+            "result": {
+              "busy": 1,
+              "log": -1,
+              "checkpointed": -1
+            }
+          }
+        ],
+        "inspection": {
+          "deliveryCount": 40,
+          "connectionAudit": [
+            {
+              "pid": 12319,
+              "topology": "federated",
+              "worker_id": "worker-0",
+              "opened_at_ms": 1786207254416.8152
+            },
+            {
+              "pid": 12320,
+              "topology": "federated",
+              "worker_id": "worker-1",
+              "opened_at_ms": 1786207254433.8572
+            },
+            {
+              "pid": 12321,
+              "topology": "federated",
+              "worker_id": "worker-2",
+              "opened_at_ms": 1786207254449.0093
+            },
+            {
+              "pid": 12322,
+              "topology": "federated",
+              "worker_id": "worker-3",
+              "opened_at_ms": 1786207254463.5781
+            },
+            {
+              "pid": 12323,
+              "topology": "federated",
+              "worker_id": "worker-4",
+              "opened_at_ms": 1786207254477.785
+            }
+          ],
+          "integrityCheck": "ok"
+        },
+        "samples": [
+          {
+            "clientId": "client-0",
+            "sequence": 0,
+            "latencyMs": 3.199,
+            "acquisitionMs": 0.015,
+            "transactionMs": 2.785,
+            "busyRetries": 0,
+            "writerPid": 12319
+          },
+          {
+            "clientId": "client-4",
+            "sequence": 0,
+            "latencyMs": 5.92,
+            "acquisitionMs": 1.589,
+            "transactionMs": 4.378,
+            "busyRetries": 0,
+            "writerPid": 12323
+          },
+          {
+            "clientId": "client-0",
+            "sequence": 1,
+            "latencyMs": 5.436,
+            "acquisitionMs": 2.582,
+            "transactionMs": 5.266,
+            "busyRetries": 0,
+            "writerPid": 12319
+          },
+          {
+            "clientId": "client-4",
+            "sequence": 1,
+            "latencyMs": 5.284,
+            "acquisitionMs": 2.537,
+            "transactionMs": 5.139,
+            "busyRetries": 0,
+            "writerPid": 12323
+          },
+          {
+            "clientId": "client-0",
+            "sequence": 2,
+            "latencyMs": 5.315,
+            "acquisitionMs": 2.554,
+            "transactionMs": 5.208,
+            "busyRetries": 0,
+            "writerPid": 12319
+          },
+          {
+            "clientId": "client-4",
+            "sequence": 2,
+            "latencyMs": 5.39,
+            "acquisitionMs": 2.614,
+            "transactionMs": 5.328,
+            "busyRetries": 0,
+            "writerPid": 12323
+          },
+          {
+            "clientId": "client-0",
+            "sequence": 3,
+            "latencyMs": 5.315,
+            "acquisitionMs": 2.6,
+            "transactionMs": 5.23,
+            "busyRetries": 0,
+            "writerPid": 12319
+          },
+          {
+            "clientId": "client-4",
+            "sequence": 3,
+            "latencyMs": 5.359,
+            "acquisitionMs": 2.579,
+            "transactionMs": 5.29,
+            "busyRetries": 0,
+            "writerPid": 12323
+          },
+          {
+            "clientId": "client-0",
+            "sequence": 4,
+            "latencyMs": 5.412,
+            "acquisitionMs": 2.673,
+            "transactionMs": 5.351,
+            "busyRetries": 0,
+            "writerPid": 12319
+          },
+          {
+            "clientId": "client-4",
+            "sequence": 4,
+            "latencyMs": 5.361,
+            "acquisitionMs": 2.431,
+            "transactionMs": 5.088,
+            "busyRetries": 0,
+            "writerPid": 12323
+          },
+          {
+            "clientId": "client-0",
+            "sequence": 5,
+            "latencyMs": 5.34,
+            "acquisitionMs": 2.354,
+            "transactionMs": 4.988,
+            "busyRetries": 0,
+            "writerPid": 12319
+          },
+          {
+            "clientId": "client-4",
+            "sequence": 5,
+            "latencyMs": 5.346,
+            "acquisitionMs": 2.41,
+            "transactionMs": 5.114,
+            "busyRetries": 0,
+            "writerPid": 12323
+          },
+          {
+            "clientId": "client-0",
+            "sequence": 6,
+            "latencyMs": 5.357,
+            "acquisitionMs": 2.613,
+            "transactionMs": 5.282,
+            "busyRetries": 0,
+            "writerPid": 12319
+          },
+          {
+            "clientId": "client-4",
+            "sequence": 6,
+            "latencyMs": 5.391,
+            "acquisitionMs": 2.607,
+            "transactionMs": 5.293,
+            "busyRetries": 0,
+            "writerPid": 12323
+          },
+          {
+            "clientId": "client-0",
+            "sequence": 7,
+            "latencyMs": 5.402,
+            "acquisitionMs": 2.638,
+            "transactionMs": 5.327,
+            "busyRetries": 0,
+            "writerPid": 12319
+          },
+          {
+            "clientId": "client-4",
+            "sequence": 7,
+            "latencyMs": 5.367,
+            "acquisitionMs": 2.606,
+            "transactionMs": 5.288,
+            "busyRetries": 0,
+            "writerPid": 12323
+          },
+          {
+            "clientId": "client-1",
+            "sequence": 0,
+            "latencyMs": 46.292,
+            "acquisitionMs": 43.066,
+            "transactionMs": 45.899,
+            "busyRetries": 0,
+            "writerPid": 12320
+          },
+          {
+            "clientId": "client-2",
+            "sequence": 0,
+            "latencyMs": 49.14,
+            "acquisitionMs": 45.863,
+            "transactionMs": 48.741,
+            "busyRetries": 0,
+            "writerPid": 12321
+          },
+          {
+            "clientId": "client-1",
+            "sequence": 1,
+            "latencyMs": 5.288,
+            "acquisitionMs": 2.645,
+            "transactionMs": 5.085,
+            "busyRetries": 0,
+            "writerPid": 12320
+          },
+          {
+            "clientId": "client-2",
+            "sequence": 1,
+            "latencyMs": 5.116,
+            "acquisitionMs": 2.225,
+            "transactionMs": 4.901,
+            "busyRetries": 0,
+            "writerPid": 12321
+          },
+          {
+            "clientId": "client-1",
+            "sequence": 2,
+            "latencyMs": 5.383,
+            "acquisitionMs": 2.624,
+            "transactionMs": 5.318,
+            "busyRetries": 0,
+            "writerPid": 12320
+          },
+          {
+            "clientId": "client-2",
+            "sequence": 2,
+            "latencyMs": 5.402,
+            "acquisitionMs": 2.383,
+            "transactionMs": 5.074,
+            "busyRetries": 0,
+            "writerPid": 12321
+          },
+          {
+            "clientId": "client-1",
+            "sequence": 3,
+            "latencyMs": 5.357,
+            "acquisitionMs": 2.628,
+            "transactionMs": 5.266,
+            "busyRetries": 0,
+            "writerPid": 12320
+          },
+          {
+            "clientId": "client-2",
+            "sequence": 3,
+            "latencyMs": 5.279,
+            "acquisitionMs": 2.596,
+            "transactionMs": 5.213,
+            "busyRetries": 0,
+            "writerPid": 12321
+          },
+          {
+            "clientId": "client-1",
+            "sequence": 4,
+            "latencyMs": 5.325,
+            "acquisitionMs": 2.534,
+            "transactionMs": 5.232,
+            "busyRetries": 0,
+            "writerPid": 12320
+          },
+          {
+            "clientId": "client-2",
+            "sequence": 4,
+            "latencyMs": 5.341,
+            "acquisitionMs": 2.631,
+            "transactionMs": 5.259,
+            "busyRetries": 0,
+            "writerPid": 12321
+          },
+          {
+            "clientId": "client-1",
+            "sequence": 5,
+            "latencyMs": 5.331,
+            "acquisitionMs": 2.321,
+            "transactionMs": 5.004,
+            "busyRetries": 0,
+            "writerPid": 12320
+          },
+          {
+            "clientId": "client-2",
+            "sequence": 5,
+            "latencyMs": 5.388,
+            "acquisitionMs": 2.597,
+            "transactionMs": 5.286,
+            "busyRetries": 0,
+            "writerPid": 12321
+          },
+          {
+            "clientId": "client-1",
+            "sequence": 6,
+            "latencyMs": 5.459,
+            "acquisitionMs": 2.632,
+            "transactionMs": 5.296,
+            "busyRetries": 0,
+            "writerPid": 12320
+          },
+          {
+            "clientId": "client-2",
+            "sequence": 6,
+            "latencyMs": 5.373,
+            "acquisitionMs": 2.606,
+            "transactionMs": 5.295,
+            "busyRetries": 0,
+            "writerPid": 12321
+          },
+          {
+            "clientId": "client-1",
+            "sequence": 7,
+            "latencyMs": 5.269,
+            "acquisitionMs": 2.565,
+            "transactionMs": 5.21,
+            "busyRetries": 0,
+            "writerPid": 12320
+          },
+          {
+            "clientId": "client-2",
+            "sequence": 7,
+            "latencyMs": 5.357,
+            "acquisitionMs": 2.369,
+            "transactionMs": 5.057,
+            "busyRetries": 0,
+            "writerPid": 12321
+          },
+          {
+            "clientId": "client-3",
+            "sequence": 0,
+            "latencyMs": 89.337,
+            "acquisitionMs": 86.009,
+            "transactionMs": 88.938,
+            "busyRetries": 0,
+            "writerPid": 12322
+          },
+          {
+            "clientId": "client-3",
+            "sequence": 1,
+            "latencyMs": 2.908,
+            "acquisitionMs": 0.006,
+            "transactionMs": 2.63,
+            "busyRetries": 0,
+            "writerPid": 12322
+          },
+          {
+            "clientId": "client-3",
+            "sequence": 2,
+            "latencyMs": 2.952,
+            "acquisitionMs": 0.007,
+            "transactionMs": 2.637,
+            "busyRetries": 0,
+            "writerPid": 12322
+          },
+          {
+            "clientId": "client-3",
+            "sequence": 3,
+            "latencyMs": 2.743,
+            "acquisitionMs": 0.005,
+            "transactionMs": 2.682,
+            "busyRetries": 0,
+            "writerPid": 12322
+          },
+          {
+            "clientId": "client-3",
+            "sequence": 4,
+            "latencyMs": 2.702,
+            "acquisitionMs": 0.005,
+            "transactionMs": 2.639,
+            "busyRetries": 0,
+            "writerPid": 12322
+          },
+          {
+            "clientId": "client-3",
+            "sequence": 5,
+            "latencyMs": 2.747,
+            "acquisitionMs": 0.004,
+            "transactionMs": 2.624,
+            "busyRetries": 0,
+            "writerPid": 12322
+          },
+          {
+            "clientId": "client-3",
+            "sequence": 6,
+            "latencyMs": 2.757,
+            "acquisitionMs": 0.005,
+            "transactionMs": 2.687,
+            "busyRetries": 0,
+            "writerPid": 12322
+          },
+          {
+            "clientId": "client-3",
+            "sequence": 7,
+            "latencyMs": 2.804,
+            "acquisitionMs": 0.007,
+            "transactionMs": 2.709,
+            "busyRetries": 0,
+            "writerPid": 12322
+          }
+        ]
+      },
+      {
+        "topology": "central",
+        "synchronous": "FULL",
+        "clientCount": 10,
+        "workerCount": 1,
+        "writesPerClient": 8,
+        "transactionHoldMs": 2,
+        "startupMs": 18.297,
+        "wallMs": 216.118,
+        "throughputPerSecond": 370.168,
+        "latencyMs": {
+          "min": 4.544,
+          "p50": 26.835,
+          "p95": 27.165,
+          "p99": 28.251,
+          "max": 28.251
+        },
+        "writerLockAcquisitionMs": {
+          "min": 0.003,
+          "p50": 0.004,
+          "p95": 0.009,
+          "p99": 0.017,
+          "max": 0.017
+        },
+        "transactionMs": {
+          "min": 2.26,
+          "p50": 2.671,
+          "p95": 2.71,
+          "p99": 2.781,
+          "max": 2.781
+        },
+        "busyRetries": 0,
+        "clientCompletionMs": [
+          191.92,
+          194.64,
+          197.31,
+          200.025,
+          202.648,
+          205.291,
+          207.928,
+          210.57,
+          213.236,
+          216.075
+        ],
+        "clientCompletionSpreadRatio": 1.126,
+        "distinctObservedWriterPids": 1,
+        "walBeforeCheckpointBytes": 1009432,
+        "walAfterCheckpointBytes": 1009432,
+        "checkpointPids": [
+          12324
+        ],
+        "checkpointResponses": [
+          {
+            "id": "request-487",
+            "ok": true,
+            "op": "checkpoint",
+            "pid": 12324,
+            "result": {
+              "busy": 0,
+              "log": 245,
+              "checkpointed": 245
+            }
+          }
+        ],
+        "inspection": {
+          "deliveryCount": 80,
+          "connectionAudit": [
+            {
+              "pid": 12324,
+              "topology": "central",
+              "worker_id": "worker-0",
+              "opened_at_ms": 1786207254611.7905
+            }
+          ],
+          "integrityCheck": "ok"
+        },
+        "samples": [
+          {
+            "clientId": "client-0",
+            "sequence": 0,
+            "latencyMs": 4.544,
+            "acquisitionMs": 0.01,
+            "transactionMs": 2.781,
+            "busyRetries": 0,
+            "writerPid": 12324
+          },
+          {
+            "clientId": "client-1",
+            "sequence": 0,
+            "latencyMs": 7.234,
+            "acquisitionMs": 0.006,
+            "transactionMs": 2.678,
+            "busyRetries": 0,
+            "writerPid": 12324
+          },
+          {
+            "clientId": "client-2",
+            "sequence": 0,
+            "latencyMs": 9.906,
+            "acquisitionMs": 0.005,
+            "transactionMs": 2.681,
+            "busyRetries": 0,
+            "writerPid": 12324
+          },
+          {
+            "clientId": "client-3",
+            "sequence": 0,
+            "latencyMs": 12.6,
+            "acquisitionMs": 0.004,
+            "transactionMs": 2.672,
+            "busyRetries": 0,
+            "writerPid": 12324
+          },
+          {
+            "clientId": "client-4",
+            "sequence": 0,
+            "latencyMs": 15.263,
+            "acquisitionMs": 0.004,
+            "transactionMs": 2.671,
+            "busyRetries": 0,
+            "writerPid": 12324
+          },
+          {
+            "clientId": "client-5",
+            "sequence": 0,
+            "latencyMs": 17.933,
+            "acquisitionMs": 0.004,
+            "transactionMs": 2.665,
+            "busyRetries": 0,
+            "writerPid": 12324
+          },
+          {
+            "clientId": "client-6",
+            "sequence": 0,
+            "latencyMs": 20.217,
+            "acquisitionMs": 0.004,
+            "transactionMs": 2.276,
+            "busyRetries": 0,
+            "writerPid": 12324
+          },
+          {
+            "clientId": "client-7",
+            "sequence": 0,
+            "latencyMs": 22.873,
+            "acquisitionMs": 0.004,
+            "transactionMs": 2.628,
+            "busyRetries": 0,
+            "writerPid": 12324
+          },
+          {
+            "clientId": "client-8",
+            "sequence": 0,
+            "latencyMs": 25.544,
+            "acquisitionMs": 0.005,
+            "transactionMs": 2.674,
+            "busyRetries": 0,
+            "writerPid": 12324
+          },
+          {
+            "clientId": "client-9",
+            "sequence": 0,
+            "latencyMs": 28.251,
+            "acquisitionMs": 0.017,
+            "transactionMs": 2.692,
+            "busyRetries": 0,
+            "writerPid": 12324
+          },
+          {
+            "clientId": "client-0",
+            "sequence": 1,
+            "latencyMs": 26.621,
+            "acquisitionMs": 0.013,
+            "transactionMs": 2.68,
+            "busyRetries": 0,
+            "writerPid": 12324
+          },
+          {
+            "clientId": "client-1",
+            "sequence": 1,
+            "latencyMs": 26.579,
+            "acquisitionMs": 0.004,
+            "transactionMs": 2.658,
+            "busyRetries": 0,
+            "writerPid": 12324
+          },
+          {
+            "clientId": "client-2",
+            "sequence": 1,
+            "latencyMs": 26.511,
+            "acquisitionMs": 0.003,
+            "transactionMs": 2.601,
+            "busyRetries": 0,
+            "writerPid": 12324
+          },
+          {
+            "clientId": "client-3",
+            "sequence": 1,
+            "latencyMs": 26.479,
+            "acquisitionMs": 0.004,
+            "transactionMs": 2.619,
+            "busyRetries": 0,
+            "writerPid": 12324
+          },
+          {
+            "clientId": "client-4",
+            "sequence": 1,
+            "latencyMs": 26.553,
+            "acquisitionMs": 0.009,
+            "transactionMs": 2.739,
+            "busyRetries": 0,
+            "writerPid": 12324
+          },
+          {
+            "clientId": "client-5",
+            "sequence": 1,
+            "latencyMs": 26.611,
+            "acquisitionMs": 0.015,
+            "transactionMs": 2.714,
+            "busyRetries": 0,
+            "writerPid": 12324
+          },
+          {
+            "clientId": "client-6",
+            "sequence": 1,
+            "latencyMs": 27.029,
+            "acquisitionMs": 0.004,
+            "transactionMs": 2.701,
+            "busyRetries": 0,
+            "writerPid": 12324
+          },
+          {
+            "clientId": "client-7",
+            "sequence": 1,
+            "latencyMs": 27.059,
+            "acquisitionMs": 0.004,
+            "transactionMs": 2.682,
+            "busyRetries": 0,
+            "writerPid": 12324
+          },
+          {
+            "clientId": "client-8",
+            "sequence": 1,
+            "latencyMs": 27.054,
+            "acquisitionMs": 0.004,
+            "transactionMs": 2.659,
+            "busyRetries": 0,
+            "writerPid": 12324
+          },
+          {
+            "clientId": "client-9",
+            "sequence": 1,
+            "latencyMs": 26.957,
+            "acquisitionMs": 0.004,
+            "transactionMs": 2.602,
+            "busyRetries": 0,
+            "writerPid": 12324
+          },
+          {
+            "clientId": "client-0",
+            "sequence": 2,
+            "latencyMs": 26.858,
+            "acquisitionMs": 0.008,
+            "transactionMs": 2.708,
+            "busyRetries": 0,
+            "writerPid": 12324
+          },
+          {
+            "clientId": "client-1",
+            "sequence": 2,
+            "latencyMs": 26.566,
+            "acquisitionMs": 0.004,
+            "transactionMs": 2.265,
+            "busyRetries": 0,
+            "writerPid": 12324
+          },
+          {
+            "clientId": "client-2",
+            "sequence": 2,
+            "latencyMs": 26.136,
+            "acquisitionMs": 0.005,
+            "transactionMs": 2.26,
+            "busyRetries": 0,
+            "writerPid": 12324
+          },
+          {
+            "clientId": "client-3",
+            "sequence": 2,
+            "latencyMs": 26.102,
+            "acquisitionMs": 0.005,
+            "transactionMs": 2.618,
+            "busyRetries": 0,
+            "writerPid": 12324
+          },
+          {
+            "clientId": "client-4",
+            "sequence": 2,
+            "latencyMs": 26.068,
+            "acquisitionMs": 0.004,
+            "transactionMs": 2.6,
+            "busyRetries": 0,
+            "writerPid": 12324
+          },
+          {
+            "clientId": "client-5",
+            "sequence": 2,
+            "latencyMs": 25.914,
+            "acquisitionMs": 0.003,
+            "transactionMs": 2.675,
+            "busyRetries": 0,
+            "writerPid": 12324
+          },
+          {
+            "clientId": "client-6",
+            "sequence": 2,
+            "latencyMs": 25.872,
+            "acquisitionMs": 0.003,
+            "transactionMs": 2.657,
+            "busyRetries": 0,
+            "writerPid": 12324
+          },
+          {
+            "clientId": "client-7",
+            "sequence": 2,
+            "latencyMs": 25.81,
+            "acquisitionMs": 0.004,
+            "transactionMs": 2.621,
+            "busyRetries": 0,
+            "writerPid": 12324
+          },
+          {
+            "clientId": "client-8",
+            "sequence": 2,
+            "latencyMs": 25.836,
+            "acquisitionMs": 0.004,
+            "transactionMs": 2.624,
+            "busyRetries": 0,
+            "writerPid": 12324
+          },
+          {
+            "clientId": "client-9",
+            "sequence": 2,
+            "latencyMs": 26.232,
+            "acquisitionMs": 0.008,
+            "transactionMs": 2.689,
+            "busyRetries": 0,
+            "writerPid": 12324
+          },
+          {
+            "clientId": "client-0",
+            "sequence": 3,
+            "latencyMs": 26.144,
+            "acquisitionMs": 0.006,
+            "transactionMs": 2.671,
+            "busyRetries": 0,
+            "writerPid": 12324
+          },
+          {
+            "clientId": "client-1",
+            "sequence": 3,
+            "latencyMs": 26.491,
+            "acquisitionMs": 0.005,
+            "transactionMs": 2.696,
+            "busyRetries": 0,
+            "writerPid": 12324
+          },
+          {
+            "clientId": "client-2",
+            "sequence": 3,
+            "latencyMs": 27.031,
+            "acquisitionMs": 0.006,
+            "transactionMs": 2.704,
+            "busyRetries": 0,
+            "writerPid": 12324
+          },
+          {
+            "clientId": "client-3",
+            "sequence": 3,
+            "latencyMs": 27.097,
+            "acquisitionMs": 0.005,
+            "transactionMs": 2.69,
+            "busyRetries": 0,
+            "writerPid": 12324
+          },
+          {
+            "clientId": "client-4",
+            "sequence": 3,
+            "latencyMs": 26.905,
+            "acquisitionMs": 0.007,
+            "transactionMs": 2.498,
+            "busyRetries": 0,
+            "writerPid": 12324
+          },
+          {
+            "clientId": "client-5",
+            "sequence": 3,
+            "latencyMs": 27.007,
+            "acquisitionMs": 0.006,
+            "transactionMs": 2.684,
+            "busyRetries": 0,
+            "writerPid": 12324
+          },
+          {
+            "clientId": "client-6",
+            "sequence": 3,
+            "latencyMs": 26.96,
+            "acquisitionMs": 0.005,
+            "transactionMs": 2.604,
+            "busyRetries": 0,
+            "writerPid": 12324
+          },
+          {
+            "clientId": "client-7",
+            "sequence": 3,
+            "latencyMs": 26.962,
+            "acquisitionMs": 0.005,
+            "transactionMs": 2.615,
+            "busyRetries": 0,
+            "writerPid": 12324
+          },
+          {
+            "clientId": "client-8",
+            "sequence": 3,
+            "latencyMs": 26.956,
+            "acquisitionMs": 0.004,
+            "transactionMs": 2.679,
+            "busyRetries": 0,
+            "writerPid": 12324
+          },
+          {
+            "clientId": "client-9",
+            "sequence": 3,
+            "latencyMs": 26.752,
+            "acquisitionMs": 0.006,
+            "transactionMs": 2.68,
+            "busyRetries": 0,
+            "writerPid": 12324
+          },
+          {
+            "clientId": "client-0",
+            "sequence": 4,
+            "latencyMs": 26.694,
+            "acquisitionMs": 0.004,
+            "transactionMs": 2.616,
+            "busyRetries": 0,
+            "writerPid": 12324
+          },
+          {
+            "clientId": "client-1",
+            "sequence": 4,
+            "latencyMs": 26.652,
+            "acquisitionMs": 0.004,
+            "transactionMs": 2.683,
+            "busyRetries": 0,
+            "writerPid": 12324
+          },
+          {
+            "clientId": "client-2",
+            "sequence": 4,
+            "latencyMs": 26.612,
+            "acquisitionMs": 0.004,
+            "transactionMs": 2.671,
+            "busyRetries": 0,
+            "writerPid": 12324
+          },
+          {
+            "clientId": "client-3",
+            "sequence": 4,
+            "latencyMs": 26.545,
+            "acquisitionMs": 0.004,
+            "transactionMs": 2.619,
+            "busyRetries": 0,
+            "writerPid": 12324
+          },
+          {
+            "clientId": "client-4",
+            "sequence": 4,
+            "latencyMs": 26.721,
+            "acquisitionMs": 0.005,
+            "transactionMs": 2.685,
+            "busyRetries": 0,
+            "writerPid": 12324
+          },
+          {
+            "clientId": "client-5",
+            "sequence": 4,
+            "latencyMs": 26.755,
+            "acquisitionMs": 0.005,
+            "transactionMs": 2.71,
+            "busyRetries": 0,
+            "writerPid": 12324
+          },
+          {
+            "clientId": "client-6",
+            "sequence": 4,
+            "latencyMs": 26.953,
+            "acquisitionMs": 0.005,
+            "transactionMs": 2.672,
+            "busyRetries": 0,
+            "writerPid": 12324
+          },
+          {
+            "clientId": "client-7",
+            "sequence": 4,
+            "latencyMs": 26.872,
+            "acquisitionMs": 0.004,
+            "transactionMs": 2.681,
+            "busyRetries": 0,
+            "writerPid": 12324
+          },
+          {
+            "clientId": "client-8",
+            "sequence": 4,
+            "latencyMs": 26.857,
+            "acquisitionMs": 0.004,
+            "transactionMs": 2.669,
+            "busyRetries": 0,
+            "writerPid": 12324
+          },
+          {
+            "clientId": "client-9",
+            "sequence": 4,
+            "latencyMs": 27.119,
+            "acquisitionMs": 0.006,
+            "transactionMs": 2.67,
+            "busyRetries": 0,
+            "writerPid": 12324
+          },
+          {
+            "clientId": "client-0",
+            "sequence": 5,
+            "latencyMs": 27.11,
+            "acquisitionMs": 0.004,
+            "transactionMs": 2.634,
+            "busyRetries": 0,
+            "writerPid": 12324
+          },
+          {
+            "clientId": "client-1",
+            "sequence": 5,
+            "latencyMs": 27.127,
+            "acquisitionMs": 0.005,
+            "transactionMs": 2.689,
+            "busyRetries": 0,
+            "writerPid": 12324
+          },
+          {
+            "clientId": "client-2",
+            "sequence": 5,
+            "latencyMs": 27.126,
+            "acquisitionMs": 0.005,
+            "transactionMs": 2.671,
+            "busyRetries": 0,
+            "writerPid": 12324
+          },
+          {
+            "clientId": "client-3",
+            "sequence": 5,
+            "latencyMs": 27.135,
+            "acquisitionMs": 0.003,
+            "transactionMs": 2.616,
+            "busyRetries": 0,
+            "writerPid": 12324
+          },
+          {
+            "clientId": "client-4",
+            "sequence": 5,
+            "latencyMs": 27.134,
+            "acquisitionMs": 0.004,
+            "transactionMs": 2.699,
+            "busyRetries": 0,
+            "writerPid": 12324
+          },
+          {
+            "clientId": "client-5",
+            "sequence": 5,
+            "latencyMs": 27.091,
+            "acquisitionMs": 0.004,
+            "transactionMs": 2.667,
+            "busyRetries": 0,
+            "writerPid": 12324
+          },
+          {
+            "clientId": "client-6",
+            "sequence": 5,
+            "latencyMs": 26.916,
+            "acquisitionMs": 0.004,
+            "transactionMs": 2.622,
+            "busyRetries": 0,
+            "writerPid": 12324
+          },
+          {
+            "clientId": "client-7",
+            "sequence": 5,
+            "latencyMs": 27.068,
+            "acquisitionMs": 0.005,
+            "transactionMs": 2.691,
+            "busyRetries": 0,
+            "writerPid": 12324
+          },
+          {
+            "clientId": "client-8",
+            "sequence": 5,
+            "latencyMs": 27.103,
+            "acquisitionMs": 0.004,
+            "transactionMs": 2.681,
+            "busyRetries": 0,
+            "writerPid": 12324
+          },
+          {
+            "clientId": "client-9",
+            "sequence": 5,
+            "latencyMs": 26.826,
+            "acquisitionMs": 0.005,
+            "transactionMs": 2.675,
+            "busyRetries": 0,
+            "writerPid": 12324
+          },
+          {
+            "clientId": "client-0",
+            "sequence": 6,
+            "latencyMs": 26.873,
+            "acquisitionMs": 0.004,
+            "transactionMs": 2.666,
+            "busyRetries": 0,
+            "writerPid": 12324
+          },
+          {
+            "clientId": "client-1",
+            "sequence": 6,
+            "latencyMs": 26.852,
+            "acquisitionMs": 0.004,
+            "transactionMs": 2.667,
+            "busyRetries": 0,
+            "writerPid": 12324
+          },
+          {
+            "clientId": "client-2",
+            "sequence": 6,
+            "latencyMs": 26.804,
+            "acquisitionMs": 0.004,
+            "transactionMs": 2.62,
+            "busyRetries": 0,
+            "writerPid": 12324
+          },
+          {
+            "clientId": "client-3",
+            "sequence": 6,
+            "latencyMs": 26.852,
+            "acquisitionMs": 0.004,
+            "transactionMs": 2.675,
+            "busyRetries": 0,
+            "writerPid": 12324
+          },
+          {
+            "clientId": "client-4",
+            "sequence": 6,
+            "latencyMs": 26.822,
+            "acquisitionMs": 0.005,
+            "transactionMs": 2.672,
+            "busyRetries": 0,
+            "writerPid": 12324
+          },
+          {
+            "clientId": "client-5",
+            "sequence": 6,
+            "latencyMs": 26.813,
+            "acquisitionMs": 0.005,
+            "transactionMs": 2.645,
+            "busyRetries": 0,
+            "writerPid": 12324
+          },
+          {
+            "clientId": "client-6",
+            "sequence": 6,
+            "latencyMs": 26.835,
+            "acquisitionMs": 0.004,
+            "transactionMs": 2.669,
+            "busyRetries": 0,
+            "writerPid": 12324
+          },
+          {
+            "clientId": "client-7",
+            "sequence": 6,
+            "latencyMs": 26.812,
+            "acquisitionMs": 0.004,
+            "transactionMs": 2.672,
+            "busyRetries": 0,
+            "writerPid": 12324
+          },
+          {
+            "clientId": "client-8",
+            "sequence": 6,
+            "latencyMs": 26.749,
+            "acquisitionMs": 0.004,
+            "transactionMs": 2.633,
+            "busyRetries": 0,
+            "writerPid": 12324
+          },
+          {
+            "clientId": "client-9",
+            "sequence": 6,
+            "latencyMs": 27.051,
+            "acquisitionMs": 0.007,
+            "transactionMs": 2.645,
+            "busyRetries": 0,
+            "writerPid": 12324
+          },
+          {
+            "clientId": "client-0",
+            "sequence": 7,
+            "latencyMs": 27.075,
+            "acquisitionMs": 0.006,
+            "transactionMs": 2.693,
+            "busyRetries": 0,
+            "writerPid": 12324
+          },
+          {
+            "clientId": "client-1",
+            "sequence": 7,
+            "latencyMs": 27.136,
+            "acquisitionMs": 0.007,
+            "transactionMs": 2.707,
+            "busyRetries": 0,
+            "writerPid": 12324
+          },
+          {
+            "clientId": "client-2",
+            "sequence": 7,
+            "latencyMs": 27.183,
+            "acquisitionMs": 0.004,
+            "transactionMs": 2.679,
+            "busyRetries": 0,
+            "writerPid": 12324
+          },
+          {
+            "clientId": "client-3",
+            "sequence": 7,
+            "latencyMs": 27.214,
+            "acquisitionMs": 0.004,
+            "transactionMs": 2.716,
+            "busyRetries": 0,
+            "writerPid": 12324
+          },
+          {
+            "clientId": "client-4",
+            "sequence": 7,
+            "latencyMs": 27.182,
+            "acquisitionMs": 0.004,
+            "transactionMs": 2.617,
+            "busyRetries": 0,
+            "writerPid": 12324
+          },
+          {
+            "clientId": "client-5",
+            "sequence": 7,
+            "latencyMs": 27.165,
+            "acquisitionMs": 0.004,
+            "transactionMs": 2.633,
+            "busyRetries": 0,
+            "writerPid": 12324
+          },
+          {
+            "clientId": "client-6",
+            "sequence": 7,
+            "latencyMs": 27.145,
+            "acquisitionMs": 0.005,
+            "transactionMs": 2.627,
+            "busyRetries": 0,
+            "writerPid": 12324
+          },
+          {
+            "clientId": "client-7",
+            "sequence": 7,
+            "latencyMs": 27.112,
+            "acquisitionMs": 0.005,
+            "transactionMs": 2.629,
+            "busyRetries": 0,
+            "writerPid": 12324
+          },
+          {
+            "clientId": "client-8",
+            "sequence": 7,
+            "latencyMs": 27.136,
+            "acquisitionMs": 0.004,
+            "transactionMs": 2.677,
+            "busyRetries": 0,
+            "writerPid": 12324
+          },
+          {
+            "clientId": "client-9",
+            "sequence": 7,
+            "latencyMs": 26.884,
+            "acquisitionMs": 0.005,
+            "transactionMs": 2.677,
+            "busyRetries": 0,
+            "writerPid": 12324
+          }
+        ]
+      },
+      {
+        "topology": "federated",
+        "synchronous": "FULL",
+        "clientCount": 10,
+        "workerCount": 10,
+        "writesPerClient": 8,
+        "transactionHoldMs": 2,
+        "startupMs": 153.558,
+        "wallMs": 215.52,
+        "throughputPerSecond": 371.195,
+        "latencyMs": {
+          "min": 3.362,
+          "p50": 5.365,
+          "p95": 91.63,
+          "p99": 177.935,
+          "max": 177.935
+        },
+        "writerLockAcquisitionMs": {
+          "min": 0.019,
+          "p50": 2.574,
+          "p95": 88.26,
+          "p99": 174.622,
+          "max": 174.622
+        },
+        "transactionMs": {
+          "min": 2.914,
+          "p50": 5.248,
+          "p95": 91.113,
+          "p99": 177.545,
+          "max": 177.545
+        },
+        "busyRetries": 0,
+        "clientCompletionMs": [
+          40.454,
+          215.47,
+          169.421,
+          212.825,
+          85.887,
+          83.176,
+          129.181,
+          126.499,
+          172.101,
+          43.05
+        ],
+        "clientCompletionSpreadRatio": 5.326,
+        "distinctObservedWriterPids": 10,
+        "walBeforeCheckpointBytes": 1083592,
+        "walAfterCheckpointBytes": 1083592,
+        "checkpointPids": [
+          12325,
+          12326,
+          12327,
+          12328,
+          12329,
+          12330,
+          12331,
+          12332,
+          12333,
+          12334
+        ],
+        "checkpointResponses": [
+          {
+            "id": "request-569",
+            "ok": true,
+            "op": "checkpoint",
+            "pid": 12325,
+            "result": {
+              "busy": 1,
+              "log": -1,
+              "checkpointed": -1
+            }
+          },
+          {
+            "id": "request-570",
+            "ok": true,
+            "op": "checkpoint",
+            "pid": 12326,
+            "result": {
+              "busy": 0,
+              "log": 263,
+              "checkpointed": 263
+            }
+          },
+          {
+            "id": "request-571",
+            "ok": true,
+            "op": "checkpoint",
+            "pid": 12327,
+            "result": {
+              "busy": 1,
+              "log": -1,
+              "checkpointed": -1
+            }
+          },
+          {
+            "id": "request-572",
+            "ok": true,
+            "op": "checkpoint",
+            "pid": 12328,
+            "result": {
+              "busy": 1,
+              "log": -1,
+              "checkpointed": -1
+            }
+          },
+          {
+            "id": "request-573",
+            "ok": true,
+            "op": "checkpoint",
+            "pid": 12329,
+            "result": {
+              "busy": 1,
+              "log": -1,
+              "checkpointed": -1
+            }
+          },
+          {
+            "id": "request-574",
+            "ok": true,
+            "op": "checkpoint",
+            "pid": 12330,
+            "result": {
+              "busy": 1,
+              "log": -1,
+              "checkpointed": -1
+            }
+          },
+          {
+            "id": "request-575",
+            "ok": true,
+            "op": "checkpoint",
+            "pid": 12331,
+            "result": {
+              "busy": 1,
+              "log": -1,
+              "checkpointed": -1
+            }
+          },
+          {
+            "id": "request-576",
+            "ok": true,
+            "op": "checkpoint",
+            "pid": 12332,
+            "result": {
+              "busy": 1,
+              "log": -1,
+              "checkpointed": -1
+            }
+          },
+          {
+            "id": "request-577",
+            "ok": true,
+            "op": "checkpoint",
+            "pid": 12333,
+            "result": {
+              "busy": 1,
+              "log": -1,
+              "checkpointed": -1
+            }
+          },
+          {
+            "id": "request-578",
+            "ok": true,
+            "op": "checkpoint",
+            "pid": 12334,
+            "result": {
+              "busy": 1,
+              "log": -1,
+              "checkpointed": -1
+            }
+          }
+        ],
+        "inspection": {
+          "deliveryCount": 80,
+          "connectionAudit": [
+            {
+              "pid": 12325,
+              "topology": "federated",
+              "worker_id": "worker-0",
+              "opened_at_ms": 1786207254857.9333
+            },
+            {
+              "pid": 12326,
+              "topology": "federated",
+              "worker_id": "worker-1",
+              "opened_at_ms": 1786207254875.969
+            },
+            {
+              "pid": 12327,
+              "topology": "federated",
+              "worker_id": "worker-2",
+              "opened_at_ms": 1786207254891.976
+            },
+            {
+              "pid": 12328,
+              "topology": "federated",
+              "worker_id": "worker-3",
+              "opened_at_ms": 1786207254907.3794
+            },
+            {
+              "pid": 12329,
+              "topology": "federated",
+              "worker_id": "worker-4",
+              "opened_at_ms": 1786207254921.3745
+            },
+            {
+              "pid": 12330,
+              "topology": "federated",
+              "worker_id": "worker-5",
+              "opened_at_ms": 1786207254935.4646
+            },
+            {
+              "pid": 12331,
+              "topology": "federated",
+              "worker_id": "worker-6",
+              "opened_at_ms": 1786207254949.414
+            },
+            {
+              "pid": 12332,
+              "topology": "federated",
+              "worker_id": "worker-7",
+              "opened_at_ms": 1786207254963.4673
+            },
+            {
+              "pid": 12333,
+              "topology": "federated",
+              "worker_id": "worker-8",
+              "opened_at_ms": 1786207254977.189
+            },
+            {
+              "pid": 12334,
+              "topology": "federated",
+              "worker_id": "worker-9",
+              "opened_at_ms": 1786207254990.8782
+            }
+          ],
+          "integrityCheck": "ok"
+        },
+        "samples": [
+          {
+            "clientId": "client-0",
+            "sequence": 0,
+            "latencyMs": 3.362,
+            "acquisitionMs": 0.019,
+            "transactionMs": 2.914,
+            "busyRetries": 0,
+            "writerPid": 12325
+          },
+          {
+            "clientId": "client-9",
+            "sequence": 0,
+            "latencyMs": 6.071,
+            "acquisitionMs": 1.74,
+            "transactionMs": 4.56,
+            "busyRetries": 0,
+            "writerPid": 12334
+          },
+          {
+            "clientId": "client-0",
+            "sequence": 1,
+            "latencyMs": 5.438,
+            "acquisitionMs": 2.597,
+            "transactionMs": 5.24,
+            "busyRetries": 0,
+            "writerPid": 12325
+          },
+          {
+            "clientId": "client-9",
+            "sequence": 1,
+            "latencyMs": 5.361,
+            "acquisitionMs": 2.501,
+            "transactionMs": 5.22,
+            "busyRetries": 0,
+            "writerPid": 12334
+          },
+          {
+            "clientId": "client-0",
+            "sequence": 2,
+            "latencyMs": 5.416,
+            "acquisitionMs": 2.605,
+            "transactionMs": 5.314,
+            "busyRetries": 0,
+            "writerPid": 12325
+          },
+          {
+            "clientId": "client-9",
+            "sequence": 2,
+            "latencyMs": 5.319,
+            "acquisitionMs": 2.626,
+            "transactionMs": 5.234,
+            "busyRetries": 0,
+            "writerPid": 12334
+          },
+          {
+            "clientId": "client-0",
+            "sequence": 3,
+            "latencyMs": 5.326,
+            "acquisitionMs": 2.538,
+            "transactionMs": 5.241,
+            "busyRetries": 0,
+            "writerPid": 12325
+          },
+          {
+            "clientId": "client-9",
+            "sequence": 3,
+            "latencyMs": 5.33,
+            "acquisitionMs": 2.641,
+            "transactionMs": 5.263,
+            "busyRetries": 0,
+            "writerPid": 12334
+          },
+          {
+            "clientId": "client-0",
+            "sequence": 4,
+            "latencyMs": 5.242,
+            "acquisitionMs": 2.535,
+            "transactionMs": 5.144,
+            "busyRetries": 0,
+            "writerPid": 12325
+          },
+          {
+            "clientId": "client-9",
+            "sequence": 4,
+            "latencyMs": 4.887,
+            "acquisitionMs": 2.364,
+            "transactionMs": 4.617,
+            "busyRetries": 0,
+            "writerPid": 12334
+          },
+          {
+            "clientId": "client-0",
+            "sequence": 5,
+            "latencyMs": 4.988,
+            "acquisitionMs": 1.96,
+            "transactionMs": 4.688,
+            "busyRetries": 0,
+            "writerPid": 12325
+          },
+          {
+            "clientId": "client-9",
+            "sequence": 5,
+            "latencyMs": 5.365,
+            "acquisitionMs": 2.461,
+            "transactionMs": 5.097,
+            "busyRetries": 0,
+            "writerPid": 12334
+          },
+          {
+            "clientId": "client-0",
+            "sequence": 6,
+            "latencyMs": 5.35,
+            "acquisitionMs": 2.574,
+            "transactionMs": 5.289,
+            "busyRetries": 0,
+            "writerPid": 12325
+          },
+          {
+            "clientId": "client-9",
+            "sequence": 6,
+            "latencyMs": 5.413,
+            "acquisitionMs": 2.634,
+            "transactionMs": 5.327,
+            "busyRetries": 0,
+            "writerPid": 12334
+          },
+          {
+            "clientId": "client-0",
+            "sequence": 7,
+            "latencyMs": 5.331,
+            "acquisitionMs": 2.657,
+            "transactionMs": 5.273,
+            "busyRetries": 0,
+            "writerPid": 12325
+          },
+          {
+            "clientId": "client-9",
+            "sequence": 7,
+            "latencyMs": 5.301,
+            "acquisitionMs": 2.544,
+            "transactionMs": 5.192,
+            "busyRetries": 0,
+            "writerPid": 12334
+          },
+          {
+            "clientId": "client-5",
+            "sequence": 0,
+            "latencyMs": 45.946,
+            "acquisitionMs": 42.634,
+            "transactionMs": 45.551,
+            "busyRetries": 0,
+            "writerPid": 12330
+          },
+          {
+            "clientId": "client-4",
+            "sequence": 0,
+            "latencyMs": 48.731,
+            "acquisitionMs": 45.418,
+            "transactionMs": 48.213,
+            "busyRetries": 0,
+            "writerPid": 12329
+          },
+          {
+            "clientId": "client-5",
+            "sequence": 1,
+            "latencyMs": 5.466,
+            "acquisitionMs": 2.575,
+            "transactionMs": 5.26,
+            "busyRetries": 0,
+            "writerPid": 12330
+          },
+          {
+            "clientId": "client-4",
+            "sequence": 1,
+            "latencyMs": 5.392,
+            "acquisitionMs": 2.503,
+            "transactionMs": 5.205,
+            "busyRetries": 0,
+            "writerPid": 12329
+          },
+          {
+            "clientId": "client-5",
+            "sequence": 2,
+            "latencyMs": 5.338,
+            "acquisitionMs": 2.615,
+            "transactionMs": 5.24,
+            "busyRetries": 0,
+            "writerPid": 12330
+          },
+          {
+            "clientId": "client-4",
+            "sequence": 2,
+            "latencyMs": 5.271,
+            "acquisitionMs": 2.552,
+            "transactionMs": 5.168,
+            "busyRetries": 0,
+            "writerPid": 12329
+          },
+          {
+            "clientId": "client-5",
+            "sequence": 3,
+            "latencyMs": 5.453,
+            "acquisitionMs": 2.564,
+            "transactionMs": 5.316,
+            "busyRetries": 0,
+            "writerPid": 12330
+          },
+          {
+            "clientId": "client-4",
+            "sequence": 3,
+            "latencyMs": 5.399,
+            "acquisitionMs": 2.681,
+            "transactionMs": 5.328,
+            "busyRetries": 0,
+            "writerPid": 12329
+          },
+          {
+            "clientId": "client-5",
+            "sequence": 4,
+            "latencyMs": 5.278,
+            "acquisitionMs": 2.508,
+            "transactionMs": 5.201,
+            "busyRetries": 0,
+            "writerPid": 12330
+          },
+          {
+            "clientId": "client-4",
+            "sequence": 4,
+            "latencyMs": 5.376,
+            "acquisitionMs": 2.629,
+            "transactionMs": 5.304,
+            "busyRetries": 0,
+            "writerPid": 12329
+          },
+          {
+            "clientId": "client-5",
+            "sequence": 5,
+            "latencyMs": 5.33,
+            "acquisitionMs": 2.379,
+            "transactionMs": 5.011,
+            "busyRetries": 0,
+            "writerPid": 12330
+          },
+          {
+            "clientId": "client-4",
+            "sequence": 5,
+            "latencyMs": 5.276,
+            "acquisitionMs": 2.499,
+            "transactionMs": 5.115,
+            "busyRetries": 0,
+            "writerPid": 12329
+          },
+          {
+            "clientId": "client-5",
+            "sequence": 6,
+            "latencyMs": 5.305,
+            "acquisitionMs": 2.549,
+            "transactionMs": 5.232,
+            "busyRetries": 0,
+            "writerPid": 12330
+          },
+          {
+            "clientId": "client-4",
+            "sequence": 6,
+            "latencyMs": 5.048,
+            "acquisitionMs": 2.373,
+            "transactionMs": 4.73,
+            "busyRetries": 0,
+            "writerPid": 12329
+          },
+          {
+            "clientId": "client-5",
+            "sequence": 7,
+            "latencyMs": 5.059,
+            "acquisitionMs": 2.315,
+            "transactionMs": 5.005,
+            "busyRetries": 0,
+            "writerPid": 12330
+          },
+          {
+            "clientId": "client-4",
+            "sequence": 7,
+            "latencyMs": 5.393,
+            "acquisitionMs": 2.639,
+            "transactionMs": 5.334,
+            "busyRetries": 0,
+            "writerPid": 12329
+          },
+          {
+            "clientId": "client-7",
+            "sequence": 0,
+            "latencyMs": 88.783,
+            "acquisitionMs": 85.364,
+            "transactionMs": 88.276,
+            "busyRetries": 0,
+            "writerPid": 12332
+          },
+          {
+            "clientId": "client-6",
+            "sequence": 0,
+            "latencyMs": 91.63,
+            "acquisitionMs": 88.26,
+            "transactionMs": 91.113,
+            "busyRetries": 0,
+            "writerPid": 12331
+          },
+          {
+            "clientId": "client-7",
+            "sequence": 1,
+            "latencyMs": 5.478,
+            "acquisitionMs": 2.624,
+            "transactionMs": 5.26,
+            "busyRetries": 0,
+            "writerPid": 12332
+          },
+          {
+            "clientId": "client-6",
+            "sequence": 1,
+            "latencyMs": 5.293,
+            "acquisitionMs": 2.449,
+            "transactionMs": 5.081,
+            "busyRetries": 0,
+            "writerPid": 12331
+          },
+          {
+            "clientId": "client-7",
+            "sequence": 2,
+            "latencyMs": 5.318,
+            "acquisitionMs": 2.265,
+            "transactionMs": 4.911,
+            "busyRetries": 0,
+            "writerPid": 12332
+          },
+          {
+            "clientId": "client-6",
+            "sequence": 2,
+            "latencyMs": 5.383,
+            "acquisitionMs": 2.559,
+            "transactionMs": 5.28,
+            "busyRetries": 0,
+            "writerPid": 12331
+          },
+          {
+            "clientId": "client-7",
+            "sequence": 3,
+            "latencyMs": 5.418,
+            "acquisitionMs": 2.619,
+            "transactionMs": 5.308,
+            "busyRetries": 0,
+            "writerPid": 12332
+          },
+          {
+            "clientId": "client-6",
+            "sequence": 3,
+            "latencyMs": 5.332,
+            "acquisitionMs": 2.555,
+            "transactionMs": 5.187,
+            "busyRetries": 0,
+            "writerPid": 12331
+          },
+          {
+            "clientId": "client-7",
+            "sequence": 4,
+            "latencyMs": 5.34,
+            "acquisitionMs": 2.558,
+            "transactionMs": 5.248,
+            "busyRetries": 0,
+            "writerPid": 12332
+          },
+          {
+            "clientId": "client-6",
+            "sequence": 4,
+            "latencyMs": 5.392,
+            "acquisitionMs": 2.617,
+            "transactionMs": 5.293,
+            "busyRetries": 0,
+            "writerPid": 12331
+          },
+          {
+            "clientId": "client-7",
+            "sequence": 5,
+            "latencyMs": 5.321,
+            "acquisitionMs": 2.595,
+            "transactionMs": 5.223,
+            "busyRetries": 0,
+            "writerPid": 12332
+          },
+          {
+            "clientId": "client-6",
+            "sequence": 5,
+            "latencyMs": 5.356,
+            "acquisitionMs": 2.294,
+            "transactionMs": 5.008,
+            "busyRetries": 0,
+            "writerPid": 12331
+          },
+          {
+            "clientId": "client-7",
+            "sequence": 6,
+            "latencyMs": 5.396,
+            "acquisitionMs": 2.429,
+            "transactionMs": 5.085,
+            "busyRetries": 0,
+            "writerPid": 12332
+          },
+          {
+            "clientId": "client-6",
+            "sequence": 6,
+            "latencyMs": 5.432,
+            "acquisitionMs": 2.604,
+            "transactionMs": 5.344,
+            "busyRetries": 0,
+            "writerPid": 12331
+          },
+          {
+            "clientId": "client-7",
+            "sequence": 7,
+            "latencyMs": 5.445,
+            "acquisitionMs": 2.656,
+            "transactionMs": 5.34,
+            "busyRetries": 0,
+            "writerPid": 12332
+          },
+          {
+            "clientId": "client-6",
+            "sequence": 7,
+            "latencyMs": 5.362,
+            "acquisitionMs": 2.609,
+            "transactionMs": 5.299,
+            "busyRetries": 0,
+            "writerPid": 12331
+          },
+          {
+            "clientId": "client-2",
+            "sequence": 0,
+            "latencyMs": 132.286,
+            "acquisitionMs": 128.817,
+            "transactionMs": 131.85,
+            "busyRetries": 0,
+            "writerPid": 12327
+          },
+          {
+            "clientId": "client-8",
+            "sequence": 0,
+            "latencyMs": 135.073,
+            "acquisitionMs": 131.689,
+            "transactionMs": 134.563,
+            "busyRetries": 0,
+            "writerPid": 12333
+          },
+          {
+            "clientId": "client-2",
+            "sequence": 1,
+            "latencyMs": 5.221,
+            "acquisitionMs": 2.55,
+            "transactionMs": 4.951,
+            "busyRetries": 0,
+            "writerPid": 12327
+          },
+          {
+            "clientId": "client-8",
+            "sequence": 1,
+            "latencyMs": 4.834,
+            "acquisitionMs": 2.144,
+            "transactionMs": 4.547,
+            "busyRetries": 0,
+            "writerPid": 12333
+          },
+          {
+            "clientId": "client-2",
+            "sequence": 2,
+            "latencyMs": 5.166,
+            "acquisitionMs": 2.287,
+            "transactionMs": 5.015,
+            "busyRetries": 0,
+            "writerPid": 12327
+          },
+          {
+            "clientId": "client-8",
+            "sequence": 2,
+            "latencyMs": 5.437,
+            "acquisitionMs": 2.35,
+            "transactionMs": 5.053,
+            "busyRetries": 0,
+            "writerPid": 12333
+          },
+          {
+            "clientId": "client-2",
+            "sequence": 3,
+            "latencyMs": 5.408,
+            "acquisitionMs": 2.607,
+            "transactionMs": 5.31,
+            "busyRetries": 0,
+            "writerPid": 12327
+          },
+          {
+            "clientId": "client-8",
+            "sequence": 3,
+            "latencyMs": 5.408,
+            "acquisitionMs": 2.635,
+            "transactionMs": 5.33,
+            "busyRetries": 0,
+            "writerPid": 12333
+          },
+          {
+            "clientId": "client-2",
+            "sequence": 4,
+            "latencyMs": 5.414,
+            "acquisitionMs": 2.637,
+            "transactionMs": 5.337,
+            "busyRetries": 0,
+            "writerPid": 12327
+          },
+          {
+            "clientId": "client-8",
+            "sequence": 4,
+            "latencyMs": 5.392,
+            "acquisitionMs": 2.642,
+            "transactionMs": 5.313,
+            "busyRetries": 0,
+            "writerPid": 12333
+          },
+          {
+            "clientId": "client-2",
+            "sequence": 5,
+            "latencyMs": 5.326,
+            "acquisitionMs": 2.33,
+            "transactionMs": 4.948,
+            "busyRetries": 0,
+            "writerPid": 12327
+          },
+          {
+            "clientId": "client-8",
+            "sequence": 5,
+            "latencyMs": 5.374,
+            "acquisitionMs": 2.563,
+            "transactionMs": 5.287,
+            "busyRetries": 0,
+            "writerPid": 12333
+          },
+          {
+            "clientId": "client-2",
+            "sequence": 6,
+            "latencyMs": 5.413,
+            "acquisitionMs": 2.67,
+            "transactionMs": 5.353,
+            "busyRetries": 0,
+            "writerPid": 12327
+          },
+          {
+            "clientId": "client-8",
+            "sequence": 6,
+            "latencyMs": 5.167,
+            "acquisitionMs": 2.609,
+            "transactionMs": 5.084,
+            "busyRetries": 0,
+            "writerPid": 12333
+          },
+          {
+            "clientId": "client-2",
+            "sequence": 7,
+            "latencyMs": 5.186,
+            "acquisitionMs": 2.43,
+            "transactionMs": 5.121,
+            "busyRetries": 0,
+            "writerPid": 12327
+          },
+          {
+            "clientId": "client-8",
+            "sequence": 7,
+            "latencyMs": 5.413,
+            "acquisitionMs": 2.377,
+            "transactionMs": 5.072,
+            "busyRetries": 0,
+            "writerPid": 12333
+          },
+          {
+            "clientId": "client-3",
+            "sequence": 0,
+            "latencyMs": 175.021,
+            "acquisitionMs": 171.743,
+            "transactionMs": 174.625,
+            "busyRetries": 0,
+            "writerPid": 12328
+          },
+          {
+            "clientId": "client-1",
+            "sequence": 0,
+            "latencyMs": 177.935,
+            "acquisitionMs": 174.622,
+            "transactionMs": 177.545,
+            "busyRetries": 0,
+            "writerPid": 12326
+          },
+          {
+            "clientId": "client-3",
+            "sequence": 1,
+            "latencyMs": 5.602,
+            "acquisitionMs": 2.625,
+            "transactionMs": 5.33,
+            "busyRetries": 0,
+            "writerPid": 12328
+          },
+          {
+            "clientId": "client-1",
+            "sequence": 1,
+            "latencyMs": 5.364,
+            "acquisitionMs": 2.429,
+            "transactionMs": 5.087,
+            "busyRetries": 0,
+            "writerPid": 12326
+          },
+          {
+            "clientId": "client-3",
+            "sequence": 2,
+            "latencyMs": 5.301,
+            "acquisitionMs": 2.574,
+            "transactionMs": 5.198,
+            "busyRetries": 0,
+            "writerPid": 12328
+          },
+          {
+            "clientId": "client-1",
+            "sequence": 2,
+            "latencyMs": 5.351,
+            "acquisitionMs": 2.575,
+            "transactionMs": 5.278,
+            "busyRetries": 0,
+            "writerPid": 12326
+          },
+          {
+            "clientId": "client-3",
+            "sequence": 3,
+            "latencyMs": 5.411,
+            "acquisitionMs": 2.647,
+            "transactionMs": 5.29,
+            "busyRetries": 0,
+            "writerPid": 12328
+          },
+          {
+            "clientId": "client-1",
+            "sequence": 3,
+            "latencyMs": 5.391,
+            "acquisitionMs": 2.569,
+            "transactionMs": 5.298,
+            "busyRetries": 0,
+            "writerPid": 12326
+          },
+          {
+            "clientId": "client-3",
+            "sequence": 4,
+            "latencyMs": 5.388,
+            "acquisitionMs": 2.607,
+            "transactionMs": 5.299,
+            "busyRetries": 0,
+            "writerPid": 12328
+          },
+          {
+            "clientId": "client-1",
+            "sequence": 4,
+            "latencyMs": 5.379,
+            "acquisitionMs": 2.615,
+            "transactionMs": 5.276,
+            "busyRetries": 0,
+            "writerPid": 12326
+          },
+          {
+            "clientId": "client-3",
+            "sequence": 5,
+            "latencyMs": 5.393,
+            "acquisitionMs": 2.286,
+            "transactionMs": 4.98,
+            "busyRetries": 0,
+            "writerPid": 12328
+          },
+          {
+            "clientId": "client-1",
+            "sequence": 5,
+            "latencyMs": 5.366,
+            "acquisitionMs": 2.331,
+            "transactionMs": 4.968,
+            "busyRetries": 0,
+            "writerPid": 12326
+          },
+          {
+            "clientId": "client-3",
+            "sequence": 6,
+            "latencyMs": 5.348,
+            "acquisitionMs": 2.586,
+            "transactionMs": 5.277,
+            "busyRetries": 0,
+            "writerPid": 12328
+          },
+          {
+            "clientId": "client-1",
+            "sequence": 6,
+            "latencyMs": 5.34,
+            "acquisitionMs": 2.601,
+            "transactionMs": 5.232,
+            "busyRetries": 0,
+            "writerPid": 12326
+          },
+          {
+            "clientId": "client-3",
+            "sequence": 7,
+            "latencyMs": 5.36,
+            "acquisitionMs": 2.572,
+            "transactionMs": 5.291,
+            "busyRetries": 0,
+            "writerPid": 12328
+          },
+          {
+            "clientId": "client-1",
+            "sequence": 7,
+            "latencyMs": 5.344,
+            "acquisitionMs": 2.652,
+            "transactionMs": 5.276,
+            "busyRetries": 0,
+            "writerPid": 12326
+          }
+        ]
+      }
+    ],
+    "eventLoopIsolation": {
+      "transactionHoldMs": 250,
+      "pingSentAfterConfirmedTransactionStartMs": 25,
+      "centralGatewayPingMs": 229.878,
+      "federatedSameWriterPingMs": 229.135,
+      "federatedUnrelatedWriterPingMs": 0.392,
+      "observation": "Synchronous SQLite work stalls the owning process event loop; the federated topology leaves another process event loop available."
+    },
+    "crashIsolation": {
+      "central": {
+        "crashExitCode": 137,
+        "soleObservedWriterExitedBeforeRestart": true,
+        "restartToReadyMs": 17.27,
+        "ambiguousRetryReturnedExisting": true,
+        "inspection": {
+          "deliveryCount": 1,
+          "connectionAudit": [
+            {
+              "pid": 12338,
+              "topology": "central",
+              "worker_id": "gateway",
+              "opened_at_ms": 1786207255820.8965
+            },
+            {
+              "pid": 12339,
+              "topology": "central",
+              "worker_id": "gateway-restart",
+              "opened_at_ms": 1786207255842.1782
+            }
+          ],
+          "integrityCheck": "ok"
+        }
+      },
+      "federated": {
+        "crashExitCode": 137,
+        "survivingProcessPingMs": 0.292,
+        "survivingProcessCommitted": true,
+        "ambiguousRetryReturnedExisting": true,
+        "inspection": {
+          "deliveryCount": 2,
+          "connectionAudit": [
+            {
+              "pid": 12340,
+              "topology": "federated",
+              "worker_id": "worker-0",
+              "opened_at_ms": 1786207255864.593
+            },
+            {
+              "pid": 12341,
+              "topology": "federated",
+              "worker_id": "worker-1",
+              "opened_at_ms": 1786207255879.963
+            },
+            {
+              "pid": 12342,
+              "topology": "federated",
+              "worker_id": "worker-0-restart",
+              "opened_at_ms": 1786207255897.1836
+            }
+          ],
+          "integrityCheck": "ok"
+        }
+      }
+    },
+    "databaseIdentity": {
+      "sameRelativeConfiguration": true,
+      "centralDatabaseFiles": [
+        "launcher-a/central-relative.sqlite"
+      ],
+      "federatedDatabaseFiles": [
+        "launcher-a/federated-relative.sqlite",
+        "launcher-b/federated-relative.sqlite"
+      ],
+      "observation": "A path resolved once by the gateway produced one database; independently resolved relative paths produced two databases from two launcher working directories.",
+      "limitation": "This is a configuration-risk discriminator, not an inherent requirement that federated launchers use relative paths."
+    }
+  },
+  "observations": [
+    "Both candidates committed the complete deterministic workload with integrity_check=ok in this local process-level probe.",
+    "The central candidate used one observed writer PID per run; the federated candidate used one observed writer PID per client process.",
+    "SQLite serialized federated write transactions through measurable writer-lock acquisition; the central gateway instead exposed application queueing in request latency.",
+    "A long synchronous transaction delayed all central gateway control traffic and same-process federated traffic, while an unrelated federated process remained responsive.",
+    "The sole central writer process exited before its replacement started; killing one federated writer left another writer responsive and able to commit.",
+    "Idempotent retry after an after-commit process kill recovered the original row in both candidates while the OS remained alive.",
+    "Relative database paths split federated launchers by working directory in the explicit identity probe; central resolution produced one database because only the gateway received the path."
+  ],
+  "judgments": [
+    "Centralization buys explicit writer, checkpoint, and database-identity ownership at the cost of one synchronous event-loop and availability boundary.",
+    "Federation buys process failure and event-loop isolation at the cost of distributed lock waiting, lifecycle policy, and database-path discipline.",
+    "Local latency results are evidence about this Bun/macOS/filesystem baseline, not a universal performance ranking.",
+    "The observations constrain but do not decide the architecture because recovery objectives, supervision, rollout, backup, and target-platform requirements remain product choices."
+  ],
+  "northStarDisposition": {
+    "surviveAsTopologyNeutralRequirementsButWereNotRemeasuredHere": [
+      "SQLite persistence remains authoritative before acknowledgement.",
+      "Submission is not Observation; model visibility requires separate evidence.",
+      "Cross-process delivery must not depend on shared memory.",
+      "Ordering remains scoped to one Route Binding so unrelated bindings can progress.",
+      "Ambiguous source retries require stable idempotency identity.",
+      "Wrapper-attested sender authority remains governed by ADR-0001."
+    ],
+    "superseded": [],
+    "topologyCoupledBehaviorsAwaitingHumanSelection": [
+      "Every launcher opens SQLite and participates in migration/checkpoint policy.",
+      "One gateway process owns the complete write and lifecycle plane."
+    ],
+    "reason": "The reopened prototype selected no topology, so it cannot truthfully supersede either topology-coupled behavior."
+  },
+  "unmeasuredOrInconclusive": [
+    "Host, kernel, VM, storage-device, and power-loss durability; process kills only test application-process recovery while the OS remains alive.",
+    "Mixed old/new schema binaries, long readers spanning DDL, slow or failed migrations, and startup version gates.",
+    "Restore-tested online backup under uncheckpointed WAL and its source-write/event-loop impact.",
+    "Target-hardware and supported-OS capacity, realistic transaction mixes, resource crossover, and production tail-latency budgets.",
+    "Queue fairness and starvation bounds; client-completion spread is reported only as a descriptive local measurement.",
+    "WAL growth over time and truncation/reclamation; the probe records one pre-checkpoint size and passive-checkpoint frame result per run.",
+    "Singleton acquisition, stale sockets, supervisor restart loops, reconnect/backoff, bounded drain, and in-flight request outcome protocols.",
+    "A governed dual-plane handoff protocol; the corrected prototype does not invent one to make a transition pass.",
+    "Fresh offline wake-up, per-Route-Binding ordering, Submission/Observation, and MCP compatibility probes; these topology-neutral requirements are not used as selection evidence."
+  ],
+  "decision": {
+    "topologySelected": null,
+    "returnedToHumanArchitectureJudgment": true,
+    "reason": "The structurally different candidates exhibit real and opposing operational tradeoffs; selecting one requires the unresolved product objectives rather than another hard-coded prototype pass rule."
+  }
+}
