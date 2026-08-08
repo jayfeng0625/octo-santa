@@ -26,6 +26,8 @@ const SOURCE = resolve(import.meta.path);
 const ORIGINAL_HOME = homedir();
 const FIXTURE_WAIT_MS = 2_500;
 const PROCESS_TIMEOUT_MS = 180_000;
+const OPENCODE_PIN = "1.18.15";
+const DEFAULT_TERMINAL_RACE_ITERATIONS = 3;
 const CLASSIFICATIONS = [
   "documented",
   "empirically-verified",
@@ -104,6 +106,12 @@ interface FixtureEvent {
   checkpoint: Checkpoint;
   detail: string;
   observationNonce?: string;
+}
+
+interface PrototypeOptions {
+  harnesses: Harness[];
+  retainedEvidenceDir?: string;
+  terminalRaceIterations: number;
 }
 
 const now = () => new Date().toISOString();
@@ -239,6 +247,14 @@ class Evidence {
     }
   }
 
+  skipHarness(harness: Harness): void {
+    for (const capability of CAPABILITIES) {
+      const current = this.results.get(`${harness}:${capability}`)!;
+      if (current.classification !== "unverified") continue;
+      this.set(harness, capability, "unverified", "Harness was not selected for this retained runtime probe.", current.native);
+    }
+  }
+
   raw(harness: Harness, direction: string, value: unknown): void {
     appendJson(join(this.scratchRoot, harness, "raw-protocol.jsonl"), {
       timestamp: now(),
@@ -247,14 +263,135 @@ class Evidence {
     });
   }
 
-  print(): void {
-    for (const harness of ["claude", "codex", "pi", "opencode"] as const) {
-      console.log(`\n=== ${harness.toUpperCase()} TIMESTAMPED TRACE ===`);
-      for (const trace of this.traces.filter((entry) => entry.harness === harness)) {
-        console.log(JSON.stringify(trace));
+  writeRetained(directory: string, options: PrototypeOptions): void {
+    const output = resolve(directory);
+    mkdirSync(output, { recursive: true });
+    const deliveryAliases = new Map<string, string>();
+    const clean = (text: string) => {
+      const redacted = String(redact(text));
+      return redacted
+        .replaceAll(this.scratchRoot, "<scratch-root>")
+        .replaceAll(ORIGINAL_HOME, "<original-home>")
+        .replace(/observed-[0-9a-f-]{36}/gi, "<result-only-observation-nonce>")
+        .replace(/msg_[A-Za-z0-9_-]+/g, "<message-id>")
+        .replace(/ses_[A-Za-z0-9_-]+/g, "<session-id>");
+    };
+    const traces = this.traces.map((trace, index) => {
+      let delivery = deliveryAliases.get(trace.deliveryId);
+      if (!delivery) {
+        delivery = `delivery-${String(deliveryAliases.size + 1).padStart(3, "0")}`;
+        deliveryAliases.set(trace.deliveryId, delivery);
       }
-      console.log(`=== ${harness.toUpperCase()} STATE ===`);
-      console.log(JSON.stringify({ identity: this.identities.get(harness) ?? {}, capabilities: CAPABILITIES.map((capability) => this.results.get(`${harness}:${capability}`)) }, null, 2));
+      return {
+        sequence: index + 1,
+        timestamp: trace.timestamp,
+        harness: trace.harness,
+        capability: trace.capability,
+        delivery,
+        checkpoint: trace.checkpoint,
+        detail: clean(trace.detail),
+      };
+    });
+    const results = [...this.results.values()]
+      .sort((a, b) => `${a.harness}:${a.capability}`.localeCompare(`${b.harness}:${b.capability}`))
+      .map(({ rawEvidence: _rawEvidence, ...result }) => ({
+        ...result,
+        reason: clean(result.reason),
+        evidenceRefs: [
+          ...(traces.some((trace) => trace.harness === result.harness && trace.capability === result.capability) ? ["trace.jsonl"] : []),
+          ...(result.harness === "opencode" && result.capability === "terminal-race" ? ["manifest.json#sourceReferences"] : []),
+        ],
+      }));
+    const identities = Object.fromEntries(
+      [...this.identities].map(([harness, identity]) => [harness, {
+        executableVersion: clean(identity.executableVersion),
+        protocolVersion: identity.protocolVersion,
+        model: identity.model,
+        provider: identity.provider,
+      }]),
+    );
+    const manifest = {
+      schemaVersion: 1,
+      generatedAt: now(),
+      prototype: "scripts/prototypes/harness-conformance-prototype.ts",
+      runtime: { bun: process.versions.bun, platform: process.platform, architecture: process.arch },
+      exactPins: {
+        claude: "@anthropic-ai/claude-code@2.1.226",
+        codex: "@openai/codex@0.147.0",
+        pi: "@mariozechner/pi-coding-agent@0.73.1",
+        opencode: OPENCODE_PIN,
+      },
+      execution: { harnesses: options.harnesses, terminalRaceIterations: options.terminalRaceIterations },
+      replayCommand: [
+        "bun",
+        "scripts/prototypes/harness-conformance-prototype.ts",
+        "--harness",
+        "opencode",
+        "--evidence-dir",
+        "docs/prototypes/harness-conformance",
+        "--opencode-terminal-race-iterations",
+        String(options.terminalRaceIterations),
+      ],
+      identities,
+      environmentBlockedRows: results
+        .filter((result) => result.classification === "environment-blocked")
+        .map((result) => `${result.harness}:${result.capability}`),
+      sourceReferences: [
+        {
+          repository: "anomalyco/opencode",
+          tag: `v${OPENCODE_PIN}`,
+          commit: "d7b115f623760e68a4749d16508a9eca350f246f",
+          files: [
+            "packages/opencode/src/session/prompt.ts:1052-1071,1081-1130,1338-1347",
+            "packages/opencode/src/session/run-state.ts:52-94",
+            "packages/opencode/src/effect/runner.ts:67-90,115-138",
+          ],
+          relevance: "Busy prompts persist before sharing the active runner; a prompt arriving after the terminal message snapshot can await the finishing runner without starting another run.",
+        },
+      ],
+      sanitization: "Raw protocol, prompts, credentials, auth files, session storage paths, and scratch paths are intentionally excluded. Delivery aliases are assigned by first trace occurrence.",
+    };
+    const matrix = { schemaVersion: 1, classifications: CLASSIFICATIONS, checkpoints: CHECKPOINTS, evidence: results };
+    writeFileSync(join(output, "manifest.json"), JSON.stringify(manifest, null, 2) + "\n");
+    writeFileSync(join(output, "matrix.json"), JSON.stringify(matrix, null, 2) + "\n");
+    writeFileSync(join(output, "trace.jsonl"), traces.map((trace) => JSON.stringify(trace)).join("\n") + "\n");
+    const opencode = results.filter((result) => result.harness === "opencode");
+    const row = (capability: Capability) => opencode.find((result) => result.capability === capability)!;
+    const interpretation = [
+      "# Harness conformance retained evidence",
+      "",
+      `Generated ${manifest.generatedAt} by the disposable exact-pin prototype. This directory is retained classified evidence; raw protocol remains scratch-only and is not committed.`,
+      "",
+      "## OpenCode verdicts",
+      "",
+      "| Capability | Classification | Interpretation |",
+      "| --- | --- | --- |",
+      ...(["harness-managed-follow-up", "two-message-burst-order", "terminal-race", "reconnect-resume-history-backfill"] as Capability[]).map((capability) => {
+        const result = row(capability);
+        return `| ${capability} | ${result.classification} | ${result.reason.replaceAll("|", "\\|")} |`;
+      }),
+      "",
+      "## Scope",
+      "",
+      `Executed harnesses: ${options.harnesses.join(", ")}. Rows for harnesses not selected in this retained run preserve documented/unsupported boundaries and otherwise remain unverified; they are not empirical evidence.`,
+      `Environment-blocked rows: ${manifest.environmentBlockedRows.length ? manifest.environmentBlockedRows.join(", ") : "none"}.`,
+      "",
+      "`trace.jsonl` is chronological and uses stable delivery aliases. API acceptance and history durability are separate checkpoints from model observation.",
+      "",
+    ].join("\n");
+    writeFileSync(join(output, "README.md"), interpretation);
+  }
+
+  print(retainedDirectory?: string): void {
+    if (!retainedDirectory) {
+      for (const harness of ["claude", "codex", "pi", "opencode"] as const) {
+        console.log(`\n=== ${harness.toUpperCase()} TIMESTAMPED TRACE ===`);
+        for (const trace of this.traces.filter((entry) => entry.harness === harness)) {
+          console.log(JSON.stringify(trace));
+        }
+        console.log(`=== ${harness.toUpperCase()} STATE ===`);
+        console.log(JSON.stringify({ identity: this.identities.get(harness) ?? {}, capabilities: CAPABILITIES.map((capability) => this.results.get(`${harness}:${capability}`)) }, null, 2));
+      }
     }
     const matrix = {
       schemaVersion: 1,
@@ -267,6 +404,10 @@ class Evidence {
       traces: this.traces,
     };
     writeFileSync(join(this.scratchRoot, "evidence-matrix.json"), JSON.stringify(matrix, null, 2), { mode: 0o600 });
+    if (retainedDirectory) {
+      console.log(`RETAINED_EVIDENCE=${retainedDirectory}`);
+      return;
+    }
     console.log("\n=== EVIDENCE_MATRIX_JSON ===");
     console.log(JSON.stringify(matrix));
   }
@@ -589,6 +730,7 @@ async function fixtureCommand(args: string[]): Promise<void> {
 
 async function mcpServer(args: string[]): Promise<void> {
   const [root, tracePath, runId] = args;
+  if (!root || !tracePath || !runId || !isUnder(root, tracePath)) throw new Error("MCP fixture arguments must remain under the scratch root");
   let buffer = "";
   for await (const chunk of Bun.stdin.stream()) {
     buffer += new TextDecoder().decode(chunk, { stream: true });
@@ -652,6 +794,7 @@ function applyFixtureAssessment(evidence: Evidence, harness: Harness, tracePath:
   }
   if (validity.valid && allObserved) {
     evidence.set(harness, "model-visible-observation", "empirically-verified", "Assistant echoed all three result-only nonces available only through distinct fixture tool responses.", false, [`${harness}/raw-protocol.jsonl`]);
+    evidence.trace(harness, "model-visible-observation", runId, "observed", "assistant transcript contained all three distinct result-only fixture nonces");
   } else {
     evidence.set(harness, "model-visible-observation", "unverified", `Fixture valid=${validity.valid}; all nonce echoes observed=${allObserved}.`);
   }
@@ -739,7 +882,7 @@ async function probeClaude(evidence: Evidence): Promise<void> {
     if (fixtureProof) evidence.set(harness, "idle-delivery-wake", "empirically-verified", "Idle frame led to three model-visible fixture observations and a terminal result.", true);
     const busyObserved = injected && busyNonces.every((nonce) => markObserved(evidence, harness, "busy-delivery-tool-wait", nonce, nonce, transcript));
     evidence.set(harness, "busy-delivery-tool-wait", busyObserved ? "empirically-verified" : "unverified", busyObserved ? "Both frames written during the controlled tool wait were echoed by the model." : "Busy frames were not both model-observed.", true);
-    evidence.set(harness, "two-message-burst-order", busyObserved && transcript.indexOf(busyNonces[0]) < transcript.lastIndexOf(busyNonces[1]) ? "empirically-verified" : "unverified", "Wrapper compared nonce echo order; Claude exposes no native replyTo edge.");
+    evidence.set(harness, "two-message-burst-order", busyObserved && transcript.indexOf(busyNonces[0]!) < transcript.lastIndexOf(busyNonces[1]!) ? "empirically-verified" : "unverified", "Wrapper compared nonce echo order; Claude exposes no native replyTo edge.");
     evidence.set(harness, "steer-placement", "unverified", "Even if busy nonces were observed, public protocol does not distinguish steering from queued follow-up placement.");
     evidence.set(harness, "harness-managed-follow-up", "unverified", "No separate idle-gated follow-up run was performed for Claude.");
     evidence.set(harness, "reply-correlation", busyObserved ? "degraded-fallback" : "unverified", "Correlation is wrapper-attested by UUID/nonce and temporal result boundary; no arbitrary-message native replyTo.");
@@ -880,7 +1023,7 @@ async function probePi(evidence: Evidence): Promise<void> {
     evidence.set(harness, "steer-placement", steerObserved ? "empirically-verified" : "unverified", steerObserved ? "Both native steer nonces queued during the tool wait were echoed before agent completion." : "Native receipts existed but both steer nonces were not model-observed.", true);
     evidence.set(harness, "busy-delivery-tool-wait", steerObserved ? "empirically-verified" : "unverified", "Native steer was injected only after fixture sequence 1 opened its controlled wait.", true);
     evidence.set(harness, "harness-managed-follow-up", followObserved ? "empirically-verified" : "unverified", followObserved ? "Both native follow_up nonces were model-observed after the initial work would otherwise stop." : "Follow-up receipts did not yield both model nonce echoes.", true);
-    const ordered = [...steerNonces, ...followNonces].every((nonce, index, values) => index === 0 || transcript.lastIndexOf(values[index - 1]) < transcript.lastIndexOf(nonce));
+    const ordered = [...steerNonces, ...followNonces].every((nonce, index, values) => index === 0 || transcript.lastIndexOf(values[index - 1]!) < transcript.lastIndexOf(nonce));
     evidence.set(harness, "two-message-burst-order", steerObserved && followObserved && ordered ? "empirically-verified" : "unverified", "Compared model-visible nonce order across native steer and follow_up queue bursts.", true);
     evidence.set(harness, "reply-correlation", steerObserved || followObserved ? "degraded-fallback" : "unverified", "RPC response IDs end at acceptance; event/reply correlation required wrapper nonce attestation.");
     evidence.set(harness, "origin-model-visibility", "unsupported", "InputSource/custom metadata is removed from model form unless encoded in content.");
@@ -1025,7 +1168,7 @@ async function probeCodex(evidence: Evidence): Promise<void> {
     const steerObserved = state.steerNonces.every((nonce) => markObserved(evidence, harness, "steer-placement", nonce, nonce, initialTranscript));
     evidence.set(harness, "steer-placement", steerObserved ? "empirically-verified" : "unverified", steerObserved ? "Both accepted tool-wait steers were echoed on a later sample in the same turn." : "Acceptance was observed but later-sample model visibility was not proven.", true);
     evidence.set(harness, "busy-delivery-tool-wait", steerObserved ? "empirically-verified" : "unverified", "Steers were issued while App Server awaited the first dynamic tool response.", true);
-    evidence.set(harness, "two-message-burst-order", steerObserved && initialTranscript.lastIndexOf(state.steerNonces[0]) < initialTranscript.lastIndexOf(state.steerNonces[1]) ? "empirically-verified" : "unverified", "Compared two accepted steer client IDs and model nonce echoes.", true);
+    evidence.set(harness, "two-message-burst-order", steerObserved && initialTranscript.lastIndexOf(state.steerNonces[0]!) < initialTranscript.lastIndexOf(state.steerNonces[1]!) ? "empirically-verified" : "unverified", "Compared two accepted steer client IDs and model nonce echoes.", true);
     evidence.set(harness, "reply-correlation", fixtureProof ? "empirically-verified" : "unverified", "Turn/item IDs and clientUserMessageId provide native transport correlation; nonce echo proves model observation.", true);
     const clientIdVisible = state.values.some((message) => JSON.stringify(message).includes(runId) && JSON.stringify(message).includes("clientId"));
     if (clientIdVisible) evidence.trace(harness, "reply-correlation", runId, "durable", "user item echoed clientUserMessageId as clientId");
@@ -1128,7 +1271,7 @@ async function freePort(): Promise<number> {
 interface OpenCodeServer {
   child: ReturnType<typeof Bun.spawn>;
   base: string;
-  stop: () => Promise<void>;
+  stop: (abrupt?: boolean) => Promise<void>;
 }
 
 async function startOpenCodeServer(evidence: Evidence, root: string, env: Record<string, string>): Promise<OpenCodeServer> {
@@ -1148,15 +1291,15 @@ async function startOpenCodeServer(evidence: Evidence, root: string, env: Record
   return {
     child,
     base,
-    stop: async () => {
-      child.kill("SIGTERM");
+    stop: async (abrupt = false) => {
+      child.kill(abrupt ? "SIGKILL" : "SIGTERM");
       await Promise.race([child.exited, sleep(2_000)]);
       if ((await Promise.race([child.exited.then(() => true), Promise.resolve(false)])) === false) child.kill("SIGKILL");
     },
   };
 }
 
-async function probeOpenCode(evidence: Evidence): Promise<void> {
+async function probeOpenCode(evidence: Evidence, options: PrototypeOptions): Promise<void> {
   const harness: Harness = "opencode";
   const root = join(evidence.scratchRoot, harness);
   const isolatedHome = join(root, "home");
@@ -1170,12 +1313,12 @@ async function probeOpenCode(evidence: Evidence): Promise<void> {
   const env = { ...minimalEnv(isolatedHome), XDG_DATA_HOME: xdgData, XDG_CONFIG_HOME: xdgConfig, XDG_STATE_HOME: xdgState, XDG_CACHE_HOME: xdgCache, OPENCODE_DISABLE_LSP_DOWNLOAD: "true" };
   const version = await runCommand(["opencode", "--version"], root, env);
   evidence.identities.set(harness, { executableVersion: version.stdout.trim() || version.stderr.trim(), authProviders });
-  if (version.exitCode !== 0 || version.stdout.trim() !== "1.18.15") {
+  if (version.exitCode !== 0 || version.stdout.trim() !== OPENCODE_PIN) {
     rmSync(authPath, { force: true });
     evidence.blockHarness(harness, `Exact pin unavailable: ${version.stderr || version.stdout}`);
     return;
   }
-  const runId = `opencode-${crypto.randomUUID()}`;
+  const runId = "opencode-primary";
   const messageId = () => `msg_${crypto.randomUUID().replaceAll("-", "")}`;
   const fixtureTrace = join(root, "fixture-trace.jsonl");
   writeOpenCodeFiles(root, fixtureTrace, runId);
@@ -1201,14 +1344,40 @@ async function probeOpenCode(evidence: Evidence): Promise<void> {
     }
     throw new Error("OpenCode session did not become idle");
   };
+  const waitBusyThenIdle = async (sessionId: string, timeoutMs = PROCESS_TIMEOUT_MS): Promise<void> => {
+    const started = Date.now();
+    while (Date.now() - started < Math.min(timeoutMs, 30_000)) {
+      if (await statusType(sessionId) === "busy") {
+        await waitIdle(sessionId, timeoutMs - (Date.now() - started));
+        return;
+      }
+      await sleep(25);
+    }
+    throw new Error("OpenCode async prompt did not enter busy state");
+  };
   const messages = async (sessionId: string) => (await http("GET", `/session/${sessionId}/message?limit=200`)).data as any[];
+  const statusType = async (sessionId: string): Promise<string> => {
+    const response = await http("GET", "/session/status");
+    return response.data?.[sessionId]?.type ?? "idle";
+  };
+  const waitForDurableUserRowsWhileBusy = async (sessionId: string, ids: string[], timeoutMs = FIXTURE_WAIT_MS - 250): Promise<boolean> => {
+    const started = Date.now();
+    while (Date.now() - started < timeoutMs) {
+      const [history, current] = await Promise.all([messages(sessionId), statusType(sessionId)]);
+      const userIds = new Set(history.filter((entry) => entry?.info?.role === "user").map((entry) => entry.info.id));
+      if (ids.every((id) => userIds.has(id))) return current === "busy";
+      if (current !== "busy") return false;
+      await sleep(25);
+    }
+    return false;
+  };
   try {
     server = await startOpenCodeServer(evidence, root, env);
     const providers = await http("GET", "/provider");
     const identity = evidence.identities.get(harness)!;
     identity.provider = providers.data?.connected?.[0];
     identity.model = identity.provider ? providers.data?.default?.[identity.provider] : undefined;
-    identity.protocolVersion = "HTTP/SSE 1.18.15";
+    identity.protocolVersion = `HTTP/SSE ${OPENCODE_PIN}`;
     if (!identity.provider) throw new Error("OpenCode isolated auth has no connected provider");
     const created = await http("POST", "/session", { title: `DISPOSABLE harness conformance ${runId}` });
     const sessionId = created.data?.id;
@@ -1221,51 +1390,148 @@ async function probeOpenCode(evidence: Evidence): Promise<void> {
     await waitForFixtureCheckpoint(fixtureTrace, runId, 1, "scheduled");
     const busyNonces = [`${runId}-busy-1`, `${runId}-busy-2`];
     const busyMessageIds = new Map<string, string>();
+    let allAcceptedWhileBusy = true;
     for (const nonce of busyNonces) {
       const busyMessageId = messageId();
       busyMessageIds.set(nonce, busyMessageId);
-      evidence.trace(harness, "busy-delivery-tool-wait", nonce, "submitted", "ordinary prompt_async while runner busy; not called steer");
+      const busyAtSubmission = await statusType(sessionId) === "busy";
+      evidence.trace(harness, "busy-delivery-tool-wait", nonce, "submitted", `ordinary prompt_async at deterministic fixture tool barrier; status=${busyAtSubmission ? "busy" : "not-busy"}; not called steer`);
+      evidence.trace(harness, "harness-managed-follow-up", nonce, "submitted", `follow-up admitted without waiting for idle; status=${busyAtSubmission ? "busy" : "not-busy"}`);
       const accepted = await http("POST", `/session/${sessionId}/prompt_async`, { messageID: busyMessageId, parts: [{ type: "text", text: controlMessage(nonce, "ordinary-busy-tool-wait") }], tools: { scratch_fixture: true } });
+      allAcceptedWhileBusy &&= busyAtSubmission && accepted.status === 204;
       evidence.trace(harness, "busy-delivery-tool-wait", nonce, accepted.status === 204 ? "accepted" : "failed", `HTTP ${accepted.status}; acknowledgement alone proves no later checkpoint`);
+      evidence.trace(harness, "harness-managed-follow-up", nonce, accepted.status === 204 ? "accepted" : "failed", `HTTP ${accepted.status}; receipt separated from durability and observation`);
+    }
+    const durableWhileBusy = await waitForDurableUserRowsWhileBusy(sessionId, [...busyMessageIds.values()]);
+    if (durableWhileBusy) {
+      for (const nonce of busyNonces) {
+        evidence.trace(harness, "busy-delivery-tool-wait", nonce, "durable", "message GET returned exact client-supplied user id while session status remained busy");
+        evidence.trace(harness, "harness-managed-follow-up", nonce, "durable", "busy-admitted user row remained queryable before the runner became idle");
+      }
     }
     await waitIdle(sessionId);
+    for (const nonce of busyNonces) evidence.trace(harness, "harness-managed-follow-up", nonce, "completed", "the runner reached its idle boundary after the busy-admitted burst");
     let history = await messages(sessionId);
     const transcript = assistantText(harness, history);
     const fixtureProof = applyFixtureAssessment(evidence, harness, fixtureTrace, runId, transcript);
     if (fixtureProof) evidence.set(harness, "idle-delivery-wake", "empirically-verified", "Idle prompt produced a valid three-call model-visible fixture.", true);
     const busyObserved = busyNonces.every((nonce) => markObserved(evidence, harness, "busy-delivery-tool-wait", nonce, nonce, transcript));
-    evidence.set(harness, "busy-delivery-tool-wait", busyObserved ? "race-prone" : "unverified", busyObserved ? "Ordinary busy prompts landed during a controlled tool wait and were echoed, but the endpoint has a known terminal race and is not steer." : "204 receipts/history rows did not prove both busy messages reached the model.");
-    evidence.set(harness, "two-message-burst-order", busyObserved && transcript.lastIndexOf(busyNonces[0]) < transcript.lastIndexOf(busyNonces[1]) ? "race-prone" : "unverified", "Ordinary busy prompt burst is source-racy even if this run preserved echo order.");
-    const userRows = history.filter((entry) => entry?.info?.role === "user");
-    const durableBusy = busyNonces.every((nonce) => userRows.some((entry) => entry.info.id === busyMessageIds.get(nonce)));
-    if (durableBusy) for (const nonce of busyNonces) evidence.trace(harness, "busy-delivery-tool-wait", nonce, "durable", "message GET returned exact client-supplied user id");
+    const ordered = busyObserved && transcript.indexOf(busyNonces[0]!) < transcript.lastIndexOf(busyNonces[1]!);
+    const busyVerified = allAcceptedWhileBusy && durableWhileBusy && busyObserved;
+    evidence.set(harness, "busy-delivery-tool-wait", busyVerified ? "race-prone" : "unverified", busyVerified ? "Both ordinary prompt_async messages were accepted and durable while the deterministic tool barrier reported busy, then model-observed before the run became idle. This is not steer and remains terminal-race-prone." : "The probe did not prove busy admission, pre-idle durability, and model observation for both messages.");
+    evidence.set(harness, "two-message-burst-order", ordered ? "empirically-verified" : "unverified", ordered ? "The two busy-admitted delivery nonces were emitted by assistant text in submission order during one runner lifecycle." : "Both model-visible nonce echoes were not captured in submission order.");
     const nativeParent = history.some((entry) => entry?.info?.role === "assistant" && [initialMessageId, ...busyMessageIds.values()].includes(entry.info.parentID));
     evidence.set(harness, "reply-correlation", nativeParent ? "empirically-verified" : "unverified", nativeParent ? "Assistant parentID supplied a native edge to a client-supplied user message ID." : "No assistant parentID edge to a probe delivery was captured.", true);
     if (nativeParent) evidence.trace(harness, "reply-correlation", runId, "replied", "assistant parentID matched a client-supplied user message ID");
-    const followNonces = [`${runId}-follow-1`, `${runId}-follow-2`];
-    let followVerified = true;
-    for (const nonce of followNonces) {
-      await waitIdle(sessionId);
-      evidence.trace(harness, "harness-managed-follow-up", nonce, "submitted", "wrapper observed idle before ordinary synchronous prompt");
-      const response = await http("POST", `/session/${sessionId}/message`, { messageID: messageId(), parts: [{ type: "text", text: controlMessage(nonce, "idle-gated-wrapper-follow-up") }], tools: { scratch_fixture: true } });
-      const responseText = response.data?.info?.role === "assistant" ? textFrom(response.data) : "";
-      if (response.status >= 300 || !responseText.includes(nonce)) followVerified = false;
-      else {
-        evidence.trace(harness, "harness-managed-follow-up", nonce, "observed", "synchronous assistant response echoed nonce");
-        evidence.trace(harness, "reply-correlation", nonce, "replied", "synchronous response carried assistant parentID for idle-gated message");
-      }
-      evidence.trace(harness, "harness-managed-follow-up", nonce, response.status < 300 ? "completed" : "failed", `HTTP ${response.status}`);
-    }
-    evidence.set(harness, "harness-managed-follow-up", followVerified ? "empirically-verified" : "unverified", followVerified ? "Two wrapper-managed follow-ups were each idle-gated and model-observed in order." : "An idle-gated follow-up lacked a nonce echo.");
+    if (busyObserved) for (const nonce of busyNonces) evidence.trace(harness, "harness-managed-follow-up", nonce, "observed", "post-idle history contained an assistant echo attributable to the just-completed runner lifecycle");
+    evidence.set(harness, "harness-managed-follow-up", busyVerified && ordered ? "empirically-verified" : "unverified", busyVerified && ordered ? "Two follow-ups were submitted and persisted while the session was demonstrably busy, then released to the model in order within the same busy-to-idle lifecycle. No repeated idle wake was used." : "Busy admission, retention, ordered model release, or the single-lifecycle boundary was not proven.");
     evidence.set(harness, "permission-wait-interaction", "unverified", "Wildcard deny plus one allowed custom tool prevented an unsafe approval request; permission-wait itself was not exercised.");
     evidence.set(harness, "busy-delivery-text", "unverified", "HTTP polling did not expose a deterministic text-stream injection gate separate from tool wait.");
-    evidence.set(harness, "terminal-race", "race-prone", "Source-traced terminal race remains; ordinary busy acceptance was intentionally not upgraded to steer even when tool-wait delivery succeeded.");
+    let terminalBusyAdmissions = 0;
+    let terminalRaceReproductions = 0;
+    for (let iteration = 1; iteration <= options.terminalRaceIterations; iteration++) {
+      await server.stop();
+      const raceRunId = `opencode-terminal-${iteration}`;
+      const raceTrace = join(root, `terminal-${iteration}-fixture-trace.jsonl`);
+      writeOpenCodeFiles(root, raceTrace, raceRunId);
+      server = await startOpenCodeServer(evidence, root, env);
+      const raceSession = await http("POST", "/session", { title: `DISPOSABLE terminal race ${iteration}` });
+      const raceSessionId = raceSession.data?.id;
+      if (!raceSessionId) throw new Error(`terminal race session ${iteration} create failed`);
+      const raceInitialId = messageId();
+      const started = await http("POST", `/session/${raceSessionId}/prompt_async`, { messageID: raceInitialId, parts: [{ type: "text", text: fixturePrompt(raceRunId) }], tools: { scratch_fixture: true } });
+      if (started.status !== 204) throw new Error(`terminal race iteration ${iteration} initial prompt rejected`);
+      await waitForFixtureCheckpoint(raceTrace, raceRunId, 3, "completed");
+      const raceNonce = `${raceRunId}-boundary`;
+      const raceMessageId = messageId();
+      let admittedAtBusyBoundary = false;
+      const boundaryStarted = Date.now();
+      while (Date.now() - boundaryStarted < 5_000) {
+        const raceHistory = await messages(raceSessionId);
+        const finalAssistant = raceHistory.some((entry) => entry?.info?.role === "assistant" && entry.info.parentID === raceInitialId && entry.info.time?.completed && entry.info.finish && entry.info.finish !== "tool-calls");
+        const current = await statusType(raceSessionId);
+        if (finalAssistant && current === "busy") {
+          evidence.trace(harness, "terminal-race", raceNonce, "submitted", `iteration ${iteration}: prompt_async sent after terminal assistant completion was durable while status still reported busy`);
+          const accepted = await http("POST", `/session/${raceSessionId}/prompt_async`, { messageID: raceMessageId, parts: [{ type: "text", text: controlMessage(raceNonce, "terminal-completion-window") }], tools: { scratch_fixture: true } });
+          admittedAtBusyBoundary = accepted.status === 204;
+          evidence.trace(harness, "terminal-race", raceNonce, admittedAtBusyBoundary ? "accepted" : "failed", `iteration ${iteration}: HTTP ${accepted.status}; acceptance is not observation`);
+          break;
+        }
+        if (current === "idle") break;
+        await sleep(5);
+      }
+      await waitIdle(raceSessionId);
+      const beforeWake = await messages(raceSessionId);
+      const raceDurable = beforeWake.some((entry) => entry?.info?.role === "user" && entry.info.id === raceMessageId);
+      const observedBeforeWake = assistantText(harness, beforeWake).includes(raceNonce);
+      if (admittedAtBusyBoundary) terminalBusyAdmissions++;
+      if (raceDurable) evidence.trace(harness, "terminal-race", raceNonce, "durable", `iteration ${iteration}: exact user id present after idle`);
+      if (observedBeforeWake) evidence.trace(harness, "terminal-race", raceNonce, "observed", `iteration ${iteration}: assistant emitted nonce before any repeated idle wake`);
+      if (admittedAtBusyBoundary && raceDurable && !observedBeforeWake) {
+        terminalRaceReproductions++;
+        evidence.trace(harness, "terminal-race", raceNonce, "discarded", `iteration ${iteration}: durable accepted row was not scheduled before idle; model observation remains unproven`);
+        const wakeNonce = `${raceRunId}-explicit-wake`;
+        evidence.trace(harness, "terminal-race", wakeNonce, "submitted", `iteration ${iteration}: explicit repeated idle wake used only to distinguish retained history from automatic scheduling`);
+        const wake = await http("POST", `/session/${raceSessionId}/prompt_async`, { messageID: messageId(), parts: [{ type: "text", text: controlMessage(wakeNonce, "explicit-idle-wake-after-terminal-race") }], tools: { scratch_fixture: true } });
+        evidence.trace(harness, "terminal-race", wakeNonce, wake.status === 204 ? "accepted" : "failed", `iteration ${iteration}: HTTP ${wake.status}`);
+        await waitBusyThenIdle(raceSessionId);
+        const afterWakeTranscript = assistantText(harness, await messages(raceSessionId));
+        if (afterWakeTranscript.includes(raceNonce)) evidence.trace(harness, "terminal-race", raceNonce, "observed", `iteration ${iteration}: previously retained nonce became model-visible only after explicit idle wake`);
+      } else if (!admittedAtBusyBoundary) {
+        evidence.trace(harness, "terminal-race", raceNonce, "failed", `iteration ${iteration}: bounded observer did not catch the post-completion/pre-idle admission window`);
+      }
+    }
+    evidence.set(harness, "terminal-race", "race-prone", terminalRaceReproductions > 0
+      ? `Reproduced ${terminalRaceReproductions}/${options.terminalRaceIterations} bounded attempts: a post-completion message was accepted and durable while busy but was not model-observed before idle; explicit wake evidence is traced separately.`
+      : `The source-defined terminal snapshot race remains. ${terminalBusyAdmissions}/${options.terminalRaceIterations} bounded attempts admitted in the post-completion busy window and none reproduced a retained-but-unscheduled row; absence of reproduction is not proof of safety.`);
+
     await server.stop();
+    const restartRunId = "opencode-restart";
+    const restartTrace = join(root, "restart-fixture-trace.jsonl");
+    writeOpenCodeFiles(root, restartTrace, restartRunId);
     server = await startOpenCodeServer(evidence, root, env);
-    history = await messages(sessionId);
-    const backfilled = JSON.stringify(history).includes(initialMessageId) && textFrom(history).includes(`${runId}-tool-1`);
-    evidence.trace(harness, "reconnect-resume-history-backfill", runId, backfilled ? "durable" : "failed", "new server process read scratch-isolated session history");
-    evidence.set(harness, "reconnect-resume-history-backfill", backfilled ? "empirically-verified" : "unverified", backfilled ? "A new OpenCode server process backfilled the exact fixture nonce from scratch-isolated storage." : "Reconnect history lacked the fixture nonce.", true);
+    const restartSession = await http("POST", "/session", { title: "DISPOSABLE restart boundary" });
+    const restartSessionId = restartSession.data?.id;
+    if (!restartSessionId) throw new Error("restart session create failed");
+    const restartInitialId = messageId();
+    const restartInitial = await http("POST", `/session/${restartSessionId}/prompt_async`, { messageID: restartInitialId, parts: [{ type: "text", text: fixturePrompt(restartRunId) }], tools: { scratch_fixture: true } });
+    if (restartInitial.status !== 204) throw new Error("restart initial prompt rejected");
+    await waitForFixtureCheckpoint(restartTrace, restartRunId, 1, "scheduled");
+    const restartNonces = [`${restartRunId}-queued-1`, `${restartRunId}-queued-2`];
+    const restartIds: string[] = [];
+    let restartAcceptedBusy = true;
+    for (const nonce of restartNonces) {
+      const id = messageId();
+      restartIds.push(id);
+      const busy = await statusType(restartSessionId) === "busy";
+      evidence.trace(harness, "reconnect-resume-history-backfill", nonce, "submitted", `prompt_async before abrupt process restart; status=${busy ? "busy" : "not-busy"}`);
+      const accepted = await http("POST", `/session/${restartSessionId}/prompt_async`, { messageID: id, parts: [{ type: "text", text: controlMessage(nonce, "busy-before-process-restart") }], tools: { scratch_fixture: true } });
+      restartAcceptedBusy &&= busy && accepted.status === 204;
+      evidence.trace(harness, "reconnect-resume-history-backfill", nonce, accepted.status === 204 ? "accepted" : "failed", `HTTP ${accepted.status}; not treated as durable or observed`);
+    }
+    const restartDurableBusy = await waitForDurableUserRowsWhileBusy(restartSessionId, restartIds);
+    if (restartDurableBusy) for (const nonce of restartNonces) evidence.trace(harness, "reconnect-resume-history-backfill", nonce, "durable", "exact user id queryable while the original process remained busy");
+    evidence.trace(harness, "reconnect-resume-history-backfill", restartRunId, "cancelled", "server process killed abruptly at the controlled sequence-1 tool barrier");
+    await server.stop(true);
+    server = undefined;
+    await waitForFixtureCheckpoint(restartTrace, restartRunId, 1, "completed");
+    server = await startOpenCodeServer(evidence, root, env);
+    const restartedStatus = await statusType(restartSessionId);
+    const restartedHistory = await messages(restartSessionId);
+    const restartBackfilled = restartIds.every((id) => restartedHistory.some((entry) => entry?.info?.role === "user" && entry.info.id === id));
+    const observedWithoutWake = restartNonces.some((nonce) => assistantText(harness, restartedHistory).includes(nonce));
+    evidence.trace(harness, "reconnect-resume-history-backfill", restartRunId, restartBackfilled ? "durable" : "failed", `new process status=${restartedStatus}; exact busy-admitted rows backfilled=${restartBackfilled}; model observation without wake=${observedWithoutWake}`);
+    const restartWakeNonce = `${restartRunId}-explicit-wake`;
+    evidence.trace(harness, "reconnect-resume-history-backfill", restartWakeNonce, "submitted", "explicit prompt_async wake after restart; required to test retained rows separately from automatic resume");
+    const restartWake = await http("POST", `/session/${restartSessionId}/prompt_async`, { messageID: messageId(), parts: [{ type: "text", text: controlMessage(restartWakeNonce, "explicit-wake-after-process-restart") }], tools: { scratch_fixture: true } });
+    evidence.trace(harness, "reconnect-resume-history-backfill", restartWakeNonce, restartWake.status === 204 ? "accepted" : "failed", `HTTP ${restartWake.status}`);
+    await waitBusyThenIdle(restartSessionId);
+    const restartTranscript = assistantText(harness, await messages(restartSessionId));
+    const restartObserved = restartNonces.every((nonce) => markObserved(evidence, harness, "reconnect-resume-history-backfill", nonce, nonce, restartTranscript));
+    const restartOrdered = restartObserved && restartTranscript.indexOf(restartNonces[0]!) < restartTranscript.lastIndexOf(restartNonces[1]!);
+    evidence.set(harness, "reconnect-resume-history-backfill", restartAcceptedBusy && restartDurableBusy && restartBackfilled && restartedStatus === "idle" && !observedWithoutWake && restartObserved && restartOrdered ? "degraded-fallback" : "unverified", restartAcceptedBusy && restartDurableBusy && restartBackfilled && restartedStatus === "idle" && !observedWithoutWake && restartObserved && restartOrdered
+      ? "Busy-admitted rows survived an abrupt server restart in order, but the new process reported idle and did not automatically resume them; an explicit wake made both nonces model-visible in order."
+      : "The restart probe did not prove busy admission, durable backfill, idle-without-auto-resume, and ordered observation after explicit wake as separate boundaries.", true);
   } catch (error) {
     const reason = String(error);
     evidence.blockHarness(harness, /auth|provider|credential|401/i.test(reason) ? `Authentication/environment boundary: ${reason}` : reason);
@@ -1276,24 +1542,64 @@ async function probeOpenCode(evidence: Evidence): Promise<void> {
   }
 }
 
-async function main(): Promise<void> {
+function parsePrototypeOptions(args: string[]): PrototypeOptions {
+  const harnesses: Harness[] = [];
+  let retainedEvidenceDir: string | undefined;
+  let terminalRaceIterations = DEFAULT_TERMINAL_RACE_ITERATIONS;
+  for (let index = 0; index < args.length; index++) {
+    const argument = args[index];
+    if (argument === "--harness") {
+      const harness = args[++index] as Harness | undefined;
+      if (!harness || !(["claude", "codex", "pi", "opencode"] as string[]).includes(harness)) throw new Error(`Invalid --harness value: ${harness ?? "missing"}`);
+      harnesses.push(harness);
+      continue;
+    }
+    if (argument === "--evidence-dir") {
+      retainedEvidenceDir = args[++index];
+      if (!retainedEvidenceDir) throw new Error("--evidence-dir requires a path");
+      const allowedRoot = resolve(process.cwd(), "docs", "prototypes");
+      if (!isUnder(allowedRoot, retainedEvidenceDir)) throw new Error("retained evidence must be written below docs/prototypes in the current worktree");
+      continue;
+    }
+    if (argument === "--opencode-terminal-race-iterations") {
+      terminalRaceIterations = Number(args[++index]);
+      if (!Number.isInteger(terminalRaceIterations) || terminalRaceIterations < 1 || terminalRaceIterations > 10) throw new Error("terminal race iterations must be an integer from 1 to 10");
+      continue;
+    }
+    throw new Error(`Unknown argument: ${argument}`);
+  }
+  return { harnesses: harnesses.length ? [...new Set(harnesses)] : ["claude", "codex", "pi", "opencode"], retainedEvidenceDir, terminalRaceIterations };
+}
+
+async function main(args: string[]): Promise<void> {
+  const options = parsePrototypeOptions(args);
   const scratchRoot = mkdtempSync(join(tmpdir(), "octo-santa-harness-conformance-"));
   chmodSync(scratchRoot, 0o700);
   const evidence = new Evidence(scratchRoot);
   console.log(`DISPOSABLE_PROTOTYPE_SCRATCH=${scratchRoot}`);
   console.log("Harnesses run serially. Earlier checkpoints never imply later checkpoints.");
-  for (const probe of [probeClaude, probeCodex, probePi, probeOpenCode]) {
+  const probes: Record<Harness, () => Promise<void>> = {
+    claude: () => probeClaude(evidence),
+    codex: () => probeCodex(evidence),
+    pi: () => probePi(evidence),
+    opencode: () => probeOpenCode(evidence, options),
+  };
+  for (const harness of ["claude", "codex", "pi", "opencode"] as const) {
+    if (!options.harnesses.includes(harness)) {
+      evidence.skipHarness(harness);
+      continue;
+    }
     try {
-      await probe(evidence);
+      await probes[harness]();
     } catch (error) {
       console.error(`Unexpected probe boundary: ${String(error)}`);
     }
   }
-  evidence.print();
+  if (options.retainedEvidenceDir) evidence.writeRetained(options.retainedEvidenceDir, options);
+  evidence.print(options.retainedEvidenceDir);
 }
 
 const [mode, ...modeArgs] = process.argv.slice(2);
 if (mode === "--fixture-command") await fixtureCommand(modeArgs);
 else if (mode === "--mcp-server") await mcpServer(modeArgs);
-else if (mode) throw new Error(`Unknown argument: ${mode}`);
-else await main();
+else await main(process.argv.slice(2));

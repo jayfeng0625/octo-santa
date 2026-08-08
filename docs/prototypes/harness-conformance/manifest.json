@@ -1,0 +1,55 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-08-08T17:16:40.418Z",
+  "prototype": "scripts/prototypes/harness-conformance-prototype.ts",
+  "runtime": {
+    "bun": "1.3.14",
+    "platform": "darwin",
+    "architecture": "arm64"
+  },
+  "exactPins": {
+    "claude": "@anthropic-ai/claude-code@2.1.226",
+    "codex": "@openai/codex@0.147.0",
+    "pi": "@mariozechner/pi-coding-agent@0.73.1",
+    "opencode": "1.18.15"
+  },
+  "execution": {
+    "harnesses": [
+      "opencode"
+    ],
+    "terminalRaceIterations": 3
+  },
+  "replayCommand": [
+    "bun",
+    "scripts/prototypes/harness-conformance-prototype.ts",
+    "--harness",
+    "opencode",
+    "--evidence-dir",
+    "docs/prototypes/harness-conformance",
+    "--opencode-terminal-race-iterations",
+    "3"
+  ],
+  "identities": {
+    "opencode": {
+      "executableVersion": "1.18.15",
+      "protocolVersion": "HTTP/SSE 1.18.15",
+      "model": "gpt-5.6-terra-fast",
+      "provider": "openai"
+    }
+  },
+  "environmentBlockedRows": [],
+  "sourceReferences": [
+    {
+      "repository": "anomalyco/opencode",
+      "tag": "v1.18.15",
+      "commit": "d7b115f623760e68a4749d16508a9eca350f246f",
+      "files": [
+        "packages/opencode/src/session/prompt.ts:1052-1071,1081-1130,1338-1347",
+        "packages/opencode/src/session/run-state.ts:52-94",
+        "packages/opencode/src/effect/runner.ts:67-90,115-138"
+      ],
+      "relevance": "Busy prompts persist before sharing the active runner; a prompt arriving after the terminal message snapshot can await the finishing runner without starting another run."
+    }
+  ],
+  "sanitization": "Raw protocol, prompts, credentials, auth files, session storage paths, and scratch paths are intentionally excluded. Delivery aliases are assigned by first trace occurrence."
+}

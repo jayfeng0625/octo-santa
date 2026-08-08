@@ -1,0 +1,523 @@
+{
+  "schemaVersion": 1,
+  "classifications": [
+    "documented",
+    "empirically-verified",
+    "degraded-fallback",
+    "race-prone",
+    "unsupported",
+    "environment-blocked",
+    "unverified"
+  ],
+  "checkpoints": [
+    "submitted",
+    "accepted",
+    "durable",
+    "scheduled",
+    "observed",
+    "replied",
+    "completed",
+    "cancelled",
+    "discarded",
+    "failed"
+  ],
+  "evidence": [
+    {
+      "harness": "claude",
+      "capability": "busy-delivery-text",
+      "classification": "unverified",
+      "reason": "Harness was not selected for this retained runtime probe.",
+      "native": false,
+      "evidenceRefs": []
+    },
+    {
+      "harness": "claude",
+      "capability": "busy-delivery-tool-wait",
+      "classification": "unverified",
+      "reason": "Harness was not selected for this retained runtime probe.",
+      "native": false,
+      "evidenceRefs": []
+    },
+    {
+      "harness": "claude",
+      "capability": "compaction-persistence",
+      "classification": "documented",
+      "reason": "Pinned SDK documents resume/compaction controls; exact nonce survival remains unverified.",
+      "native": true,
+      "evidenceRefs": []
+    },
+    {
+      "harness": "claude",
+      "capability": "fixture-validity",
+      "classification": "unverified",
+      "reason": "Harness was not selected for this retained runtime probe.",
+      "native": false,
+      "evidenceRefs": []
+    },
+    {
+      "harness": "claude",
+      "capability": "harness-managed-follow-up",
+      "classification": "unverified",
+      "reason": "Harness was not selected for this retained runtime probe.",
+      "native": false,
+      "evidenceRefs": []
+    },
+    {
+      "harness": "claude",
+      "capability": "idle-delivery-wake",
+      "classification": "unverified",
+      "reason": "Harness was not selected for this retained runtime probe.",
+      "native": false,
+      "evidenceRefs": []
+    },
+    {
+      "harness": "claude",
+      "capability": "model-visible-observation",
+      "classification": "unverified",
+      "reason": "Harness was not selected for this retained runtime probe.",
+      "native": false,
+      "evidenceRefs": []
+    },
+    {
+      "harness": "claude",
+      "capability": "origin-model-visibility",
+      "classification": "unverified",
+      "reason": "Harness was not selected for this retained runtime probe.",
+      "native": false,
+      "evidenceRefs": []
+    },
+    {
+      "harness": "claude",
+      "capability": "origin-transport-visibility",
+      "classification": "unverified",
+      "reason": "Harness was not selected for this retained runtime probe.",
+      "native": false,
+      "evidenceRefs": []
+    },
+    {
+      "harness": "claude",
+      "capability": "permission-wait-interaction",
+      "classification": "unverified",
+      "reason": "Harness was not selected for this retained runtime probe.",
+      "native": false,
+      "evidenceRefs": []
+    },
+    {
+      "harness": "claude",
+      "capability": "reconnect-resume-history-backfill",
+      "classification": "unverified",
+      "reason": "Harness was not selected for this retained runtime probe.",
+      "native": false,
+      "evidenceRefs": []
+    },
+    {
+      "harness": "claude",
+      "capability": "reply-correlation",
+      "classification": "unverified",
+      "reason": "Harness was not selected for this retained runtime probe.",
+      "native": false,
+      "evidenceRefs": []
+    },
+    {
+      "harness": "claude",
+      "capability": "steer-placement",
+      "classification": "unverified",
+      "reason": "Harness was not selected for this retained runtime probe.",
+      "native": false,
+      "evidenceRefs": []
+    },
+    {
+      "harness": "claude",
+      "capability": "terminal-race",
+      "classification": "unverified",
+      "reason": "Harness was not selected for this retained runtime probe.",
+      "native": false,
+      "evidenceRefs": []
+    },
+    {
+      "harness": "claude",
+      "capability": "two-message-burst-order",
+      "classification": "unverified",
+      "reason": "Harness was not selected for this retained runtime probe.",
+      "native": false,
+      "evidenceRefs": []
+    },
+    {
+      "harness": "codex",
+      "capability": "busy-delivery-text",
+      "classification": "unverified",
+      "reason": "Harness was not selected for this retained runtime probe.",
+      "native": false,
+      "evidenceRefs": []
+    },
+    {
+      "harness": "codex",
+      "capability": "busy-delivery-tool-wait",
+      "classification": "unverified",
+      "reason": "Harness was not selected for this retained runtime probe.",
+      "native": false,
+      "evidenceRefs": []
+    },
+    {
+      "harness": "codex",
+      "capability": "compaction-persistence",
+      "classification": "documented",
+      "reason": "Manual compaction lifecycle is documented; this run does not spend a compaction turn.",
+      "native": true,
+      "evidenceRefs": []
+    },
+    {
+      "harness": "codex",
+      "capability": "fixture-validity",
+      "classification": "unverified",
+      "reason": "Harness was not selected for this retained runtime probe.",
+      "native": false,
+      "evidenceRefs": []
+    },
+    {
+      "harness": "codex",
+      "capability": "harness-managed-follow-up",
+      "classification": "documented",
+      "reason": "No native queue; client waits for turn/completed and then starts a turn.",
+      "native": false,
+      "evidenceRefs": []
+    },
+    {
+      "harness": "codex",
+      "capability": "idle-delivery-wake",
+      "classification": "unverified",
+      "reason": "Harness was not selected for this retained runtime probe.",
+      "native": false,
+      "evidenceRefs": []
+    },
+    {
+      "harness": "codex",
+      "capability": "model-visible-observation",
+      "classification": "unverified",
+      "reason": "Harness was not selected for this retained runtime probe.",
+      "native": false,
+      "evidenceRefs": []
+    },
+    {
+      "harness": "codex",
+      "capability": "origin-model-visibility",
+      "classification": "unsupported",
+      "reason": "clientUserMessageId is transport correlation, not model-visible sender origin.",
+      "native": false,
+      "evidenceRefs": []
+    },
+    {
+      "harness": "codex",
+      "capability": "origin-transport-visibility",
+      "classification": "unsupported",
+      "reason": "clientUserMessageId and thread source are correlation/client-class metadata, not per-delivery sender origin.",
+      "native": false,
+      "evidenceRefs": []
+    },
+    {
+      "harness": "codex",
+      "capability": "permission-wait-interaction",
+      "classification": "unverified",
+      "reason": "Harness was not selected for this retained runtime probe.",
+      "native": false,
+      "evidenceRefs": []
+    },
+    {
+      "harness": "codex",
+      "capability": "reconnect-resume-history-backfill",
+      "classification": "unverified",
+      "reason": "Harness was not selected for this retained runtime probe.",
+      "native": false,
+      "evidenceRefs": []
+    },
+    {
+      "harness": "codex",
+      "capability": "reply-correlation",
+      "classification": "unverified",
+      "reason": "Harness was not selected for this retained runtime probe.",
+      "native": false,
+      "evidenceRefs": []
+    },
+    {
+      "harness": "codex",
+      "capability": "steer-placement",
+      "classification": "documented",
+      "reason": "turn/steer queues input for a later provider sample in the active regular turn.",
+      "native": true,
+      "evidenceRefs": []
+    },
+    {
+      "harness": "codex",
+      "capability": "terminal-race",
+      "classification": "unverified",
+      "reason": "Harness was not selected for this retained runtime probe.",
+      "native": false,
+      "evidenceRefs": []
+    },
+    {
+      "harness": "codex",
+      "capability": "two-message-burst-order",
+      "classification": "unverified",
+      "reason": "Harness was not selected for this retained runtime probe.",
+      "native": false,
+      "evidenceRefs": []
+    },
+    {
+      "harness": "opencode",
+      "capability": "busy-delivery-text",
+      "classification": "unverified",
+      "reason": "HTTP polling did not expose a deterministic text-stream injection gate separate from tool wait.",
+      "native": false,
+      "evidenceRefs": []
+    },
+    {
+      "harness": "opencode",
+      "capability": "busy-delivery-tool-wait",
+      "classification": "race-prone",
+      "reason": "Both ordinary prompt_async messages were accepted and durable while the deterministic tool barrier reported busy, then model-observed before the run became idle. This is not steer and remains terminal-race-prone.",
+      "native": false,
+      "evidenceRefs": [
+        "trace.jsonl"
+      ]
+    },
+    {
+      "harness": "opencode",
+      "capability": "compaction-persistence",
+      "classification": "documented",
+      "reason": "Compaction and continued prompting are documented; exact nonce retention is not probed.",
+      "native": true,
+      "evidenceRefs": []
+    },
+    {
+      "harness": "opencode",
+      "capability": "fixture-validity",
+      "classification": "empirically-verified",
+      "reason": "Fixture command completed exactly three durable sequential invocations (1,2,3).",
+      "native": false,
+      "evidenceRefs": [
+        "trace.jsonl"
+      ]
+    },
+    {
+      "harness": "opencode",
+      "capability": "harness-managed-follow-up",
+      "classification": "empirically-verified",
+      "reason": "Two follow-ups were submitted and persisted while the session was demonstrably busy, then released to the model in order within the same busy-to-idle lifecycle. No repeated idle wake was used.",
+      "native": false,
+      "evidenceRefs": [
+        "trace.jsonl"
+      ]
+    },
+    {
+      "harness": "opencode",
+      "capability": "idle-delivery-wake",
+      "classification": "empirically-verified",
+      "reason": "Idle prompt produced a valid three-call model-visible fixture.",
+      "native": true,
+      "evidenceRefs": [
+        "trace.jsonl"
+      ]
+    },
+    {
+      "harness": "opencode",
+      "capability": "model-visible-observation",
+      "classification": "empirically-verified",
+      "reason": "Assistant echoed all three result-only nonces available only through distinct fixture tool responses.",
+      "native": false,
+      "evidenceRefs": [
+        "trace.jsonl"
+      ]
+    },
+    {
+      "harness": "opencode",
+      "capability": "origin-model-visibility",
+      "classification": "unsupported",
+      "reason": "Stored part metadata is not lowered into model input at this pin.",
+      "native": false,
+      "evidenceRefs": []
+    },
+    {
+      "harness": "opencode",
+      "capability": "origin-transport-visibility",
+      "classification": "unsupported",
+      "reason": "Message IDs provide correlation, but OpenCode has no structured per-delivery sender-origin field.",
+      "native": false,
+      "evidenceRefs": []
+    },
+    {
+      "harness": "opencode",
+      "capability": "permission-wait-interaction",
+      "classification": "unverified",
+      "reason": "Wildcard deny plus one allowed custom tool prevented an unsafe approval request; permission-wait itself was not exercised.",
+      "native": false,
+      "evidenceRefs": []
+    },
+    {
+      "harness": "opencode",
+      "capability": "reconnect-resume-history-backfill",
+      "classification": "degraded-fallback",
+      "reason": "Busy-admitted rows survived an abrupt server restart in order, but the new process reported idle and did not automatically resume them; an explicit wake made both nonces model-visible in order.",
+      "native": true,
+      "evidenceRefs": [
+        "trace.jsonl"
+      ]
+    },
+    {
+      "harness": "opencode",
+      "capability": "reply-correlation",
+      "classification": "empirically-verified",
+      "reason": "Assistant parentID supplied a native edge to a client-supplied user message ID.",
+      "native": true,
+      "evidenceRefs": [
+        "trace.jsonl"
+      ]
+    },
+    {
+      "harness": "opencode",
+      "capability": "steer-placement",
+      "classification": "unsupported",
+      "reason": "OpenCode 1.18.15 has no server or SDK steer primitive.",
+      "native": false,
+      "evidenceRefs": []
+    },
+    {
+      "harness": "opencode",
+      "capability": "terminal-race",
+      "classification": "race-prone",
+      "reason": "The source-defined terminal snapshot race remains. 0/3 bounded attempts admitted in the post-completion busy window and none reproduced a retained-but-unscheduled row; absence of reproduction is not proof of safety.",
+      "native": false,
+      "evidenceRefs": [
+        "trace.jsonl",
+        "manifest.json#sourceReferences"
+      ]
+    },
+    {
+      "harness": "opencode",
+      "capability": "two-message-burst-order",
+      "classification": "empirically-verified",
+      "reason": "The two busy-admitted delivery nonces were emitted by assistant text in submission order during one runner lifecycle.",
+      "native": false,
+      "evidenceRefs": []
+    },
+    {
+      "harness": "pi",
+      "capability": "busy-delivery-text",
+      "classification": "unverified",
+      "reason": "Harness was not selected for this retained runtime probe.",
+      "native": false,
+      "evidenceRefs": []
+    },
+    {
+      "harness": "pi",
+      "capability": "busy-delivery-tool-wait",
+      "classification": "unverified",
+      "reason": "Harness was not selected for this retained runtime probe.",
+      "native": false,
+      "evidenceRefs": []
+    },
+    {
+      "harness": "pi",
+      "capability": "compaction-persistence",
+      "classification": "documented",
+      "reason": "Session context construction across compaction is documented; queued-message durability is not.",
+      "native": true,
+      "evidenceRefs": []
+    },
+    {
+      "harness": "pi",
+      "capability": "fixture-validity",
+      "classification": "unverified",
+      "reason": "Harness was not selected for this retained runtime probe.",
+      "native": false,
+      "evidenceRefs": []
+    },
+    {
+      "harness": "pi",
+      "capability": "harness-managed-follow-up",
+      "classification": "documented",
+      "reason": "Native follow_up queue is documented to run when the agent would otherwise stop.",
+      "native": true,
+      "evidenceRefs": []
+    },
+    {
+      "harness": "pi",
+      "capability": "idle-delivery-wake",
+      "classification": "unverified",
+      "reason": "Harness was not selected for this retained runtime probe.",
+      "native": false,
+      "evidenceRefs": []
+    },
+    {
+      "harness": "pi",
+      "capability": "model-visible-observation",
+      "classification": "unverified",
+      "reason": "Harness was not selected for this retained runtime probe.",
+      "native": false,
+      "evidenceRefs": []
+    },
+    {
+      "harness": "pi",
+      "capability": "origin-model-visibility",
+      "classification": "unsupported",
+      "reason": "InputSource/custom metadata is removed from model form unless encoded in content.",
+      "native": false,
+      "evidenceRefs": []
+    },
+    {
+      "harness": "pi",
+      "capability": "origin-transport-visibility",
+      "classification": "unsupported",
+      "reason": "InputSource is extension-facing and is not persisted as per-message sender origin.",
+      "native": false,
+      "evidenceRefs": []
+    },
+    {
+      "harness": "pi",
+      "capability": "permission-wait-interaction",
+      "classification": "unverified",
+      "reason": "Harness was not selected for this retained runtime probe.",
+      "native": false,
+      "evidenceRefs": []
+    },
+    {
+      "harness": "pi",
+      "capability": "reconnect-resume-history-backfill",
+      "classification": "unverified",
+      "reason": "Harness was not selected for this retained runtime probe.",
+      "native": false,
+      "evidenceRefs": []
+    },
+    {
+      "harness": "pi",
+      "capability": "reply-correlation",
+      "classification": "unverified",
+      "reason": "Harness was not selected for this retained runtime probe.",
+      "native": false,
+      "evidenceRefs": []
+    },
+    {
+      "harness": "pi",
+      "capability": "steer-placement",
+      "classification": "documented",
+      "reason": "Native steer queue is documented to drain before the next model call.",
+      "native": true,
+      "evidenceRefs": []
+    },
+    {
+      "harness": "pi",
+      "capability": "terminal-race",
+      "classification": "unverified",
+      "reason": "Harness was not selected for this retained runtime probe.",
+      "native": false,
+      "evidenceRefs": []
+    },
+    {
+      "harness": "pi",
+      "capability": "two-message-burst-order",
+      "classification": "unverified",
+      "reason": "Harness was not selected for this retained runtime probe.",
+      "native": false,
+      "evidenceRefs": []
+    }
+  ]
+}
