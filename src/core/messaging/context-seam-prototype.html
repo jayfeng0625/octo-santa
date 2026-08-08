@@ -1,0 +1,1147 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Prototype: Messaging and Delivery Gateway context seam</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #18201d;
+      --muted: #5e6964;
+      --paper: #f6f5f0;
+      --panel: #ffffff;
+      --line: #d9ddd8;
+      --accent: #176b55;
+      --accent-soft: #e5f2ed;
+      --danger: #9b332d;
+      --danger-soft: #faecea;
+      --warn: #835a0a;
+      --warn-soft: #fff4d7;
+      --shadow: 0 8px 24px rgba(25, 40, 34, 0.07);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      color: var(--ink);
+      background: var(--paper);
+      font: 16px/1.5 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    button { font: inherit; }
+
+    button:focus-visible,
+    [role="tab"]:focus-visible {
+      outline: 3px solid #79b8a5;
+      outline-offset: 2px;
+    }
+
+    .page {
+      width: min(1180px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 40px 0 64px;
+    }
+
+    header { max-width: 900px; }
+
+    .eyebrow {
+      margin: 0 0 8px;
+      color: var(--accent);
+      font-size: 0.78rem;
+      font-weight: 750;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+
+    h1, h2, h3 { line-height: 1.18; }
+    h1 { margin: 0 0 16px; font-size: clamp(2rem, 5vw, 3.6rem); letter-spacing: -0.035em; }
+    h2 { margin: 0 0 14px; font-size: 1.45rem; }
+    h3 { margin: 0 0 8px; font-size: 1.05rem; }
+    p { margin: 0 0 12px; }
+
+    .question {
+      padding: 18px 20px;
+      border-left: 4px solid var(--accent);
+      background: var(--panel);
+      box-shadow: var(--shadow);
+    }
+
+    .question strong { color: var(--accent); }
+
+    .assumption {
+      margin-top: 12px;
+      color: var(--muted);
+    }
+
+    .section { margin-top: 36px; }
+
+    .section-lead {
+      max-width: 820px;
+      color: var(--muted);
+    }
+
+    .shape-grid,
+    .state-grid,
+    .test-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    .shape-card,
+    .panel,
+    .test-card {
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: var(--panel);
+      box-shadow: var(--shadow);
+    }
+
+    .shape-card { padding: 18px; }
+    .shape-card.selected { border: 2px solid var(--accent); padding: 17px; }
+    .shape-card p { min-height: 72px; color: var(--muted); }
+
+    .shape-card button,
+    .actions button,
+    .step-button,
+    .reset-button {
+      min-height: 42px;
+      border: 1px solid var(--accent);
+      border-radius: 7px;
+      color: var(--accent);
+      background: white;
+      cursor: pointer;
+      font-weight: 700;
+    }
+
+    .shape-card button,
+    .reset-button { width: 100%; padding: 9px 12px; }
+    .shape-card button:hover,
+    .actions button:hover,
+    .step-button:hover,
+    .reset-button:hover { background: var(--accent-soft); }
+
+    .shape-card.selected button,
+    .actions button.primary {
+      color: white;
+      background: var(--accent);
+    }
+
+    .shape-card.selected button:hover,
+    .actions button.primary:hover { background: #105844; }
+
+    .callout {
+      display: flex;
+      gap: 12px;
+      align-items: flex-start;
+      margin: 18px 0 0;
+      padding: 14px 16px;
+      border: 1px solid #b9d8ce;
+      border-radius: 8px;
+      background: var(--accent-soft);
+    }
+
+    .callout strong { white-space: nowrap; }
+
+    .actions {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .actions button { padding: 9px 10px; }
+
+    .state-header {
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      align-items: end;
+      margin-bottom: 12px;
+    }
+
+    .state-header p { color: var(--muted); }
+    .state-header .reset-button { width: auto; min-width: 150px; }
+
+    .status {
+      margin-bottom: 14px;
+      padding: 13px 15px;
+      border-radius: 8px;
+      background: var(--accent-soft);
+      font-weight: 650;
+    }
+
+    .status.rejected { color: var(--danger); background: var(--danger-soft); }
+    .status.suppressed { color: var(--warn); background: var(--warn-soft); }
+
+    .panel { padding: 16px; min-width: 0; }
+    .panel.wide { grid-column: span 2; }
+    .panel.full { grid-column: 1 / -1; }
+
+    dl { margin: 0; }
+
+    .field {
+      display: grid;
+      grid-template-columns: minmax(115px, 0.42fr) 1fr;
+      gap: 10px;
+      padding: 7px 0;
+      border-top: 1px solid #edf0ed;
+    }
+
+    .field:first-child { border-top: 0; }
+    dt { color: var(--muted); font-size: 0.86rem; }
+    dd { margin: 0; overflow-wrap: anywhere; font-weight: 620; }
+
+    .records { margin: 0; padding: 0; list-style: none; }
+    .records li { padding: 9px 0; border-top: 1px solid #edf0ed; }
+    .records li:first-child { border-top: 0; padding-top: 0; }
+    .record-title { font-weight: 720; }
+    .record-meta { color: var(--muted); font-size: 0.88rem; }
+    .empty { color: var(--muted); font-style: italic; }
+
+    .tag {
+      display: inline-block;
+      margin-right: 5px;
+      padding: 2px 7px;
+      border-radius: 999px;
+      color: var(--accent);
+      background: var(--accent-soft);
+      font-size: 0.76rem;
+      font-weight: 750;
+    }
+
+    .tag.rejected { color: var(--danger); background: var(--danger-soft); }
+    .tag.warning { color: var(--warn); background: var(--warn-soft); }
+
+    .tabs {
+      display: flex;
+      gap: 4px;
+      overflow-x: auto;
+      border-bottom: 1px solid var(--line);
+    }
+
+    [role="tab"] {
+      padding: 11px 14px;
+      border: 0;
+      border-bottom: 3px solid transparent;
+      color: var(--muted);
+      background: transparent;
+      cursor: pointer;
+      white-space: nowrap;
+      font-weight: 700;
+    }
+
+    [role="tab"][aria-selected="true"] { color: var(--accent); border-bottom-color: var(--accent); }
+    [role="tabpanel"] { padding: 18px 0 0; }
+    [role="tabpanel"][hidden] { display: none; }
+
+    .walkthrough-copy { max-width: 760px; color: var(--muted); }
+
+    .steps {
+      display: grid;
+      gap: 10px;
+      max-width: 800px;
+      margin-top: 16px;
+    }
+
+    .step {
+      display: grid;
+      grid-template-columns: 34px 1fr;
+      gap: 10px;
+      align-items: start;
+    }
+
+    .step-number {
+      display: grid;
+      width: 30px;
+      height: 30px;
+      place-items: center;
+      border-radius: 50%;
+      color: var(--muted);
+      background: #e7e9e6;
+      font-weight: 750;
+    }
+
+    .step-button { width: 100%; padding: 9px 12px; text-align: left; }
+    .step-button:disabled { border-color: var(--line); color: #8d9691; background: #f0f1ef; cursor: not-allowed; }
+    .step.complete .step-number { color: white; background: var(--accent); }
+
+    .table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 9px; background: white; }
+    table { width: 100%; border-collapse: collapse; min-width: 850px; }
+    th, td { padding: 12px 13px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+    th { color: var(--muted); background: #f3f4f1; font-size: 0.82rem; letter-spacing: 0.03em; }
+    tbody tr:last-child td { border-bottom: 0; }
+    td:first-child { font-weight: 750; }
+    .preferred { background: #f1f8f5; }
+
+    .test-card { padding: 16px; }
+    .test-card p { color: var(--muted); }
+    .test-result { margin-top: 10px; font-weight: 720; }
+    .pass { color: var(--accent); }
+    .cost { color: var(--warn); }
+    .fail { color: var(--danger); }
+
+    .evidence {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px 30px;
+      margin: 0;
+      padding-left: 20px;
+      color: var(--muted);
+    }
+
+    footer {
+      margin-top: 40px;
+      padding-top: 18px;
+      border-top: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 0.88rem;
+    }
+
+    @media (max-width: 850px) {
+      .shape-grid, .state-grid, .test-grid { grid-template-columns: 1fr; }
+      .actions { grid-template-columns: repeat(2, 1fr); }
+      .panel.wide, .panel.full { grid-column: auto; }
+      .shape-card p { min-height: 0; }
+      .evidence { grid-template-columns: 1fr; }
+    }
+
+    @media (max-width: 520px) {
+      .page { width: min(100% - 20px, 1180px); padding-top: 24px; }
+      .actions { grid-template-columns: 1fr; }
+      .state-header { align-items: stretch; flex-direction: column; }
+      .state-header .reset-button { width: 100%; }
+      .field { grid-template-columns: 1fr; gap: 0; }
+      .callout { display: block; }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <header>
+      <p class="eyebrow">Throwaway logic prototype · no production contract</p>
+      <h1>Where should delivery stop being Messaging?</h1>
+      <div class="question">
+        <p><strong>Exact question:</strong> Which context shape best introduces authenticated, repository-scoped ingress, correlated harness submission, and separately model-visible delivery while preserving wrapper-mediated authority and legacy Messaging behavior?</p>
+        <p class="assumption"><strong>Autonomous assumption:</strong> Agent, Channel, Message, and their repositories remain legacy; the wrapper's authenticated context is authoritative, opaque routes are wrapper-resolved, NotificationPort remains best-effort, and submission never implies model observation.</p>
+      </div>
+    </header>
+
+    <section class="section" aria-labelledby="shape-heading">
+      <h2 id="shape-heading">Three shapes under the same pressure</h2>
+      <p class="section-lead">Select a shape, then use free play or a walkthrough. Every shape receives the same actions. What changes is ownership, coupling, and what survives when one side is removed.</p>
+      <div id="shape-picker" class="shape-grid"></div>
+      <div class="callout">
+        <strong>Provisional read</strong>
+        <span id="verdict">The sibling Delivery Gateway is preferred if it alone keeps both deletion tests clean while preserving every representative behavior.</span>
+      </div>
+    </section>
+
+    <section class="section" aria-labelledby="free-play-heading">
+      <h2 id="free-play-heading">Free play</h2>
+      <p class="section-lead">Try actions in any order. Inputs are fixed representative examples so differences come from the context shape, not from different test data.</p>
+      <div id="actions" class="actions"></div>
+    </section>
+
+    <section class="section" aria-labelledby="state-heading">
+      <div class="state-header">
+        <div>
+          <h2 id="state-heading">Current full state</h2>
+          <p>Re-rendered after every action. No field below is inferred from a raw event dump.</p>
+        </div>
+        <button id="reset" class="reset-button" type="button">Reset selected shape</button>
+      </div>
+      <div id="status" class="status" role="status" aria-live="polite"></div>
+      <div id="state" class="state-grid"></div>
+    </section>
+
+    <section class="section" aria-labelledby="walkthrough-heading">
+      <h2 id="walkthrough-heading">Guided walkthroughs</h2>
+      <p class="section-lead">Opening a tab resets the selected shape. Press each enabled step and watch the labeled state above.</p>
+      <div id="walkthrough-tabs" class="tabs" role="tablist" aria-label="Guided scenarios"></div>
+      <div id="walkthrough-panels"></div>
+    </section>
+
+    <section class="section" aria-labelledby="deletion-heading">
+      <h2 id="deletion-heading">Deletion tests</h2>
+      <p class="section-lead">A boundary is useful when either side can disappear without making the other incoherent. These results are generated from each shape's ownership map.</p>
+      <div id="deletion-tests" class="test-grid"></div>
+    </section>
+
+    <section class="section" aria-labelledby="matrix-heading">
+      <h2 id="matrix-heading">Explicit comparison matrix</h2>
+      <p class="section-lead">The representative suite includes authenticated human ingress, authenticated peer-agent send, reply correlation, wrong-repository rejection, duplicate ingress, harness submission, separate model-visible observation, legacy Channel delivery, and legacy DM delivery.</p>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th scope="col">Shape</th>
+              <th scope="col">Representative flows</th>
+              <th scope="col">Depth</th>
+              <th scope="col">Locality</th>
+              <th scope="col">Seam placement</th>
+              <th scope="col">Failure isolation</th>
+              <th scope="col">Migration / compatibility burden</th>
+              <th scope="col">Concept leakage</th>
+            </tr>
+          </thead>
+          <tbody id="comparison-body"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="section" aria-labelledby="evidence-heading">
+      <h2 id="evidence-heading">Current-source evidence held constant</h2>
+      <ul class="evidence">
+        <li><strong>Legacy model:</strong> existing Agent, Channel, Message, and repository interfaces remain Messaging concepts.</li>
+        <li><strong>Best-effort push:</strong> NotificationPort emits transport notifications; persisted messages and poll reads remain authoritative.</li>
+        <li><strong>Identity gap:</strong> PID registration and connection binding prove process/session ownership, not an authenticated human or peer Principal.</li>
+        <li><strong>Missing lifecycle:</strong> current code has no repository scope, ingress idempotency key, reply correlation, harness-submission state, or model-visible observation state.</li>
+        <li><strong>Wrapper authority:</strong> the deterministic wrapper mediates external communication; the model does not select raw transport tools.</li>
+        <li><strong>Cross-process constraint:</strong> delivery cannot assume shared memory; this prototype evaluates domain ownership only, not a runtime transport.</li>
+      </ul>
+    </section>
+
+    <footer>Prototype artifact. In-memory examples only. No server, framework, persistence, schema, or production API is implied.</footer>
+  </main>
+
+  <script>
+    // Pure prototype model. This module has no DOM references; the page below is only a driver.
+    const ContextSeamPrototype = (() => {
+      const SHAPES = {
+        sibling: {
+          id: "sibling",
+          name: "Sibling Delivery Gateway + anti-corruption port",
+          summary: "Delivery owns authenticated ingress and observation. A narrow port translates only accepted delivery into legacy Messaging where compatibility requires it.",
+          trace: "Wrapper → Delivery Gateway → DeliverySubmissionPort → harness; legacy paths stay in Messaging",
+          owner: "Delivery Gateway owns Principal, RepositoryScope, opaque Route, Delivery, Correlation, Submission, and Observation",
+          legacyOwner: "Messaging continues to own Agent, Channel, Message, Channel delivery, and DM delivery",
+          matrix: {
+            depth: "Deep: one coherent delivery lifecycle behind a small port",
+            locality: "High: new rules change in Delivery Gateway",
+            seam: "At translation from accepted Delivery to legacy Message compatibility",
+            isolation: "High: delivery failures do not redefine Messaging",
+            migration: "Low: add sibling wiring; legacy storage and APIs remain",
+            leakage: "Low: legacy adapter sees a translated message, not Principal or repository scope"
+          },
+          deletion: {
+            external: ["pass", "Legacy Messaging, Channel, DM, persistence, polling, and NotificationPort remain coherent."],
+            legacy: ["pass", "Delivery Gateway still accepts, correlates, submits, and observes; only the optional compatibility adapter disappears."]
+          }
+        },
+        replacement: {
+          id: "replacement",
+          name: "Replace Messaging with Delivery Gateway",
+          summary: "One new context owns delivery and recreates Channel and DM behavior behind a compatibility facade for existing clients.",
+          trace: "Wrapper → replacement Delivery Gateway → compatibility facade → legacy-shaped clients",
+          owner: "Delivery Gateway owns both the new delivery lifecycle and emulated Agent, Channel, and Message behavior",
+          legacyOwner: "No independent legacy owner; compatibility behavior is recreated inside the replacement",
+          matrix: {
+            depth: "Mixed: new lifecycle is deep, compatibility facade broadens the surface",
+            locality: "Medium: delivery and legacy behavior move together",
+            seam: "Outside the whole replacement, after old APIs are emulated",
+            isolation: "Low: a gateway failure affects legacy messaging",
+            migration: "Very high: replace storage/service wiring and prove every old behavior",
+            leakage: "Medium: old Channel/DM language leaks into the gateway facade"
+          },
+          deletion: {
+            external: ["fail", "Removing external delivery removes the replacement that now owns legacy-compatible Messaging behavior."],
+            legacy: ["cost", "The old implementation can be deleted, but its concepts and compatibility obligations remain inside the replacement."]
+          }
+        },
+        enlarged: {
+          id: "enlarged",
+          name: "Enlarge Messaging",
+          summary: "Messaging directly gains principals, repository scoping, opaque routes, correlation, submission, and observation alongside Channels and DMs.",
+          trace: "Wrapper → enlarged MessagingService → legacy repositories + harness delivery concerns",
+          owner: "Messaging owns both legacy collaboration and every new delivery lifecycle concept",
+          legacyOwner: "Messaging still owns Agent, Channel, and Message, now coupled to external delivery concepts",
+          matrix: {
+            depth: "Shallow/broad: one service exposes unrelated lifecycles",
+            locality: "Low: external delivery changes touch legacy Messaging",
+            seam: "No internal seam; adapters meet one enlarged service",
+            isolation: "Low: repository or harness failures share the Messaging boundary",
+            migration: "Medium: fewer initial files, but existing service/repos accumulate conditionals",
+            leakage: "High: Principal, RepositoryScope, Route, Submission, and Observation enter Messaging"
+          },
+          deletion: {
+            external: ["cost", "Legacy behavior can be retained only by surgically removing delivery fields, branches, and harness dependencies from Messaging."],
+            legacy: ["cost", "External delivery can be retained only by carving it back out of Messaging; ownership is not independently removable."]
+          }
+        }
+      };
+
+      const ACTIONS = {
+        HUMAN_INGRESS: "Authenticated human ingress",
+        PEER_SEND: "Authenticated peer-agent send",
+        REPLY: "Correlate a reply",
+        WRONG_REPOSITORY: "Attempt wrong-repository ingress",
+        DUPLICATE: "Repeat an ingress key",
+        HARNESS_SUBMIT: "Submit accepted delivery to harness",
+        MODEL_OBSERVE: "Record separate model observation",
+        LEGACY_CHANNEL: "Deliver legacy Channel message",
+        LEGACY_DM: "Deliver legacy DM",
+        ILLEGAL_AUTHORITY: "Attempt payload sender override",
+        ILLEGAL_VISIBILITY: "Attempt submission-visible claim",
+        RUN_SUITE: "Run full representative suite"
+      };
+
+      const REPRESENTATIVE_FLOW = [
+        "HUMAN_INGRESS",
+        "PEER_SEND",
+        "REPLY",
+        "WRONG_REPOSITORY",
+        "DUPLICATE",
+        "HARNESS_SUBMIT",
+        "MODEL_OBSERVE",
+        "LEGACY_CHANNEL",
+        "LEGACY_DM"
+      ];
+
+      const WALKTHROUGHS = [
+        {
+          id: "happy",
+          name: "Happy path",
+          description: "Follow human ingress through a harness submission and a later model observation, then verify peer reply correlation and both legacy delivery modes. Watch that authenticated identity, route resolution, submission, and observation stay distinct.",
+          steps: ["HUMAN_INGRESS", "HARNESS_SUBMIT", "MODEL_OBSERVE", "PEER_SEND", "REPLY", "LEGACY_CHANNEL", "LEGACY_DM"]
+        },
+        {
+          id: "wrong-repository",
+          name: "Wrong repository",
+          description: "An authenticated peer belongs to another repository. The wrapper-resolved target is octo-santa, so the gateway rejects before submission. Authentication alone is not authorization for every repository.",
+          steps: ["WRONG_REPOSITORY", "HARNESS_SUBMIT"]
+        },
+        {
+          id: "duplicate",
+          name: "Duplicate ingress",
+          description: "Accept an ingress once, then repeat the same wrapper ingress key. The duplicate returns the original delivery and creates no second submission candidate.",
+          steps: ["HUMAN_INGRESS", "DUPLICATE", "HARNESS_SUBMIT", "MODEL_OBSERVE"]
+        },
+        {
+          id: "illegal-claims",
+          name: "Illegal authority / visibility",
+          description: "Payload data tries to choose a sender, then a submission tries to claim model visibility. Both are rejected: sender comes only from authenticated context, and only a later observation can make a delivery model-visible.",
+          steps: ["ILLEGAL_AUTHORITY", "HUMAN_INGRESS", "ILLEGAL_VISIBILITY", "HARNESS_SUBMIT", "MODEL_OBSERVE"]
+        }
+      ];
+
+      function initialState(shapeId = "sibling") {
+        const shape = SHAPES[shapeId] || SHAPES.sibling;
+        return {
+          shapeId: shape.id,
+          sequence: 0,
+          status: { kind: "ready", text: `Ready to explore: ${shape.name}.` },
+          authenticatedContext: null,
+          routeResolution: null,
+          acceptedDeliveries: [],
+          suppressedDuplicates: [],
+          correlations: [],
+          harnessSubmissions: [],
+          modelObservations: [],
+          rejectedAttempts: [],
+          legacy: {
+            agents: ["agent-reviewer", "agent-builder"],
+            channels: ["delivery-design"],
+            messages: []
+          },
+          architectureTrace: [],
+          history: []
+        };
+      }
+
+      function copy(state) {
+        return JSON.parse(JSON.stringify(state));
+      }
+
+      function nextId(state, prefix) {
+        state.sequence += 1;
+        return `${prefix}-${String(state.sequence).padStart(3, "0")}`;
+      }
+
+      function setContext(state, principal, repository, routeToken) {
+        state.authenticatedContext = {
+          principal,
+          repository,
+          source: "wrapper-authenticated context (not payload, PID, or Agent registration)"
+        };
+        state.routeResolution = {
+          token: routeToken,
+          resolvedBy: "wrapper",
+          endpointExposed: false
+        };
+      }
+
+      function traceFor(state, outcome) {
+        const shape = SHAPES[state.shapeId];
+        state.architectureTrace.push(`${shape.trace} · ${outcome}`);
+      }
+
+      function reject(state, reason, claim, actionName) {
+        const rejection = {
+          id: nextId(state, "reject"),
+          action: actionName,
+          claim,
+          reason
+        };
+        state.rejectedAttempts.push(rejection);
+        state.status = { kind: "rejected", text: `${actionName} rejected: ${reason}` };
+        traceFor(state, "rejected before harness submission");
+      }
+
+      function acceptDelivery(state, input) {
+        const existing = state.acceptedDeliveries.find((item) => item.ingressKey === input.ingressKey);
+        if (existing) {
+          state.suppressedDuplicates.push({
+            ingressKey: input.ingressKey,
+            originalDeliveryId: existing.id,
+            reason: "same repository-scoped wrapper ingress key"
+          });
+          state.status = {
+            kind: "suppressed",
+            text: `Duplicate suppressed. ${input.ingressKey} still names ${existing.id}; no second delivery was created.`
+          };
+          traceFor(state, "idempotency lookup returned original delivery");
+          return existing;
+        }
+
+        const delivery = {
+          id: nextId(state, "delivery"),
+          ingressKey: input.ingressKey,
+          repository: state.authenticatedContext.repository,
+          sender: state.authenticatedContext.principal,
+          senderDerivedFrom: "authenticated context",
+          routeToken: state.routeResolution.token,
+          kind: input.kind,
+          content: input.content,
+          replyTo: input.replyTo || null,
+          submitted: false,
+          modelVisible: false
+        };
+        state.acceptedDeliveries.push(delivery);
+        if (delivery.replyTo) {
+          state.correlations.push({
+            replyDeliveryId: delivery.id,
+            parentDeliveryId: delivery.replyTo,
+            correlationOwnedBy: "delivery lifecycle"
+          });
+        }
+        state.status = {
+          kind: "accepted",
+          text: `${delivery.id} accepted from ${delivery.sender}. It is not submitted and not model-visible.`
+        };
+        traceFor(state, "accepted into delivery lifecycle");
+        return delivery;
+      }
+
+      function appendHistory(state, actionType) {
+        state.history.push({
+          step: state.history.length + 1,
+          action: ACTIONS[actionType],
+          result: state.status.text
+        });
+      }
+
+      function transition(previous, actionType) {
+        if (actionType === "RUN_SUITE") {
+          return REPRESENTATIVE_FLOW.reduce((state, action) => transition(state, action), initialState(previous.shapeId));
+        }
+
+        const state = copy(previous);
+        switch (actionType) {
+          case "HUMAN_INGRESS": {
+            setContext(state, "human:jay", "repo:octo-santa", "route:inbox:7f3a");
+            acceptDelivery(state, {
+              ingressKey: "repo:octo-santa/human-request-101",
+              kind: "human ingress",
+              content: "Please evaluate the Messaging and Delivery Gateway seam."
+            });
+            break;
+          }
+          case "PEER_SEND": {
+            setContext(state, "agent:reviewer", "repo:octo-santa", "route:peer:2c91");
+            acceptDelivery(state, {
+              ingressKey: "repo:octo-santa/peer-send-202",
+              kind: "peer-agent send",
+              content: "I found that submission and observation need separate facts."
+            });
+            break;
+          }
+          case "REPLY": {
+            const parent = state.acceptedDeliveries[0];
+            if (!parent) {
+              reject(state, "there is no accepted delivery to reply to", "reply correlation", ACTIONS[actionType]);
+              break;
+            }
+            setContext(state, "agent:builder", "repo:octo-santa", "route:reply:a182");
+            acceptDelivery(state, {
+              ingressKey: "repo:octo-santa/reply-303",
+              kind: "correlated reply",
+              content: "Acknowledged; preserving wrapper authority.",
+              replyTo: parent.id
+            });
+            break;
+          }
+          case "WRONG_REPOSITORY": {
+            setContext(state, "agent:foreign-reviewer", "repo:other-project", "route:repo-target:331e");
+            reject(
+              state,
+              "authenticated repository repo:other-project cannot use a route resolved for repo:octo-santa",
+              "repository scope repo:octo-santa",
+              ACTIONS[actionType]
+            );
+            break;
+          }
+          case "DUPLICATE": {
+            setContext(state, "human:jay", "repo:octo-santa", "route:inbox:7f3a");
+            acceptDelivery(state, {
+              ingressKey: "repo:octo-santa/human-request-101",
+              kind: "human ingress",
+              content: "Please evaluate the Messaging and Delivery Gateway seam."
+            });
+            break;
+          }
+          case "HARNESS_SUBMIT": {
+            const delivery = state.acceptedDeliveries.find((item) => !item.submitted);
+            if (!delivery) {
+              reject(state, "there is no accepted, unsubmitted delivery", "harness submission", ACTIONS[actionType]);
+              break;
+            }
+            delivery.submitted = true;
+            state.harnessSubmissions.push({
+              id: nextId(state, "submission"),
+              deliveryId: delivery.id,
+              routeToken: delivery.routeToken,
+              acceptedByHarness: true,
+              impliesObservation: false
+            });
+            state.status = {
+              kind: "accepted",
+              text: `${delivery.id} was accepted by the harness. It remains not model-visible until a separate observation.`
+            };
+            traceFor(state, "submitted through opaque route; observation unchanged");
+            break;
+          }
+          case "MODEL_OBSERVE": {
+            const submission = state.harnessSubmissions.find(
+              (item) => !state.modelObservations.some((observation) => observation.submissionId === item.id)
+            );
+            if (!submission) {
+              reject(state, "there is no submitted delivery awaiting observation", "model visibility", ACTIONS[actionType]);
+              break;
+            }
+            const delivery = state.acceptedDeliveries.find((item) => item.id === submission.deliveryId);
+            delivery.modelVisible = true;
+            state.modelObservations.push({
+              id: nextId(state, "observation"),
+              submissionId: submission.id,
+              deliveryId: delivery.id,
+              observedBy: "model:active-turn",
+              evidence: "separate wrapper observation event"
+            });
+            state.status = {
+              kind: "accepted",
+              text: `${delivery.id} is now model-visible because observation was recorded separately from submission.`
+            };
+            traceFor(state, "observation recorded as an independent lifecycle fact");
+            break;
+          }
+          case "LEGACY_CHANNEL": {
+            state.legacy.messages.push({
+              id: nextId(state, "message"),
+              mode: "Channel",
+              channel: "delivery-design",
+              senderAgent: "agent-reviewer",
+              content: "Legacy channel delivery still uses Agent, Channel, and Message.",
+              deliveredBy: state.shapeId === "sibling" ? "legacy Messaging" : "compatibility behavior inside the chosen shape"
+            });
+            state.status = { kind: "accepted", text: "Legacy Channel message delivered with existing Agent/Channel/Message semantics." };
+            traceFor(state, "legacy Channel behavior preserved");
+            break;
+          }
+          case "LEGACY_DM": {
+            state.legacy.messages.push({
+              id: nextId(state, "message"),
+              mode: "DM",
+              channel: "dm:agent-builder:agent-reviewer",
+              senderAgent: "agent-builder",
+              content: "Legacy DM delivery remains private to its two agents.",
+              deliveredBy: state.shapeId === "sibling" ? "legacy Messaging" : "compatibility behavior inside the chosen shape"
+            });
+            state.status = { kind: "accepted", text: "Legacy DM delivered without treating PID registration as a Principal." };
+            traceFor(state, "legacy DM behavior preserved");
+            break;
+          }
+          case "ILLEGAL_AUTHORITY": {
+            setContext(state, "human:jay", "repo:octo-santa", "route:inbox:7f3a");
+            reject(
+              state,
+              "payload sender agent:admin conflicts with authenticated Principal human:jay; payload cannot grant authority",
+              "sender=agent:admin",
+              ACTIONS[actionType]
+            );
+            break;
+          }
+          case "ILLEGAL_VISIBILITY": {
+            reject(
+              state,
+              "submission cannot assert modelVisible=true; only a separate observation can establish visibility",
+              "modelVisible=true on submission",
+              ACTIONS[actionType]
+            );
+            break;
+          }
+          default:
+            state.status = { kind: "rejected", text: `Unknown prototype action: ${actionType}` };
+        }
+
+        appendHistory(state, actionType);
+        return state;
+      }
+
+      function evaluate(shapeId) {
+        const state = transition(initialState(shapeId), "RUN_SUITE");
+        const checks = {
+          "human ingress": state.acceptedDeliveries.some((item) => item.kind === "human ingress" && item.sender === "human:jay"),
+          "peer-agent send": state.acceptedDeliveries.some((item) => item.kind === "peer-agent send" && item.sender === "agent:reviewer"),
+          "reply correlation": state.correlations.length === 1,
+          "wrong-repository rejection": state.rejectedAttempts.some((item) => item.action === ACTIONS.WRONG_REPOSITORY),
+          "duplicate ingress": state.suppressedDuplicates.length === 1,
+          "harness submission": state.harnessSubmissions.length === 1 && state.harnessSubmissions[0].impliesObservation === false,
+          "separate model observation": state.modelObservations.length === 1,
+          "legacy Channel": state.legacy.messages.some((item) => item.mode === "Channel"),
+          "legacy DM": state.legacy.messages.some((item) => item.mode === "DM")
+        };
+        return {
+          state,
+          checks,
+          passed: Object.values(checks).filter(Boolean).length,
+          total: Object.keys(checks).length
+        };
+      }
+
+      function recommendation() {
+        const sibling = SHAPES.sibling;
+        const siblingEvaluation = evaluate("sibling");
+        const allFlowsPass = siblingEvaluation.passed === siblingEvaluation.total;
+        const bothDeletionTestsPass = sibling.deletion.external[0] === "pass" && sibling.deletion.legacy[0] === "pass";
+        return allFlowsPass && bothDeletionTestsPass
+          ? "Observed behavior supports the sibling Delivery Gateway: it passes all representative flows, keeps both deletion tests clean, and prevents delivery concepts from leaking into legacy Messaging."
+          : "The sibling recommendation is not yet supported; inspect failed representative flows or deletion tests."
+      }
+
+      return {
+        SHAPES,
+        ACTIONS,
+        WALKTHROUGHS,
+        REPRESENTATIVE_FLOW,
+        initialState,
+        transition,
+        evaluate,
+        recommendation
+      };
+    })();
+
+    // Thin prototype driver. All decisions and transitions above remain DOM-free.
+    (() => {
+      const model = ContextSeamPrototype;
+      let state = model.initialState("sibling");
+      let activeWalkthrough = model.WALKTHROUGHS[0].id;
+      const walkthroughProgress = Object.fromEntries(model.WALKTHROUGHS.map((item) => [item.id, 0]));
+
+      const byId = (id) => document.getElementById(id);
+      const escapeHtml = (value) => String(value)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+
+      function field(label, value) {
+        return `<div class="field"><dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value)}</dd></div>`;
+      }
+
+      function recordList(items, renderItem, emptyText) {
+        if (!items.length) return `<p class="empty">${escapeHtml(emptyText)}</p>`;
+        return `<ul class="records">${items.map(renderItem).join("")}</ul>`;
+      }
+
+      function renderShapes() {
+        byId("shape-picker").innerHTML = Object.values(model.SHAPES).map((shape) => `
+          <article class="shape-card ${state.shapeId === shape.id ? "selected" : ""}">
+            <h3>${escapeHtml(shape.name)}</h3>
+            <p>${escapeHtml(shape.summary)}</p>
+            <button type="button" data-shape="${shape.id}">${state.shapeId === shape.id ? "Selected · run full flow" : "Select and run full flow"}</button>
+          </article>
+        `).join("");
+        byId("verdict").textContent = model.recommendation();
+      }
+
+      function renderActions() {
+        const ordered = [
+          "HUMAN_INGRESS", "PEER_SEND", "REPLY", "WRONG_REPOSITORY", "DUPLICATE",
+          "HARNESS_SUBMIT", "MODEL_OBSERVE", "LEGACY_CHANNEL", "LEGACY_DM",
+          "ILLEGAL_AUTHORITY", "ILLEGAL_VISIBILITY", "RUN_SUITE"
+        ];
+        byId("actions").innerHTML = ordered.map((action) => `
+          <button type="button" class="${action === "RUN_SUITE" ? "primary" : ""}" data-action="${action}">${escapeHtml(model.ACTIONS[action])}</button>
+        `).join("");
+      }
+
+      function renderState() {
+        const shape = model.SHAPES[state.shapeId];
+        const context = state.authenticatedContext;
+        const route = state.routeResolution;
+        const status = byId("status");
+        status.className = `status ${state.status.kind === "rejected" ? "rejected" : state.status.kind === "suppressed" ? "suppressed" : ""}`;
+        status.textContent = state.status.text;
+
+        const deliveries = recordList(state.acceptedDeliveries, (item) => `
+          <li>
+            <div class="record-title"><span class="tag">${escapeHtml(item.kind)}</span>${escapeHtml(item.id)} · ${escapeHtml(item.sender)}</div>
+            <div>${escapeHtml(item.content)}</div>
+            <div class="record-meta">Repository ${escapeHtml(item.repository)} · key ${escapeHtml(item.ingressKey)} · opaque ${escapeHtml(item.routeToken)} · reply to ${escapeHtml(item.replyTo || "none")} · submitted ${item.submitted ? "yes" : "no"} · model-visible ${item.modelVisible ? "yes" : "no"}</div>
+          </li>
+        `, "No accepted deliveries.");
+
+        const submissions = recordList(state.harnessSubmissions, (item) => `
+          <li>
+            <div class="record-title">${escapeHtml(item.id)} for ${escapeHtml(item.deliveryId)}</div>
+            <div class="record-meta">Harness accepted: ${item.acceptedByHarness ? "yes" : "no"} · implies observation: ${item.impliesObservation ? "yes" : "no"} · route remains ${escapeHtml(item.routeToken)}</div>
+          </li>
+        `, "Nothing submitted to the harness.");
+
+        const observations = recordList(state.modelObservations, (item) => `
+          <li>
+            <div class="record-title">${escapeHtml(item.id)} · ${escapeHtml(item.deliveryId)}</div>
+            <div class="record-meta">Observed by ${escapeHtml(item.observedBy)} · evidence: ${escapeHtml(item.evidence)} · after ${escapeHtml(item.submissionId)}</div>
+          </li>
+        `, "No model-visible observation recorded.");
+
+        const legacyMessages = recordList(state.legacy.messages, (item) => `
+          <li>
+            <div class="record-title"><span class="tag">Legacy ${escapeHtml(item.mode)}</span>${escapeHtml(item.id)} · ${escapeHtml(item.channel)}</div>
+            <div>${escapeHtml(item.content)}</div>
+            <div class="record-meta">Agent sender ${escapeHtml(item.senderAgent)} · delivered by ${escapeHtml(item.deliveredBy)}</div>
+          </li>
+        `, "No legacy Channel or DM delivery run yet.");
+
+        const rejections = recordList(state.rejectedAttempts, (item) => `
+          <li>
+            <div class="record-title"><span class="tag rejected">Rejected</span>${escapeHtml(item.action)}</div>
+            <div>${escapeHtml(item.reason)}</div>
+            <div class="record-meta">Attempted claim: ${escapeHtml(item.claim)}</div>
+          </li>
+        `, "No rejected authority, repository, visibility, or lifecycle attempt.");
+
+        const duplicates = recordList(state.suppressedDuplicates, (item) => `
+          <li>
+            <div class="record-title"><span class="tag warning">Suppressed</span>${escapeHtml(item.ingressKey)}</div>
+            <div class="record-meta">Original: ${escapeHtml(item.originalDeliveryId)} · ${escapeHtml(item.reason)}</div>
+          </li>
+        `, "No duplicate ingress observed.");
+
+        const history = recordList(state.history, (item) => `
+          <li>
+            <div class="record-title">${item.step}. ${escapeHtml(item.action)}</div>
+            <div class="record-meta">${escapeHtml(item.result)}</div>
+          </li>
+        `, "No actions taken.");
+
+        byId("state").innerHTML = `
+          <section class="panel" aria-labelledby="architecture-state">
+            <h3 id="architecture-state">Selected context shape</h3>
+            <dl>
+              ${field("Shape", shape.name)}
+              ${field("New concepts owned by", shape.owner)}
+              ${field("Legacy owner", shape.legacyOwner)}
+              ${field("Latest boundary trace", state.architectureTrace.at(-1) || "No flow run yet")}
+            </dl>
+          </section>
+          <section class="panel" aria-labelledby="authority-state">
+            <h3 id="authority-state">Authority and route</h3>
+            <dl>
+              ${field("Authenticated Principal", context ? context.principal : "none")}
+              ${field("Repository scope", context ? context.repository : "none")}
+              ${field("Authority source", context ? context.source : "none")}
+              ${field("Opaque route token", route ? route.token : "none")}
+              ${field("Resolved by", route ? route.resolvedBy : "none")}
+              ${field("Endpoint exposed", route ? (route.endpointExposed ? "yes" : "no") : "none")}
+            </dl>
+          </section>
+          <section class="panel" aria-labelledby="legacy-state">
+            <h3 id="legacy-state">Legacy Messaging inventory</h3>
+            <dl>
+              ${field("Agents", state.legacy.agents.join(", "))}
+              ${field("Channels", state.legacy.channels.join(", "))}
+              ${field("Messages delivered", state.legacy.messages.length)}
+              ${field("PID means", "process registration/liveness, never authenticated Principal")}
+              ${field("Push means", "best-effort NotificationPort signal, never authoritative storage")}
+            </dl>
+          </section>
+          <section class="panel full" aria-labelledby="deliveries-state">
+            <h3 id="deliveries-state">Accepted deliveries (${state.acceptedDeliveries.length})</h3>
+            ${deliveries}
+          </section>
+          <section class="panel" aria-labelledby="submissions-state">
+            <h3 id="submissions-state">Harness submissions (${state.harnessSubmissions.length})</h3>
+            ${submissions}
+          </section>
+          <section class="panel" aria-labelledby="observations-state">
+            <h3 id="observations-state">Model-visible observations (${state.modelObservations.length})</h3>
+            ${observations}
+          </section>
+          <section class="panel" aria-labelledby="correlations-state">
+            <h3 id="correlations-state">Reply correlations (${state.correlations.length})</h3>
+            ${recordList(state.correlations, (item) => `<li><div class="record-title">${escapeHtml(item.replyDeliveryId)} replies to ${escapeHtml(item.parentDeliveryId)}</div><div class="record-meta">Owned by ${escapeHtml(item.correlationOwnedBy)}</div></li>`, "No correlated reply.")}
+          </section>
+          <section class="panel wide" aria-labelledby="rejections-state">
+            <h3 id="rejections-state">Rejected attempts (${state.rejectedAttempts.length})</h3>
+            ${rejections}
+          </section>
+          <section class="panel" aria-labelledby="duplicates-state">
+            <h3 id="duplicates-state">Duplicate ingress (${state.suppressedDuplicates.length})</h3>
+            ${duplicates}
+          </section>
+          <section class="panel wide" aria-labelledby="legacy-delivery-state">
+            <h3 id="legacy-delivery-state">Legacy Channel and DM delivery (${state.legacy.messages.length})</h3>
+            ${legacyMessages}
+          </section>
+          <section class="panel full" aria-labelledby="history-state">
+            <h3 id="history-state">Action history (${state.history.length})</h3>
+            ${history}
+          </section>
+        `;
+      }
+
+      function renderWalkthroughs() {
+        byId("walkthrough-tabs").innerHTML = model.WALKTHROUGHS.map((walkthrough, index) => `
+          <button id="tab-${walkthrough.id}" type="button" role="tab" aria-selected="${walkthrough.id === activeWalkthrough}" aria-controls="panel-${walkthrough.id}" tabindex="${walkthrough.id === activeWalkthrough ? "0" : "-1"}" data-walkthrough="${walkthrough.id}">${escapeHtml(walkthrough.name)}</button>
+        `).join("");
+
+        byId("walkthrough-panels").innerHTML = model.WALKTHROUGHS.map((walkthrough, index) => {
+          const progress = walkthroughProgress[walkthrough.id];
+          return `
+            <section id="panel-${walkthrough.id}" role="tabpanel" aria-labelledby="tab-${walkthrough.id}" ${walkthrough.id === activeWalkthrough ? "" : "hidden"}>
+              <p class="walkthrough-copy">${escapeHtml(walkthrough.description)}</p>
+              <div class="steps">
+                ${walkthrough.steps.map((action, stepIndex) => `
+                  <div class="step ${stepIndex < progress ? "complete" : ""}">
+                    <span class="step-number" aria-hidden="true">${stepIndex + 1}</span>
+                    <button type="button" class="step-button" data-step-action="${action}" data-step-index="${stepIndex}" ${stepIndex === progress ? "" : "disabled"}>${escapeHtml(model.ACTIONS[action])}</button>
+                  </div>
+                `).join("")}
+              </div>
+            </section>
+          `;
+        }).join("");
+      }
+
+      function renderDeletionTests() {
+        byId("deletion-tests").innerHTML = Object.values(model.SHAPES).map((shape) => {
+          const external = shape.deletion.external;
+          const legacy = shape.deletion.legacy;
+          return `
+            <article class="test-card">
+              <h3>${escapeHtml(shape.name)}</h3>
+              <p><strong>Remove external delivery</strong><br>${escapeHtml(external[1])}</p>
+              <div class="test-result ${external[0]}">${external[0] === "pass" ? "Independent: pass" : external[0] === "cost" ? "Possible with surgery" : "Not independently removable"}</div>
+              <p style="margin-top: 16px"><strong>Remove legacy Messaging</strong><br>${escapeHtml(legacy[1])}</p>
+              <div class="test-result ${legacy[0]}">${legacy[0] === "pass" ? "Independent: pass" : legacy[0] === "cost" ? "Possible with compatibility burden" : "Not independently removable"}</div>
+            </article>
+          `;
+        }).join("");
+      }
+
+      function renderComparison() {
+        byId("comparison-body").innerHTML = Object.values(model.SHAPES).map((shape) => {
+          const evaluation = model.evaluate(shape.id);
+          return `
+            <tr class="${shape.id === "sibling" ? "preferred" : ""}">
+              <td>${escapeHtml(shape.name)}${shape.id === "sibling" ? '<br><span class="tag">Preferred by observed evidence</span>' : ""}</td>
+              <td>${evaluation.passed}/${evaluation.total} behavior checks pass<br><span class="record-meta">Architectural cost differs even when compatibility reproduces behavior.</span></td>
+              <td>${escapeHtml(shape.matrix.depth)}</td>
+              <td>${escapeHtml(shape.matrix.locality)}</td>
+              <td>${escapeHtml(shape.matrix.seam)}</td>
+              <td>${escapeHtml(shape.matrix.isolation)}</td>
+              <td>${escapeHtml(shape.matrix.migration)}</td>
+              <td>${escapeHtml(shape.matrix.leakage)}</td>
+            </tr>
+          `;
+        }).join("");
+      }
+
+      function render() {
+        renderShapes();
+        renderState();
+        renderWalkthroughs();
+      }
+
+      function resetWalkthroughProgress() {
+        Object.keys(walkthroughProgress).forEach((key) => { walkthroughProgress[key] = 0; });
+      }
+
+      byId("shape-picker").addEventListener("click", (event) => {
+        const button = event.target.closest("[data-shape]");
+        if (!button) return;
+        state = model.transition(model.initialState(button.dataset.shape), "RUN_SUITE");
+        resetWalkthroughProgress();
+        render();
+        byId("state-heading").scrollIntoView({ behavior: "smooth", block: "start" });
+      });
+
+      byId("actions").addEventListener("click", (event) => {
+        const button = event.target.closest("[data-action]");
+        if (!button) return;
+        state = model.transition(state, button.dataset.action);
+        render();
+      });
+
+      byId("reset").addEventListener("click", () => {
+        state = model.initialState(state.shapeId);
+        resetWalkthroughProgress();
+        render();
+      });
+
+      byId("walkthrough-tabs").addEventListener("click", (event) => {
+        const tab = event.target.closest("[data-walkthrough]");
+        if (!tab) return;
+        activeWalkthrough = tab.dataset.walkthrough;
+        state = model.initialState(state.shapeId);
+        resetWalkthroughProgress();
+        render();
+      });
+
+      byId("walkthrough-tabs").addEventListener("keydown", (event) => {
+        if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+        const tabs = Array.from(byId("walkthrough-tabs").querySelectorAll('[role="tab"]'));
+        const current = tabs.findIndex((tab) => tab.getAttribute("aria-selected") === "true");
+        let next = current;
+        if (event.key === "ArrowRight") next = (current + 1) % tabs.length;
+        if (event.key === "ArrowLeft") next = (current - 1 + tabs.length) % tabs.length;
+        if (event.key === "Home") next = 0;
+        if (event.key === "End") next = tabs.length - 1;
+        event.preventDefault();
+        tabs[next].click();
+        byId(`tab-${activeWalkthrough}`).focus();
+      });
+
+      byId("walkthrough-panels").addEventListener("click", (event) => {
+        const button = event.target.closest("[data-step-action]");
+        if (!button || button.disabled) return;
+        const walkthrough = model.WALKTHROUGHS.find((item) => item.id === activeWalkthrough);
+        const expectedIndex = walkthroughProgress[activeWalkthrough];
+        if (Number(button.dataset.stepIndex) !== expectedIndex) return;
+        state = model.transition(state, button.dataset.stepAction);
+        walkthroughProgress[activeWalkthrough] += 1;
+        render();
+      });
+
+      renderActions();
+      renderDeletionTests();
+      renderComparison();
+      render();
+    })();
+  </script>
+</body>
+</html>
