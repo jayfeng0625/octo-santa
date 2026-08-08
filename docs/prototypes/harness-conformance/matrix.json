@@ -302,7 +302,7 @@
       "harness": "opencode",
       "capability": "harness-managed-follow-up",
       "classification": "empirically-verified",
-      "reason": "Two follow-ups were submitted and persisted while the session was demonstrably busy, then released to the model in order within the same busy-to-idle lifecycle. No repeated idle wake was used.",
+      "reason": "A prototype-only wrapper accepted two Deliveries while OpenCode was busy without submitting them, observed authoritative idle, then released one at a time in admission order; each release was HTTP-accepted, model-observed, and completed to idle before the next.",
       "native": false,
       "evidenceRefs": [
         "trace.jsonl"
@@ -397,7 +397,9 @@
       "classification": "empirically-verified",
       "reason": "The two busy-admitted delivery nonces were emitted by assistant text in submission order during one runner lifecycle.",
       "native": false,
-      "evidenceRefs": []
+      "evidenceRefs": [
+        "trace.jsonl"
+      ]
     },
     {
       "harness": "pi",

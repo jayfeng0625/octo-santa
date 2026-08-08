@@ -366,7 +366,7 @@ class Evidence {
       "",
       "| Capability | Classification | Interpretation |",
       "| --- | --- | --- |",
-      ...(["harness-managed-follow-up", "two-message-burst-order", "terminal-race", "reconnect-resume-history-backfill"] as Capability[]).map((capability) => {
+      ...(["busy-delivery-tool-wait", "harness-managed-follow-up", "two-message-burst-order", "terminal-race", "reconnect-resume-history-backfill"] as Capability[]).map((capability) => {
         const result = row(capability);
         return `| ${capability} | ${result.classification} | ${result.reason.replaceAll("|", "\\|")} |`;
       }),
@@ -1344,16 +1344,18 @@ async function probeOpenCode(evidence: Evidence, options: PrototypeOptions): Pro
     }
     throw new Error("OpenCode session did not become idle");
   };
-  const waitBusyThenIdle = async (sessionId: string, timeoutMs = PROCESS_TIMEOUT_MS): Promise<void> => {
+  const waitBusy = async (sessionId: string, timeoutMs = 30_000): Promise<void> => {
     const started = Date.now();
-    while (Date.now() - started < Math.min(timeoutMs, 30_000)) {
-      if (await statusType(sessionId) === "busy") {
-        await waitIdle(sessionId, timeoutMs - (Date.now() - started));
-        return;
-      }
+    while (Date.now() - started < timeoutMs) {
+      if (await statusType(sessionId) === "busy") return;
       await sleep(25);
     }
     throw new Error("OpenCode async prompt did not enter busy state");
+  };
+  const waitBusyThenIdle = async (sessionId: string, timeoutMs = PROCESS_TIMEOUT_MS): Promise<void> => {
+    const started = Date.now();
+    await waitBusy(sessionId, Math.min(timeoutMs, 30_000));
+    await waitIdle(sessionId, timeoutMs - (Date.now() - started));
   };
   const messages = async (sessionId: string) => (await http("GET", `/session/${sessionId}/message?limit=200`)).data as any[];
   const statusType = async (sessionId: string): Promise<string> => {
@@ -1396,21 +1398,15 @@ async function probeOpenCode(evidence: Evidence, options: PrototypeOptions): Pro
       busyMessageIds.set(nonce, busyMessageId);
       const busyAtSubmission = await statusType(sessionId) === "busy";
       evidence.trace(harness, "busy-delivery-tool-wait", nonce, "submitted", `ordinary prompt_async at deterministic fixture tool barrier; status=${busyAtSubmission ? "busy" : "not-busy"}; not called steer`);
-      evidence.trace(harness, "harness-managed-follow-up", nonce, "submitted", `follow-up admitted without waiting for idle; status=${busyAtSubmission ? "busy" : "not-busy"}`);
       const accepted = await http("POST", `/session/${sessionId}/prompt_async`, { messageID: busyMessageId, parts: [{ type: "text", text: controlMessage(nonce, "ordinary-busy-tool-wait") }], tools: { scratch_fixture: true } });
       allAcceptedWhileBusy &&= busyAtSubmission && accepted.status === 204;
       evidence.trace(harness, "busy-delivery-tool-wait", nonce, accepted.status === 204 ? "accepted" : "failed", `HTTP ${accepted.status}; acknowledgement alone proves no later checkpoint`);
-      evidence.trace(harness, "harness-managed-follow-up", nonce, accepted.status === 204 ? "accepted" : "failed", `HTTP ${accepted.status}; receipt separated from durability and observation`);
     }
     const durableWhileBusy = await waitForDurableUserRowsWhileBusy(sessionId, [...busyMessageIds.values()]);
     if (durableWhileBusy) {
-      for (const nonce of busyNonces) {
-        evidence.trace(harness, "busy-delivery-tool-wait", nonce, "durable", "message GET returned exact client-supplied user id while session status remained busy");
-        evidence.trace(harness, "harness-managed-follow-up", nonce, "durable", "busy-admitted user row remained queryable before the runner became idle");
-      }
+      for (const nonce of busyNonces) evidence.trace(harness, "busy-delivery-tool-wait", nonce, "durable", "message GET returned exact client-supplied user id while session status remained busy");
     }
     await waitIdle(sessionId);
-    for (const nonce of busyNonces) evidence.trace(harness, "harness-managed-follow-up", nonce, "completed", "the runner reached its idle boundary after the busy-admitted burst");
     let history = await messages(sessionId);
     const transcript = assistantText(harness, history);
     const fixtureProof = applyFixtureAssessment(evidence, harness, fixtureTrace, runId, transcript);
@@ -1420,13 +1416,74 @@ async function probeOpenCode(evidence: Evidence, options: PrototypeOptions): Pro
     const busyVerified = allAcceptedWhileBusy && durableWhileBusy && busyObserved;
     evidence.set(harness, "busy-delivery-tool-wait", busyVerified ? "race-prone" : "unverified", busyVerified ? "Both ordinary prompt_async messages were accepted and durable while the deterministic tool barrier reported busy, then model-observed before the run became idle. This is not steer and remains terminal-race-prone." : "The probe did not prove busy admission, pre-idle durability, and model observation for both messages.");
     evidence.set(harness, "two-message-burst-order", ordered ? "empirically-verified" : "unverified", ordered ? "The two busy-admitted delivery nonces were emitted by assistant text in submission order during one runner lifecycle." : "Both model-visible nonce echoes were not captured in submission order.");
+    if (ordered) {
+      evidence.trace(harness, "two-message-burst-order", busyNonces[0]!, "observed", "direct-busy burst nonce appeared first in assistant transcript");
+      evidence.trace(harness, "two-message-burst-order", busyNonces[1]!, "observed", "direct-busy burst nonce appeared second in assistant transcript");
+    }
     const nativeParent = history.some((entry) => entry?.info?.role === "assistant" && [initialMessageId, ...busyMessageIds.values()].includes(entry.info.parentID));
     evidence.set(harness, "reply-correlation", nativeParent ? "empirically-verified" : "unverified", nativeParent ? "Assistant parentID supplied a native edge to a client-supplied user message ID." : "No assistant parentID edge to a probe delivery was captured.", true);
     if (nativeParent) evidence.trace(harness, "reply-correlation", runId, "replied", "assistant parentID matched a client-supplied user message ID");
-    if (busyObserved) for (const nonce of busyNonces) evidence.trace(harness, "harness-managed-follow-up", nonce, "observed", "post-idle history contained an assistant echo attributable to the just-completed runner lifecycle");
-    evidence.set(harness, "harness-managed-follow-up", busyVerified && ordered ? "empirically-verified" : "unverified", busyVerified && ordered ? "Two follow-ups were submitted and persisted while the session was demonstrably busy, then released to the model in order within the same busy-to-idle lifecycle. No repeated idle wake was used." : "Busy admission, retention, ordered model release, or the single-lifecycle boundary was not proven.");
     evidence.set(harness, "permission-wait-interaction", "unverified", "Wildcard deny plus one allowed custom tool prevented an unsafe approval request; permission-wait itself was not exercised.");
     evidence.set(harness, "busy-delivery-text", "unverified", "HTTP polling did not expose a deterministic text-stream injection gate separate from tool wait.");
+
+    await server.stop();
+    const queueRunId = "opencode-wrapper-queue";
+    const queueTrace = join(root, "wrapper-queue-fixture-trace.jsonl");
+    writeOpenCodeFiles(root, queueTrace, queueRunId);
+    server = await startOpenCodeServer(evidence, root, env);
+    const queueSession = await http("POST", "/session", { title: "DISPOSABLE wrapper follow-up queue" });
+    const queueSessionId = queueSession.data?.id;
+    if (!queueSessionId) throw new Error("wrapper queue session create failed");
+    const queueInitialId = messageId();
+    const queueInitial = await http("POST", `/session/${queueSessionId}/prompt_async`, { messageID: queueInitialId, parts: [{ type: "text", text: fixturePrompt(queueRunId) }], tools: { scratch_fixture: true } });
+    if (queueInitial.status !== 204) throw new Error("wrapper queue fixture prompt rejected");
+    await waitForFixtureCheckpoint(queueTrace, queueRunId, 1, "scheduled");
+    const wrapperQueue = [`${queueRunId}-follow-1`, `${queueRunId}-follow-2`].map((nonce) => ({ nonce, messageId: messageId() }));
+    let wrapperAcceptedBusy = true;
+    for (const [index, delivery] of wrapperQueue.entries()) {
+      const busy = await statusType(queueSessionId) === "busy";
+      evidence.trace(harness, "harness-managed-follow-up", delivery.nonce, "submitted", `Delivery offered to prototype wrapper while OpenCode status=${busy ? "busy" : "not-busy"}`);
+      wrapperAcceptedBusy &&= busy;
+      evidence.trace(harness, "harness-managed-follow-up", delivery.nonce, busy ? "accepted" : "failed", `prototype-only in-memory queue position=${index + 1}; no OpenCode HTTP request was made; retention is not durable`);
+    }
+    await waitIdle(queueSessionId);
+    const queueFixture = fixtureValidity(queueTrace, queueRunId);
+    const beforeRelease = await messages(queueSessionId);
+    const withheld = wrapperQueue.every((delivery) => !beforeRelease.some((entry) => entry?.info?.id === delivery.messageId));
+    evidence.trace(harness, "harness-managed-follow-up", queueRunId, queueFixture.valid && withheld ? "completed" : "failed", `authoritative idle boundary observed after exact fixture 1,2,3; wrapper queue length=${wrapperQueue.length}; queued client ids absent from OpenCode history=${withheld}`);
+    let queueVerified = wrapperAcceptedBusy && queueFixture.valid && withheld;
+    for (const [index, delivery] of wrapperQueue.entries()) {
+      const idleBeforeRelease = await statusType(queueSessionId) === "idle";
+      queueVerified &&= idleBeforeRelease;
+      evidence.trace(harness, "harness-managed-follow-up", delivery.nonce, "scheduled", `wrapper dequeued position=${index + 1} only after authoritative idle; pre-submit status=${idleBeforeRelease ? "idle" : "not-idle"}`);
+      const released = await http("POST", `/session/${queueSessionId}/prompt_async`, { messageID: delivery.messageId, parts: [{ type: "text", text: controlMessage(delivery.nonce, "wrapper-release-after-idle") }], tools: { scratch_fixture: true } });
+      const accepted = released.status === 204;
+      queueVerified &&= accepted;
+      evidence.trace(harness, "harness-managed-follow-up", delivery.nonce, accepted ? "accepted" : "failed", `OpenCode HTTP ${released.status} after wrapper release; distinct from wrapper admission`);
+      await waitBusy(queueSessionId);
+      const observationStarted = Date.now();
+      let observed = false;
+      while (Date.now() - observationStarted < PROCESS_TIMEOUT_MS) {
+        const releaseHistory = await messages(queueSessionId);
+        if (assistantText(harness, releaseHistory).includes(delivery.nonce)) {
+          observed = true;
+          evidence.trace(harness, "harness-managed-follow-up", delivery.nonce, "observed", `assistant emitted nonce for sequential release position=${index + 1}; status=${await statusType(queueSessionId)}`);
+          break;
+        }
+        if (await statusType(queueSessionId) === "idle") break;
+        await sleep(25);
+      }
+      queueVerified &&= observed;
+      await waitIdle(queueSessionId);
+      evidence.trace(harness, "harness-managed-follow-up", delivery.nonce, "completed", `release position=${index + 1} reached authoritative idle before the next dequeue`);
+    }
+    const queueTranscript = assistantText(harness, await messages(queueSessionId));
+    const queueOrdered = wrapperQueue.every((delivery, index) => index === 0 || queueTranscript.indexOf(wrapperQueue[index - 1]!.nonce) < queueTranscript.lastIndexOf(delivery.nonce));
+    queueVerified &&= queueOrdered;
+    evidence.set(harness, "harness-managed-follow-up", queueVerified ? "empirically-verified" : "unverified", queueVerified
+      ? "A prototype-only wrapper accepted two Deliveries while OpenCode was busy without submitting them, observed authoritative idle, then released one at a time in admission order; each release was HTTP-accepted, model-observed, and completed to idle before the next."
+      : "The separate wrapper queue probe did not prove busy-time wrapper admission, withholding until idle, and sequential accepted/observed/completed release.");
+
     let terminalBusyAdmissions = 0;
     let terminalRaceReproductions = 0;
     for (let iteration = 1; iteration <= options.terminalRaceIterations; iteration++) {
