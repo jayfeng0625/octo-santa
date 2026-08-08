@@ -1,0 +1,983 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PROTOTYPE: Messaging and Delivery Gateway context seam</title>
+  <style>
+    :root {
+      --ink: #18221d;
+      --muted: #5d6a63;
+      --paper: #f7f5ef;
+      --panel: #fffef9;
+      --line: #d9ddd7;
+      --accent: #176b52;
+      --accent-soft: #e3f0e9;
+      --warn: #895a22;
+      --warn-soft: #f6ead8;
+      --danger: #8a3b35;
+      --danger-soft: #f6e5e2;
+      --shadow: 0 12px 30px rgba(24, 34, 29, 0.07);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      color: var(--ink);
+      background:
+        linear-gradient(90deg, rgba(23, 107, 82, 0.035) 1px, transparent 1px) 0 0 / 42px 42px,
+        var(--paper);
+      font-family: Georgia, "Times New Roman", serif;
+      line-height: 1.45;
+    }
+
+    button, select { font: inherit; }
+
+    button {
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      color: var(--ink);
+      background: var(--panel);
+      cursor: pointer;
+      padding: 0.7rem 0.9rem;
+      text-align: left;
+    }
+
+    button:hover:not(:disabled), button:focus-visible {
+      border-color: var(--accent);
+      outline: 2px solid transparent;
+      box-shadow: 0 0 0 3px var(--accent-soft);
+    }
+
+    button:disabled { cursor: not-allowed; opacity: 0.42; }
+
+    .page { width: min(1440px, calc(100% - 2rem)); margin: 0 auto 4rem; }
+
+    header {
+      padding: 2.5rem 0 1.3rem;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.45rem;
+      padding: 0.32rem 0.6rem;
+      border: 1px solid var(--danger);
+      border-radius: 999px;
+      color: var(--danger);
+      background: var(--danger-soft);
+      font: 700 0.72rem/1.2 system-ui, sans-serif;
+      letter-spacing: 0.09em;
+      text-transform: uppercase;
+    }
+
+    h1, h2, h3, h4, p { margin-top: 0; }
+    h1 { max-width: 900px; margin: 0.8rem 0 0.65rem; font-size: clamp(2rem, 5vw, 4.2rem); line-height: 0.98; letter-spacing: -0.04em; }
+    h2 { font-size: 1.5rem; letter-spacing: -0.02em; }
+    h3 { margin-bottom: 0.5rem; font-size: 1.05rem; }
+    h4 { margin-bottom: 0.35rem; font: 700 0.75rem/1.2 system-ui, sans-serif; letter-spacing: 0.06em; text-transform: uppercase; }
+
+    .question {
+      max-width: 980px;
+      margin: 0;
+      color: var(--muted);
+      font-size: clamp(1rem, 2vw, 1.25rem);
+    }
+
+    .question strong { color: var(--ink); }
+    .prototype-note { margin: 0.75rem 0 0; color: var(--danger); font: 600 0.78rem/1.4 system-ui, sans-serif; }
+
+    .section { padding: 1.6rem 0; border-bottom: 1px solid var(--line); }
+    .section-heading { display: flex; justify-content: space-between; align-items: end; gap: 1rem; margin-bottom: 1rem; }
+    .section-heading h2, .section-heading p { margin-bottom: 0; }
+    .section-heading p { max-width: 680px; color: var(--muted); }
+
+    .baseline-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.8rem; }
+    .baseline-card { padding: 0.85rem; border-top: 3px solid var(--warn); background: rgba(255, 254, 249, 0.72); }
+    .baseline-card p { margin: 0; color: var(--muted); font-size: 0.84rem; }
+
+    .shape-tabs, .scenario-tabs { display: flex; gap: 0.5rem; overflow-x: auto; padding: 0.2rem 0 0.6rem; }
+
+    .shape-tab {
+      flex: 1 1 0;
+      min-width: 240px;
+      border-top: 4px solid var(--line);
+      padding: 0.85rem 1rem;
+    }
+
+    .shape-tab.active { border-color: var(--accent); background: var(--accent-soft); }
+    .shape-letter { display: block; color: var(--accent); font: 800 0.72rem/1.2 system-ui, sans-serif; letter-spacing: 0.08em; text-transform: uppercase; }
+    .shape-tab strong { display: block; margin-top: 0.15rem; font-size: 1rem; }
+
+    .shape-summary {
+      display: grid;
+      grid-template-columns: minmax(240px, 0.8fr) minmax(420px, 2.2fr);
+      gap: 1rem;
+      padding: 1.25rem;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: var(--panel);
+      box-shadow: var(--shadow);
+    }
+
+    .shape-intro { padding-right: 1rem; border-right: 1px solid var(--line); }
+    .shape-intro p { color: var(--muted); }
+    .verdict { padding: 0.75rem; border-left: 3px solid var(--accent); background: var(--accent-soft); font-size: 0.9rem; }
+
+    .detail-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.9rem; }
+    .detail-card { min-width: 0; }
+    .detail-card p, .detail-card li { color: var(--muted); font-size: 0.88rem; }
+    .detail-card ul { margin: 0; padding-left: 1.1rem; }
+
+    .scorecard { grid-column: 1 / -1; }
+    .scores { display: grid; grid-template-columns: repeat(6, minmax(92px, 1fr)); gap: 0.45rem; }
+    .score { padding: 0.55rem; border: 1px solid var(--line); border-radius: 6px; background: #faf9f4; }
+    .score span { display: block; color: var(--muted); font: 600 0.68rem/1.2 system-ui, sans-serif; text-transform: uppercase; }
+    .score strong { display: block; margin: 0.2rem 0; font: 750 0.9rem/1.2 system-ui, sans-serif; }
+    .score small { display: block; color: var(--muted); font: 0.72rem/1.3 system-ui, sans-serif; }
+
+    .workspace { display: grid; grid-template-columns: 330px minmax(0, 1fr); gap: 1rem; align-items: start; }
+    .controls { position: sticky; top: 0.75rem; display: grid; gap: 1rem; }
+    .control-panel, .trace-panel, .state-panel, .scenario-panel {
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: var(--panel);
+      box-shadow: var(--shadow);
+    }
+
+    .control-panel { padding: 1rem; }
+    .control-panel p { margin-bottom: 0.8rem; color: var(--muted); font-size: 0.88rem; }
+    .action-list { display: grid; gap: 0.45rem; }
+    .action-button { position: relative; padding-left: 2.7rem; font: 650 0.82rem/1.25 system-ui, sans-serif; }
+    .action-button span { position: absolute; left: 0.8rem; top: 0.65rem; display: grid; width: 1.35rem; height: 1.35rem; place-items: center; border-radius: 50%; color: white; background: var(--accent); font-size: 0.68rem; }
+    .reset-button { width: 100%; margin-top: 0.8rem; color: var(--danger); border-color: #d7b6b1; text-align: center; font: 700 0.78rem/1.2 system-ui, sans-serif; }
+
+    .state-area { min-width: 0; }
+    .last-change { margin-bottom: 0.8rem; padding: 0.85rem 1rem; border-left: 4px solid var(--accent); background: var(--accent-soft); }
+    .last-change strong { display: block; font: 750 0.78rem/1.3 system-ui, sans-serif; text-transform: uppercase; }
+    .last-change span { color: var(--muted); }
+
+    .state-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.8rem; }
+    .state-panel { min-width: 0; overflow: hidden; }
+    .state-panel header { display: flex; justify-content: space-between; align-items: baseline; padding: 0.75rem 0.85rem; border-bottom: 1px solid var(--line); background: #faf9f4; }
+    .state-panel header h3 { margin: 0; }
+    .count { color: var(--muted); font: 650 0.72rem/1.2 system-ui, sans-serif; }
+    .state-list { margin: 0; padding: 0; list-style: none; }
+    .state-row { padding: 0.7rem 0.85rem; border-bottom: 1px solid #e8e9e5; }
+    .state-row:last-child { border-bottom: 0; }
+    .state-row strong { display: block; font-size: 0.9rem; overflow-wrap: anywhere; }
+    .state-row p { margin: 0.15rem 0 0; color: var(--muted); font-size: 0.79rem; overflow-wrap: anywhere; }
+    .empty { padding: 1rem 0.85rem; color: var(--muted); font-style: italic; font-size: 0.85rem; }
+    .pill { display: inline-block; margin-right: 0.35rem; padding: 0.12rem 0.38rem; border-radius: 999px; color: var(--accent); background: var(--accent-soft); font: 700 0.65rem/1.3 system-ui, sans-serif; text-transform: uppercase; }
+    .pill.warn { color: var(--warn); background: var(--warn-soft); }
+    .pill.danger { color: var(--danger); background: var(--danger-soft); }
+
+    .trace-panel { margin-top: 0.8rem; overflow: hidden; }
+    .trace-panel > header { display: flex; justify-content: space-between; padding: 0.85rem 1rem; border-bottom: 1px solid var(--line); }
+    .trace-panel h3 { margin: 0; }
+    .trace-list { margin: 0; padding: 0; list-style: none; }
+    .trace-entry { display: grid; grid-template-columns: 36px 1fr; gap: 0.7rem; padding: 0.8rem 1rem; border-bottom: 1px solid var(--line); }
+    .trace-entry:last-child { border-bottom: 0; }
+    .trace-number { display: grid; width: 30px; height: 30px; place-items: center; border-radius: 50%; color: white; background: var(--accent); font: 700 0.72rem/1 system-ui, sans-serif; }
+    .trace-entry strong { font-size: 0.88rem; }
+    .trace-entry p { margin: 0.18rem 0; color: var(--muted); font-size: 0.79rem; }
+    .trace-path { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; overflow-wrap: anywhere; }
+
+    .scenario-tabs button { white-space: nowrap; font: 650 0.78rem/1.2 system-ui, sans-serif; }
+    .scenario-tabs button.active { color: white; border-color: var(--accent); background: var(--accent); }
+    .scenario-panel { padding: 1rem; }
+    .scenario-panel > p { color: var(--muted); }
+    .scenario-watch { padding: 0.65rem 0.8rem; border-left: 3px solid var(--warn); background: var(--warn-soft); font-size: 0.86rem; }
+    .scenario-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
+    .scenario-step { font: 650 0.78rem/1.2 system-ui, sans-serif; }
+    .scenario-step.done { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
+    .step-arrow { color: var(--muted); }
+    .start-scenario { color: white; border-color: var(--accent); background: var(--accent); font: 700 0.78rem/1.2 system-ui, sans-serif; }
+
+    details { margin-top: 0.8rem; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); }
+    summary { cursor: pointer; padding: 0.75rem 0.9rem; font: 700 0.78rem/1.2 system-ui, sans-serif; }
+    pre { max-height: 360px; margin: 0; padding: 1rem; overflow: auto; border-top: 1px solid var(--line); color: #294138; background: #f2f4ef; font: 0.72rem/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; }
+
+    .legend { display: flex; flex-wrap: wrap; gap: 0.8rem; color: var(--muted); font: 0.76rem/1.4 system-ui, sans-serif; }
+    .legend span::before { content: ""; display: inline-block; width: 0.55rem; height: 0.55rem; margin-right: 0.3rem; border-radius: 50%; background: var(--accent); }
+    .legend .legacy::before { background: var(--warn); }
+    .legend .rejected::before { background: var(--danger); }
+
+    @media (max-width: 1040px) {
+      .shape-summary { grid-template-columns: 1fr; }
+      .shape-intro { padding-right: 0; padding-bottom: 1rem; border-right: 0; border-bottom: 1px solid var(--line); }
+      .detail-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .baseline-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .scores { grid-template-columns: repeat(3, minmax(92px, 1fr)); }
+      .workspace { grid-template-columns: 280px minmax(0, 1fr); }
+    }
+
+    @media (max-width: 760px) {
+      .page { width: min(100% - 1rem, 1440px); }
+      header { padding-top: 1.4rem; }
+      .section-heading { display: block; }
+      .section-heading h2 { margin-bottom: 0.35rem; }
+      .detail-grid, .state-grid, .workspace { grid-template-columns: 1fr; }
+      .scores { grid-template-columns: repeat(2, minmax(92px, 1fr)); }
+      .controls { position: static; }
+      .action-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+
+    @media (max-width: 480px) {
+      .action-list, .scores { grid-template-columns: 1fr; }
+      .shape-summary { padding: 0.85rem; }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <header>
+      <span class="eyebrow">PROTOTYPE / throwaway</span>
+      <h1>Where should Messaging end and the Delivery Gateway begin?</h1>
+      <p class="question"><strong>Question:</strong> Which ownership and interface shape gives Envelopes, Deliveries, sender authority, repository isolation, and delivery evidence a coherent home without making Legacy Messaging’s Agent, Channel, and Message model a permanent constraint?</p>
+      <p class="prototype-note">Disposable decision aid. This is not production code, a migration plan, or a preselection of a winner.</p>
+    </header>
+
+    <section class="section" aria-labelledby="baseline-heading">
+      <div class="section-heading">
+        <div>
+          <h2 id="baseline-heading">Verified starting point</h2>
+          <p>The comparison starts from today’s runtime, but Legacy Messaging behavior is removable and is not a compatibility requirement for the future domain.</p>
+        </div>
+      </div>
+      <div class="baseline-grid">
+        <article class="baseline-card"><h4>Legacy Messaging only</h4><p>Agent, Channel, Message, membership, and read cursor. MessagingService depends on AgentRepository, ChannelRepository, and MessageRepository.</p></article>
+        <article class="baseline-card"><h4>Identity is not authority</h4><p>An Agent name is caller-selected and then bound to PID/stdio registration. Channels are global and open to registered agents; DMs use sorted Agent IDs.</p></article>
+        <article class="baseline-card"><h4>Durability and notification</h4><p>SQLite is the cross-process bridge. Durable cursor reads are authoritative; notification push is separate and best-effort.</p></article>
+        <article class="baseline-card"><h4>Gateway concepts are new</h4><p>No repository scope, idempotency, correlation/reply identity, Envelope, Delivery, Submission, or Observation exists in the current domain.</p></article>
+        <article class="baseline-card"><h4>Wrapper-mediated I/O</h4><p>The model emits structured intent. Deterministic wrappers own protocol mechanics, sender attestation, route resolution, retries, and timeouts.</p></article>
+        <article class="baseline-card"><h4>Canonical distinction</h4><p>Envelope is admitted sender-neutral content and intent. Delivery is per destination. Submission proves harness acceptance; Observation is later, separate visibility evidence.</p></article>
+      </div>
+    </section>
+
+    <section class="section" aria-labelledby="shape-heading">
+      <div class="section-heading">
+        <div>
+          <h2 id="shape-heading">Three architecture shapes</h2>
+          <p>Switching shape resets the in-memory run. The same actions produce equivalent externally required semantics, while the owner and crossing trace changes.</p>
+        </div>
+      </div>
+      <div id="shape-tabs" class="shape-tabs" role="tablist" aria-label="Architecture shapes"></div>
+      <div id="shape-summary" class="shape-summary"></div>
+    </section>
+
+    <section class="section" aria-labelledby="play-heading">
+      <div class="section-heading">
+        <div>
+          <h2 id="play-heading">Drive the model</h2>
+          <p>Every action goes through authenticated wrapper intent, deterministic admission and routing, then updates the complete readable state. SQLite remains the durable cross-process bridge in every shape.</p>
+        </div>
+        <div class="legend"><span>Delivery Gateway vocabulary</span><span class="legacy">Legacy Messaging</span><span class="rejected">Rejected or suppressed</span></div>
+      </div>
+
+      <div class="workspace">
+        <aside class="controls">
+          <div class="control-panel">
+            <h3>Free play</h3>
+            <p>Use these in any order. Preconditions that are not met become visible decisions rather than hidden failures.</p>
+            <div id="free-actions" class="action-list"></div>
+            <button id="reset" class="reset-button" type="button">Reset this shape</button>
+          </div>
+        </aside>
+
+        <div class="state-area">
+          <div id="last-change" class="last-change" aria-live="polite"></div>
+          <div id="state-grid" class="state-grid"></div>
+          <section class="trace-panel" aria-labelledby="trace-heading">
+            <header><h3 id="trace-heading">Ownership and boundary trace</h3><span id="trace-count" class="count"></span></header>
+            <ol id="trace-list" class="trace-list"></ol>
+          </section>
+          <details>
+            <summary>Optional technical detail: complete in-memory state</summary>
+            <pre id="technical-state"></pre>
+          </details>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" aria-labelledby="walkthrough-heading">
+      <div class="section-heading">
+        <div>
+          <h2 id="walkthrough-heading">Guided walkthroughs</h2>
+          <p>Each walkthrough resets the selected architecture to the same initial bindings. Press the steps in order and compare the trace after repeating it under another shape.</p>
+        </div>
+      </div>
+      <div id="scenario-tabs" class="scenario-tabs" role="tablist" aria-label="Guided scenarios"></div>
+      <div id="scenario-panel" class="scenario-panel"></div>
+    </section>
+  </main>
+
+  <script>
+    // Pure transition module. It has no DOM knowledge; the page below is only a view and dispatcher.
+    const ContextSeamModel = (() => {
+      const SHAPES = {
+        sibling: {
+          letter: "Shape A",
+          name: "Sibling bounded contexts",
+          subtitle: "Delivery Gateway with an anti-corruption adapter",
+          summary: "Delivery Gateway owns sender authority, repository admission, Envelopes, Deliveries, Submissions, and Observations. Legacy Messaging remains a separate destination harness behind one narrow port.",
+          vocabulary: "Gateway: Principal, Sender Authority, Route Binding, Envelope, Delivery, Submission, Observation. Legacy Messaging: Agent, Channel, Message, membership, cursor.",
+          ownership: "Gateway owns canonical authority and lifecycle. Legacy Messaging owns only its existing harness behavior and storage. The anti-corruption adapter translates a Delivery attempt into a Legacy Message.",
+          seam: "DestinationHarness.submit(attempt) -> SubmissionEvidence. One outbound Gateway need hides channel/DM creation, membership, Message insertion, and best-effort push.",
+          reuse: "Reuse SQLite repository implementations and notification watcher as technical adapters. AgentRepository, ChannelRepository, and MessageRepository stay behind the Legacy Messaging adapter; they do not become Gateway domain ports.",
+          crossings: "Admission never crosses Legacy Messaging. A delivery to the legacy harness crosses Gateway -> anti-corruption adapter -> Legacy Messaging; later cursor reads/push remain on the legacy side.",
+          deletion: "Passes strongly: delete Legacy Messaging plus its adapter and only that destination disappears. Gateway authority, Envelopes, Delivery lifecycle, and other harnesses remain coherent.",
+          failure: "Adapter translation can drift; two durable models must be reconciled; a successful Legacy Message insert proves Submission but not model visibility; cross-context diagnostics require correlation IDs.",
+          evidence: "Gateway contract fixtures beside the DestinationHarness port; Legacy Messaging adapter conformance evidence beside that adapter; cross-process SQLite acceptance evidence at the composition boundary.",
+          scores: [
+            ["Depth", "High", "Tiny seam hides legacy mechanics"], ["Locality", "High", "Vocabulary stays with owner"], ["Seam placement", "Explicit", "One outbound harness port"],
+            ["Failure isolation", "High", "Legacy faults stop at adapter"], ["Conformance burden", "Medium", "Port plus each adapter"], ["Migration cost", "Medium", "Parallel models during cutover"]
+          ],
+          owners: {
+            authority: "Delivery Gateway",
+            lifecycle: "Delivery Gateway",
+            legacy: "Legacy Messaging",
+            adapter: "Legacy harness anti-corruption adapter"
+          },
+          paths: {
+            human: "Authenticated wrapper -> Delivery Gateway admission -> Gateway route policy -> Delivery",
+            peer: "Peer wrapper attestation -> Delivery Gateway admission -> Delivery",
+            reply: "Peer wrapper -> Gateway correlation admission -> Delivery",
+            wrongRepo: "Authenticated wrapper -> Delivery Gateway repository guard (stop)",
+            duplicate: "Authenticated wrapper -> Delivery Gateway deduplication ledger (stop replay)",
+            submit: "Delivery Gateway -> DestinationHarness port -> harness adapter -> Submission",
+            observe: "Harness observer -> Delivery Gateway Observation recorder",
+            channel: "Delivery Gateway -> anti-corruption adapter -> Legacy Messaging Channel/Message",
+            dm: "Delivery Gateway -> anti-corruption adapter -> Legacy Messaging DM Channel/Message"
+          }
+        },
+        replacement: {
+          letter: "Shape B",
+          name: "Replacement",
+          subtitle: "Legacy APIs become transport compatibility adapters",
+          summary: "Delivery Gateway replaces Legacy Messaging as the only domain. Existing MCP Channel and DM operations survive temporarily as transport-level projections onto Gateway routes and deliveries.",
+          vocabulary: "Canonical: Principal, Sender Authority, Route Binding, Envelope, Delivery, Submission, Observation. Agent, Channel, and Message are explicitly non-canonical compatibility request/response terms.",
+          ownership: "Gateway owns all durable meaning. Compatibility adapters parse legacy MCP calls, resolve channel/DM-shaped addresses, call Gateway admission, and project Gateway state back into old response shapes.",
+          seam: "Gateway.admit(attestedPrincipal, repository, content, provenance, correlation, intent) -> Envelope + Deliveries. This deep inbound use case serves new wrappers and legacy transport adapters alike.",
+          reuse: "Reuse SQLite connection/retry/transaction machinery and MCP transport registration. Existing repositories may be mined for SQL idioms, but Agent/Channel/Message repositories do not define the new domain contract.",
+          crossings: "New ingress enters Gateway directly. Legacy operations cross transport compatibility adapter -> Gateway once; there is no Legacy Messaging domain boundary or second lifecycle.",
+          deletion: "Passes after migration: delete compatibility adapters and all canonical Gateway behavior remains. Before consumers move, deletion removes legacy API reachability but no canonical state.",
+          failure: "Compatibility projections may promise cursor/channel behavior the canonical model does not need; replacement concentrates migration risk; old read semantics can distort the new admission seam if treated as requirements.",
+          evidence: "Canonical Gateway use-case fixtures beside admit/query ports; each legacy MCP compatibility adapter owns mapping evidence; end-to-end evidence proves old requests reach canonical Gateway state across processes.",
+          scores: [
+            ["Depth", "High", "One canonical admission use case"], ["Locality", "Medium-high", "One domain, adapter projections"], ["Seam placement", "Direct", "Compatibility at transport edge"],
+            ["Failure isolation", "Medium", "Canonical core has broad blast radius"], ["Conformance burden", "High", "Every old API projection"], ["Migration cost", "High", "State and reads cut over"]
+          ],
+          owners: {
+            authority: "Delivery Gateway",
+            lifecycle: "Delivery Gateway",
+            legacy: "Legacy transport compatibility adapter",
+            adapter: "Legacy MCP compatibility adapter"
+          },
+          paths: {
+            human: "Authenticated wrapper -> Delivery Gateway admission -> Delivery",
+            peer: "Peer wrapper attestation -> Delivery Gateway admission -> Delivery",
+            reply: "Peer wrapper -> Gateway correlation admission -> Delivery",
+            wrongRepo: "Authenticated wrapper -> Delivery Gateway repository guard (stop)",
+            duplicate: "Authenticated wrapper -> Delivery Gateway deduplication ledger (stop replay)",
+            submit: "Delivery Gateway -> destination adapter -> Submission",
+            observe: "Harness observer -> Delivery Gateway Observation recorder",
+            channel: "Legacy MCP compatibility adapter -> Gateway channel-address route -> Delivery",
+            dm: "Legacy MCP compatibility adapter -> Gateway principal-address route -> Delivery"
+          }
+        },
+        enlargement: {
+          letter: "Shape C",
+          name: "Enlargement",
+          subtitle: "Current Messaging absorbs the Gateway concerns",
+          summary: "The current Messaging context expands to own authority, repository scope, Envelopes, Deliveries, evidence, and existing Agent/Channel/Message behavior in one model.",
+          vocabulary: "Messaging owns Principal/Sender Authority, Route Binding, Envelope, Delivery, Submission, Observation and Legacy Messaging Agent, Channel, Message, membership, cursor.",
+          ownership: "One enlarged Messaging context owns canonical authority and lifecycle alongside existing semantics. Storage ports widen or multiply under MessagingService-like application services.",
+          seam: "Messaging.submit(intent, attestedCaller) -> Envelope + Deliveries + optional Legacy Message projection. One context call, but its contract must distinguish canonical lifecycle from channel/cursor conveniences.",
+          reuse: "Directly reuse AgentRepository, ChannelRepository, MessageRepository, SQLite stores, cursor reads, and notification watcher. Add authority, route, Envelope, Delivery, Submission, Observation, and deduplication stores to the same context.",
+          crossings: "Few internal domain crossings: admission, routing, and Legacy Message creation are intra-context. Every external harness still crosses an outbound destination adapter.",
+          deletion: "Fails: deleting Legacy Messaging Agent/Channel/Message behavior cuts through the enlarged canonical context and its service/storage contracts. Removal requires surgery rather than removing an adapter.",
+          failure: "Legacy global-channel and caller-selected identity assumptions can leak into authority; the context grows shallow and broad; cursor visibility can be confused with Submission or Observation; failures share one storage/service boundary.",
+          evidence: "A large Messaging conformance suite beside the enlarged service, plus storage evidence for both legacy and lifecycle semantics. Fewer adapter contracts, but more combinations in one suite.",
+          scores: [
+            ["Depth", "Low-medium", "Broad interface, many concepts"], ["Locality", "Low", "New and removable terms mix"], ["Seam placement", "Internal", "Boundary deferred into service"],
+            ["Failure isolation", "Low", "Shared context and persistence"], ["Conformance burden", "Medium-high", "Combinatorial context suite"], ["Migration cost", "Low", "Build beside current model"]
+          ],
+          owners: {
+            authority: "Enlarged Messaging context",
+            lifecycle: "Enlarged Messaging context",
+            legacy: "Enlarged Messaging context",
+            adapter: "Messaging destination adapter"
+          },
+          paths: {
+            human: "Authenticated wrapper -> enlarged Messaging admission -> Messaging Delivery",
+            peer: "Peer wrapper attestation -> enlarged Messaging admission -> Messaging Delivery",
+            reply: "Peer wrapper -> Messaging correlation admission -> Delivery",
+            wrongRepo: "Authenticated wrapper -> Messaging repository guard (stop)",
+            duplicate: "Authenticated wrapper -> Messaging deduplication ledger (stop replay)",
+            submit: "Messaging lifecycle -> destination adapter -> Submission",
+            observe: "Harness observer -> Messaging Observation recorder",
+            channel: "Messaging admission -> internal Channel/Message behavior -> Delivery",
+            dm: "Messaging admission -> internal DM Channel/Message behavior -> Delivery"
+          }
+        }
+      };
+
+      const ACTIONS = [
+        { type: "HUMAN_INGRESS", short: "Human ingress", label: "Authenticated human ingress" },
+        { type: "PEER_SEND", short: "Peer send", label: "Authenticated peer-agent send" },
+        { type: "REPLY", short: "Reply", label: "Reply with correlation" },
+        { type: "WRONG_REPO", short: "Wrong repository", label: "Reject wrong-repository ingress" },
+        { type: "DUPLICATE", short: "Duplicate", label: "Replay duplicate ingress" },
+        { type: "SUBMIT", short: "Submission", label: "Record harness Submission" },
+        { type: "OBSERVE", short: "Observation", label: "Record model-visible Observation" },
+        { type: "LEGACY_CHANNEL", short: "Legacy Channel", label: "Deliver to Legacy Messaging Channel" },
+        { type: "LEGACY_DM", short: "Legacy DM", label: "Deliver to Legacy Messaging DM" }
+      ];
+
+      const SCENARIOS = [
+        {
+          id: "human-lifecycle",
+          name: "Human-to-agent lifecycle",
+          description: "A repository-authorized human asks Scout to investigate, the harness accepts the attempt, and model visibility is recorded later.",
+          watch: "Watch one Envelope create one Delivery. Submission and Observation are different evidence with different moments.",
+          actions: ["HUMAN_INGRESS", "SUBMIT", "OBSERVE"]
+        },
+        {
+          id: "peer-reply",
+          name: "Authenticated peer reply",
+          description: "Scout sends to Reviewer through an attested wrapper; Reviewer replies with correlation to the first Envelope.",
+          watch: "Agent identity comes from wrapper attestation, not a caller-selected Agent name. Correlation links Envelopes without turning the reply into a Legacy Message requirement.",
+          actions: ["PEER_SEND", "REPLY"]
+        },
+        {
+          id: "repo-rejection",
+          name: "Repository isolation rejection",
+          description: "A principal authorized for repository beta attempts to use a route bound to repository alpha.",
+          watch: "The attempt must stop at canonical admission. No Envelope, Delivery, Legacy Message, or harness call may be created.",
+          actions: ["WRONG_REPO"]
+        },
+        {
+          id: "duplicate-replay",
+          name: "Duplicate replay",
+          description: "The same authenticated ingress and idempotency key arrive twice after a retry.",
+          watch: "Exactly one Envelope and Delivery survive. The deduplication ledger records the replay and points to the original Envelope.",
+          actions: ["DUPLICATE"]
+        },
+        {
+          id: "submission-no-observation",
+          name: "Submission without observation",
+          description: "The destination harness accepts an attempt, but no evidence yet says the model saw it.",
+          watch: "Stop after Submission. Delivery is submitted, Observations stay empty, and the UI must not claim model visibility.",
+          actions: ["HUMAN_INGRESS", "SUBMIT"]
+        }
+      ];
+
+      const basePrincipals = [
+        { id: "human:jay", kind: "Human", repository: "octo-santa", authority: "Authenticated session attested by wrapper" },
+        { id: "agent:scout", kind: "Peer agent", repository: "octo-santa", authority: "Process credential attested by wrapper" },
+        { id: "agent:reviewer", kind: "Peer agent", repository: "octo-santa", authority: "Process credential attested by wrapper" },
+        { id: "agent:outsider", kind: "Peer agent", repository: "other-repository", authority: "Valid principal, wrong repository" }
+      ];
+
+      const baseRoutes = [
+        { id: "route:scout", repository: "octo-santa", destination: "agent:scout", harness: "Model wrapper" },
+        { id: "route:reviewer", repository: "octo-santa", destination: "agent:reviewer", harness: "Model wrapper" },
+        { id: "route:legacy-general", repository: "octo-santa", destination: "Legacy Messaging Channel #general", harness: "Legacy Messaging" },
+        { id: "route:legacy-dm", repository: "octo-santa", destination: "Legacy Messaging DM scout--reviewer", harness: "Legacy Messaging" }
+      ];
+
+      function initialState(shape = "sibling") {
+        return {
+          shape,
+          sequence: 0,
+          principals: basePrincipals.map((item) => ({ ...item, owner: SHAPES[shape].owners.authority })),
+          routeBindings: baseRoutes.map((item) => ({ ...item, owner: SHAPES[shape].owners.lifecycle })),
+          envelopes: [],
+          deliveries: [],
+          submissions: [],
+          observations: [],
+          legacyMessages: [],
+          rejectedAdmissions: [],
+          deduplication: [],
+          trace: [],
+          lastChange: `Ready to compare ${SHAPES[shape].letter}: ${SHAPES[shape].name}.`
+        };
+      }
+
+      function cloneState(state) {
+        return {
+          ...state,
+          principals: state.principals.map((item) => ({ ...item })),
+          routeBindings: state.routeBindings.map((item) => ({ ...item })),
+          envelopes: state.envelopes.map((item) => ({ ...item })),
+          deliveries: state.deliveries.map((item) => ({ ...item })),
+          submissions: state.submissions.map((item) => ({ ...item })),
+          observations: state.observations.map((item) => ({ ...item })),
+          legacyMessages: state.legacyMessages.map((item) => ({ ...item })),
+          rejectedAdmissions: state.rejectedAdmissions.map((item) => ({ ...item })),
+          deduplication: state.deduplication.map((item) => ({ ...item })),
+          trace: state.trace.map((item) => ({ ...item }))
+        };
+      }
+
+      function nextId(state, prefix) {
+        return `${prefix}-${String(state.sequence + 1).padStart(3, "0")}`;
+      }
+
+      function recordTrace(state, actionKey, title, outcome, owner) {
+        const shape = SHAPES[state.shape];
+        state.sequence += 1;
+        state.trace.unshift({
+          step: state.sequence,
+          title,
+          owner,
+          path: shape.paths[actionKey],
+          outcome
+        });
+        state.lastChange = outcome;
+      }
+
+      function addEnvelopeAndDelivery(state, data) {
+        const shape = SHAPES[state.shape];
+        const envelopeId = nextId(state, "env");
+        const deliveryId = nextId(state, "del");
+        state.envelopes.push({
+          id: envelopeId,
+          sender: data.sender,
+          repository: "octo-santa",
+          content: data.content,
+          provenance: data.provenance,
+          correlation: data.correlation || "None",
+          intent: data.intent,
+          owner: shape.owners.lifecycle
+        });
+        state.deliveries.push({
+          id: deliveryId,
+          envelopeId,
+          destination: data.destination,
+          status: "Pending submission",
+          owner: shape.owners.lifecycle
+        });
+        return { envelopeId, deliveryId };
+      }
+
+      function legacyProjection(state, deliveryId, channel, sender, content, kind) {
+        const shape = SHAPES[state.shape];
+        const legacyMessageId = `legacy-${String(state.legacyMessages.length + 1).padStart(3, "0")}`;
+        state.legacyMessages.push({
+          id: legacyMessageId,
+          deliveryId,
+          channel,
+          sender,
+          content,
+          kind,
+          owner: shape.owners.legacy,
+          canonical: state.shape === "replacement" ? "Compatibility projection; Delivery remains canonical" : "Legacy Messaging record"
+        });
+        state.deliveries.find((delivery) => delivery.id === deliveryId).status = "Submitted to Legacy Messaging harness";
+        state.submissions.push({
+          id: `sub-legacy-${String(state.submissions.length + 1).padStart(3, "0")}`,
+          deliveryId,
+          acceptedBy: "Legacy Messaging harness",
+          evidence: `${legacyMessageId} proves the harness accepted this attempt`,
+          owner: shape.owners.lifecycle
+        });
+      }
+
+      function rejectPrecondition(state, actionKey, title, reason) {
+        const shape = SHAPES[state.shape];
+        state.rejectedAdmissions.push({
+          id: nextId(state, "decision"),
+          principal: "System action",
+          repository: "octo-santa",
+          reason,
+          owner: shape.owners.lifecycle
+        });
+        recordTrace(state, actionKey, title, reason, shape.owners.lifecycle);
+      }
+
+      function reduce(current, action) {
+        if (action.type === "RESET") return initialState(current.shape);
+        if (action.type === "SWITCH_SHAPE") return initialState(action.shape);
+
+        const state = cloneState(current);
+        const shape = SHAPES[state.shape];
+
+        switch (action.type) {
+          case "HUMAN_INGRESS": {
+            const ids = addEnvelopeAndDelivery(state, {
+              sender: "human:jay",
+              destination: "agent:scout",
+              content: "Investigate the Delivery Gateway seam.",
+              provenance: "Authenticated human ingress via deterministic wrapper",
+              intent: "Deliver to Scout in octo-santa"
+            });
+            recordTrace(state, "human", "Authenticated human ingress", `${ids.envelopeId} admitted and ${ids.deliveryId} created for agent:scout.`, shape.owners.lifecycle);
+            break;
+          }
+          case "PEER_SEND": {
+            const ids = addEnvelopeAndDelivery(state, {
+              sender: "agent:scout",
+              destination: "agent:reviewer",
+              content: "Please review the context boundary findings.",
+              provenance: "Peer process credential attested by wrapper",
+              intent: "Deliver to Reviewer in octo-santa"
+            });
+            recordTrace(state, "peer", "Authenticated peer-agent send", `${ids.envelopeId} uses attested agent:scout authority; ${ids.deliveryId} targets agent:reviewer.`, shape.owners.lifecycle);
+            break;
+          }
+          case "REPLY": {
+            const parent = [...state.envelopes].reverse().find((item) => item.sender === "agent:scout" && item.content.includes("review"));
+            if (!parent) {
+              rejectPrecondition(state, "reply", "Reply correlation", "No peer Envelope exists to reply to; no reply was admitted.");
+              break;
+            }
+            const ids = addEnvelopeAndDelivery(state, {
+              sender: "agent:reviewer",
+              destination: "agent:scout",
+              content: "Reply: the boundary costs are now explicit.",
+              provenance: "Peer process credential attested by wrapper",
+              correlation: `Reply to ${parent.id}`,
+              intent: "Return correlated reply to Scout"
+            });
+            recordTrace(state, "reply", "Reply with correlation", `${ids.envelopeId} correlates to ${parent.id}; a distinct ${ids.deliveryId} returns to agent:scout.`, shape.owners.lifecycle);
+            break;
+          }
+          case "WRONG_REPO": {
+            const rejectionId = nextId(state, "reject");
+            state.rejectedAdmissions.push({
+              id: rejectionId,
+              principal: "agent:outsider",
+              repository: "other-repository -> octo-santa",
+              reason: "Principal authority and requested Route Binding belong to different repositories",
+              owner: shape.owners.authority
+            });
+            recordTrace(state, "wrongRepo", "Wrong-repository admission", `${rejectionId} recorded. No Envelope, Delivery, or Legacy Message was created.`, shape.owners.authority);
+            break;
+          }
+          case "DUPLICATE": {
+            const key = "ingress:human:retry-42";
+            const existing = state.deduplication.find((item) => item.key === key);
+            if (existing) {
+              existing.replays += 1;
+              recordTrace(state, "duplicate", "Duplicate ingress replay", `Replay suppressed; ${key} still resolves to ${existing.envelopeId}.`, shape.owners.lifecycle);
+              break;
+            }
+            const ids = addEnvelopeAndDelivery(state, {
+              sender: "human:jay",
+              destination: "agent:scout",
+              content: "Retry-safe request to inspect route ownership.",
+              provenance: "Authenticated human ingress with idempotency key retry-42",
+              intent: "Deliver once to Scout"
+            });
+            state.deduplication.push({ key, envelopeId: ids.envelopeId, replays: 1, decision: "First ingress admitted; immediate replay suppressed", owner: shape.owners.lifecycle });
+            recordTrace(state, "duplicate", "Duplicate ingress and idempotency", `${ids.envelopeId} and ${ids.deliveryId} exist once; the replay resolves to the original Envelope.`, shape.owners.lifecycle);
+            break;
+          }
+          case "SUBMIT": {
+            const delivery = state.deliveries.find((item) => item.status === "Pending submission");
+            if (!delivery) {
+              rejectPrecondition(state, "submit", "Harness Submission", "No pending Delivery exists; no Submission evidence was invented.");
+              break;
+            }
+            delivery.status = "Submitted to harness";
+            const submissionId = nextId(state, "sub");
+            state.submissions.push({
+              id: submissionId,
+              deliveryId: delivery.id,
+              acceptedBy: delivery.destination.includes("Legacy Messaging") ? "Legacy Messaging harness" : "Model wrapper harness",
+              evidence: "Harness accepted this attempt",
+              owner: shape.owners.lifecycle
+            });
+            recordTrace(state, "submit", "Harness Submission", `${submissionId} proves ${delivery.id} was accepted by its harness; it does not prove model visibility.`, shape.owners.lifecycle);
+            break;
+          }
+          case "OBSERVE": {
+            const submission = state.submissions.find((item) => !state.observations.some((observation) => observation.deliveryId === item.deliveryId));
+            if (!submission) {
+              rejectPrecondition(state, "observe", "Model-visible Observation", "No submitted Delivery awaits Observation; visibility was not assumed.");
+              break;
+            }
+            const delivery = state.deliveries.find((item) => item.id === submission.deliveryId);
+            delivery.status = "Observed by model";
+            const observationId = nextId(state, "obs");
+            state.observations.push({
+              id: observationId,
+              deliveryId: delivery.id,
+              evidence: "Wrapper recorded content in the model-visible input",
+              separateFrom: submission.id,
+              owner: shape.owners.lifecycle
+            });
+            recordTrace(state, "observe", "Model-visible Observation", `${observationId} separately records model visibility for ${delivery.id}; ${submission.id} remains Submission evidence.`, shape.owners.lifecycle);
+            break;
+          }
+          case "LEGACY_CHANNEL": {
+            const ids = addEnvelopeAndDelivery(state, {
+              sender: "agent:scout",
+              destination: "Legacy Messaging Channel #general",
+              content: "Legacy Channel status update.",
+              provenance: "Attested wrapper intent translated for Legacy Messaging",
+              intent: "Deliver through Legacy Messaging Channel"
+            });
+            legacyProjection(state, ids.deliveryId, "#general", "agent:scout", "Legacy Channel status update.", "Channel Message");
+            recordTrace(state, "channel", "Legacy Messaging Channel delivery", `${ids.envelopeId} remains canonical; the Legacy Message is Submission evidence for ${ids.deliveryId}, not model visibility.`, shape.owners.legacy);
+            break;
+          }
+          case "LEGACY_DM": {
+            const ids = addEnvelopeAndDelivery(state, {
+              sender: "agent:scout",
+              destination: "Legacy Messaging DM scout--reviewer",
+              content: "Legacy DM handoff.",
+              provenance: "Attested wrapper intent translated for Legacy Messaging",
+              intent: "Deliver through Legacy Messaging DM"
+            });
+            legacyProjection(state, ids.deliveryId, "scout--reviewer", "agent:scout", "Legacy DM handoff.", "DM Message");
+            recordTrace(state, "dm", "Legacy Messaging DM delivery", `${ids.envelopeId} remains canonical; the sorted-agent Legacy DM Message is Submission evidence for ${ids.deliveryId}, not model visibility.`, shape.owners.legacy);
+            break;
+          }
+          default:
+            return current;
+        }
+
+        return state;
+      }
+
+      return { SHAPES, ACTIONS, SCENARIOS, initialState, reduce };
+    })();
+  </script>
+
+  <script>
+    // Throwaway page shell. All business transitions stay in ContextSeamModel above.
+    (() => {
+      const { SHAPES, ACTIONS, SCENARIOS, initialState, reduce } = ContextSeamModel;
+      let state = initialState("sibling");
+      let activeScenario = SCENARIOS[0].id;
+      let scenarioProgress = -1;
+
+      const elements = {
+        shapeTabs: document.querySelector("#shape-tabs"),
+        shapeSummary: document.querySelector("#shape-summary"),
+        freeActions: document.querySelector("#free-actions"),
+        reset: document.querySelector("#reset"),
+        lastChange: document.querySelector("#last-change"),
+        stateGrid: document.querySelector("#state-grid"),
+        traceList: document.querySelector("#trace-list"),
+        traceCount: document.querySelector("#trace-count"),
+        technicalState: document.querySelector("#technical-state"),
+        scenarioTabs: document.querySelector("#scenario-tabs"),
+        scenarioPanel: document.querySelector("#scenario-panel")
+      };
+
+      const escapeHtml = (value) => String(value)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+
+      function dispatch(action) {
+        state = reduce(state, action);
+        render();
+      }
+
+      function renderShapeTabs() {
+        elements.shapeTabs.innerHTML = Object.entries(SHAPES).map(([id, shape]) => `
+          <button class="shape-tab ${state.shape === id ? "active" : ""}" type="button" role="tab" aria-selected="${state.shape === id}" data-shape="${id}">
+            <span class="shape-letter">${escapeHtml(shape.letter)}</span>
+            <strong>${escapeHtml(shape.name)}</strong>
+            <small>${escapeHtml(shape.subtitle)}</small>
+          </button>
+        `).join("");
+
+        elements.shapeTabs.querySelectorAll("[data-shape]").forEach((button) => {
+          button.addEventListener("click", () => {
+            scenarioProgress = -1;
+            dispatch({ type: "SWITCH_SHAPE", shape: button.dataset.shape });
+          });
+        });
+      }
+
+      function renderShapeSummary() {
+        const shape = SHAPES[state.shape];
+        const cards = [
+          ["Canonical vocabulary", shape.vocabulary],
+          ["Context ownership", shape.ownership],
+          ["Smallest deep interface / seam", shape.seam],
+          ["Reusable technical ports vs separate concepts", shape.reuse],
+          ["Boundary crossings", shape.crossings],
+          ["Deletion test", shape.deletion],
+          ["Likely failure modes", shape.failure],
+          ["Conformance evidence location", shape.evidence]
+        ];
+        elements.shapeSummary.innerHTML = `
+          <div class="shape-intro">
+            <span class="shape-letter">${escapeHtml(shape.letter)}</span>
+            <h2>${escapeHtml(shape.name)}</h2>
+            <p>${escapeHtml(shape.summary)}</p>
+            <div class="verdict"><strong>No verdict:</strong> compare the costs in action before choosing.</div>
+          </div>
+          <div class="detail-grid">
+            ${cards.map(([title, text]) => `<article class="detail-card"><h4>${escapeHtml(title)}</h4><p>${escapeHtml(text)}</p></article>`).join("")}
+            <article class="detail-card scorecard">
+              <h4>Compact tradeoff scorecard</h4>
+              <div class="scores">${shape.scores.map(([name, rating, note]) => `
+                <div class="score"><span>${escapeHtml(name)}</span><strong>${escapeHtml(rating)}</strong><small>${escapeHtml(note)}</small></div>
+              `).join("")}</div>
+            </article>
+          </div>
+        `;
+      }
+
+      function renderFreeActions() {
+        elements.freeActions.innerHTML = ACTIONS.map((action, index) => `
+          <button class="action-button" type="button" data-action="${action.type}"><span>${index + 1}</span>${escapeHtml(action.label)}</button>
+        `).join("");
+        elements.freeActions.querySelectorAll("[data-action]").forEach((button) => {
+          button.addEventListener("click", () => {
+            scenarioProgress = -1;
+            dispatch({ type: button.dataset.action });
+          });
+        });
+      }
+
+      const sections = [
+        {
+          key: "principals",
+          title: "Principals / sender authority",
+          describe: (item) => `<strong>${escapeHtml(item.id)} <span class="pill">${escapeHtml(item.kind)}</span></strong><p>${escapeHtml(item.authority)} · repository: ${escapeHtml(item.repository)} · owner: ${escapeHtml(item.owner)}</p>`
+        },
+        {
+          key: "routeBindings",
+          title: "Route Bindings",
+          describe: (item) => `<strong>${escapeHtml(item.id)}</strong><p>${escapeHtml(item.destination)} via ${escapeHtml(item.harness)} · repository: ${escapeHtml(item.repository)} · owner: ${escapeHtml(item.owner)}</p>`
+        },
+        {
+          key: "envelopes",
+          title: "Envelopes",
+          describe: (item) => `<strong>${escapeHtml(item.id)} <span class="pill">Canonical</span></strong><p>Sender: ${escapeHtml(item.sender)} · ${escapeHtml(item.content)}</p><p>Provenance: ${escapeHtml(item.provenance)} · Correlation: ${escapeHtml(item.correlation)} · Intent: ${escapeHtml(item.intent)} · Owner: ${escapeHtml(item.owner)}</p>`
+        },
+        {
+          key: "deliveries",
+          title: "Deliveries",
+          describe: (item) => `<strong>${escapeHtml(item.id)} <span class="pill ${item.status === "Pending submission" ? "warn" : ""}">${escapeHtml(item.status)}</span></strong><p>${escapeHtml(item.envelopeId)} -> ${escapeHtml(item.destination)} · owner: ${escapeHtml(item.owner)}</p>`
+        },
+        {
+          key: "submissions",
+          title: "Submissions",
+          describe: (item) => `<strong>${escapeHtml(item.id)} <span class="pill">Harness accepted</span></strong><p>${escapeHtml(item.deliveryId)} · ${escapeHtml(item.acceptedBy)} · ${escapeHtml(item.evidence)} · not visibility · owner: ${escapeHtml(item.owner)}</p>`
+        },
+        {
+          key: "observations",
+          title: "Observations",
+          describe: (item) => `<strong>${escapeHtml(item.id)} <span class="pill">Model visible</span></strong><p>${escapeHtml(item.deliveryId)} · ${escapeHtml(item.evidence)} · separate from ${escapeHtml(item.separateFrom)} · owner: ${escapeHtml(item.owner)}</p>`
+        },
+        {
+          key: "legacyMessages",
+          title: "Legacy Messages",
+          describe: (item) => `<strong>${escapeHtml(item.id)} <span class="pill warn">Legacy Messaging</span></strong><p>${escapeHtml(item.kind)} in ${escapeHtml(item.channel)} · sender: ${escapeHtml(item.sender)} · ${escapeHtml(item.content)}</p><p>${escapeHtml(item.canonical)} · linked to ${escapeHtml(item.deliveryId)} · owner: ${escapeHtml(item.owner)}</p>`
+        },
+        {
+          key: "rejectedAdmissions",
+          title: "Rejected admissions",
+          describe: (item) => `<strong>${escapeHtml(item.id)} <span class="pill danger">Stopped</span></strong><p>${escapeHtml(item.principal)} · ${escapeHtml(item.repository)} · ${escapeHtml(item.reason)} · owner: ${escapeHtml(item.owner)}</p>`
+        },
+        {
+          key: "deduplication",
+          title: "Deduplication",
+          describe: (item) => `<strong>${escapeHtml(item.key)} <span class="pill danger">${item.replays} replay suppressed</span></strong><p>Resolves to ${escapeHtml(item.envelopeId)} · ${escapeHtml(item.decision)} · owner: ${escapeHtml(item.owner)}</p>`
+        }
+      ];
+
+      function renderState() {
+        const shape = SHAPES[state.shape];
+        elements.lastChange.innerHTML = `<strong>${escapeHtml(shape.letter)} · ${escapeHtml(shape.name)}</strong><span>${escapeHtml(state.lastChange)}</span>`;
+        elements.stateGrid.innerHTML = sections.map((section) => {
+          const rows = state[section.key];
+          return `
+            <section class="state-panel">
+              <header><h3>${escapeHtml(section.title)}</h3><span class="count">${rows.length}</span></header>
+              ${rows.length ? `<ul class="state-list">${rows.map((item) => `<li class="state-row">${section.describe(item)}</li>`).join("")}</ul>` : `<div class="empty">None recorded.</div>`}
+            </section>
+          `;
+        }).join("");
+        elements.technicalState.textContent = JSON.stringify(state, null, 2);
+      }
+
+      function renderTrace() {
+        elements.traceCount.textContent = `${state.trace.length} crossing${state.trace.length === 1 ? "" : "s"}`;
+        elements.traceList.innerHTML = state.trace.length ? state.trace.map((entry) => `
+          <li class="trace-entry">
+            <span class="trace-number">${entry.step}</span>
+            <div>
+              <strong>${escapeHtml(entry.title)} · owner: ${escapeHtml(entry.owner)}</strong>
+              <p class="trace-path">${escapeHtml(entry.path)}</p>
+              <p>${escapeHtml(entry.outcome)}</p>
+            </div>
+          </li>
+        `).join("") : `<li class="empty">No actions yet. Choose a free-play action or start a walkthrough.</li>`;
+      }
+
+      function renderScenarios() {
+        elements.scenarioTabs.innerHTML = SCENARIOS.map((scenario) => `
+          <button class="${activeScenario === scenario.id ? "active" : ""}" type="button" role="tab" aria-selected="${activeScenario === scenario.id}" data-scenario="${scenario.id}">${escapeHtml(scenario.name)}</button>
+        `).join("");
+        elements.scenarioTabs.querySelectorAll("[data-scenario]").forEach((button) => {
+          button.addEventListener("click", () => {
+            activeScenario = button.dataset.scenario;
+            scenarioProgress = -1;
+            renderScenarios();
+          });
+        });
+
+        const scenario = SCENARIOS.find((item) => item.id === activeScenario);
+        elements.scenarioPanel.innerHTML = `
+          <h3>${escapeHtml(scenario.name)}</h3>
+          <p>${escapeHtml(scenario.description)}</p>
+          <p class="scenario-watch"><strong>Watch for:</strong> ${escapeHtml(scenario.watch)}</p>
+          <div class="scenario-actions">
+            <button class="start-scenario" type="button" data-start>Start and reset</button>
+            ${scenario.actions.map((type, index) => {
+              const action = ACTIONS.find((item) => item.type === type);
+              const disabled = scenarioProgress < index - 1 || scenarioProgress >= index;
+              const done = scenarioProgress >= index;
+              return `${index ? `<span class="step-arrow">-></span>` : ""}<button class="scenario-step ${done ? "done" : ""}" type="button" data-scenario-action="${type}" data-index="${index}" ${disabled ? "disabled" : ""}>${index + 1}. ${escapeHtml(action.label)}</button>`;
+            }).join("")}
+          </div>
+        `;
+
+        elements.scenarioPanel.querySelector("[data-start]").addEventListener("click", () => {
+          state = reduce(state, { type: "RESET" });
+          scenarioProgress = -1;
+          render();
+        });
+        elements.scenarioPanel.querySelectorAll("[data-scenario-action]").forEach((button) => {
+          button.addEventListener("click", () => {
+            scenarioProgress = Number(button.dataset.index);
+            state = reduce(state, { type: button.dataset.scenarioAction });
+            render();
+          });
+        });
+      }
+
+      function render() {
+        renderShapeTabs();
+        renderShapeSummary();
+        renderFreeActions();
+        renderState();
+        renderTrace();
+        renderScenarios();
+      }
+
+      elements.reset.addEventListener("click", () => {
+        scenarioProgress = -1;
+        dispatch({ type: "RESET" });
+      });
+
+      render();
+    })();
+  </script>
+</body>
+</html>
